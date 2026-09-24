@@ -1,0 +1,13 @@
+{
+  "name": "guanbi-agent-builder",
+  "version": "2.4.0",
+  "description": "Data Agent 搭建向导：把观远 BI 看板变成 AI data agent 的引导式 skill（开源免费 · MIT）",
+  "license": "MIT",
+  "author": "Jeremy",
+  "homepage": "https://github.com/JeremyWXL/guanbi-agent-builder",
+  "interface": {
+    "displayName": "Data Agent 搭建向导（观远 BI）",
+    "shortDescription": "把 BI 看板变成专属 data agent 的开源引导式搭建向导",
+    "longDescription": "个人开发者作品，与观远数据官方无关。以对话方式引导不懂技术的业务用户在 WorkBuddy 中一步步搭建自己的 data agent：勾选式看板选择、校验工作台、资产体检、多 agent 总览。依赖 guancli 与 python3。"
+  }
+}
