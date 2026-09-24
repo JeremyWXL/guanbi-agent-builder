@@ -15,7 +15,7 @@ import re, subprocess, sys
 
 BLOCKED = ('INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 'TRUNCATE',
            'GRANT', 'REVOKE', 'MERGE', 'REPLACE', 'CALL', 'EXEC', 'EXECUTE',
-           'SET', 'USE', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN')
+           'SET', 'USE', 'SHOW', 'DESCRIBE', 'EXPLAIN')
 
 
 def strip_literals_and_comments(sql):

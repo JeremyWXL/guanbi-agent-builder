@@ -3,13 +3,20 @@
 看板结构解析器：guancli page get --raw（JSON 主解析）→ 卡片清单
 主路径解析原始 JSON，名称/ID/类型天然配对，不受文本格式变动影响；
 --raw 不可用或结构不符时回退文本解析（兼容旧版 guancli），仍按 Card 块内联 **ID:** 解析。
-用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录>
+用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4]
 输出: <输出目录>/cards-raw.json
-  {看板名: {pgId, mtime, dsIds, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails, unitHints}]},
-   "_meta": {builtAt, biBaseUrl, parser, pages: {...}}}
+  {看板名: {pgId, mtime, dsIds, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails, unitHints,
+                                        dims, measures}]},
+   "_meta": {builtAt, biBaseUrl, parser, pages: {...}, dsFormulas: {dsId: {dsName, virtualColumns}}}}
+公式收割（data agent 口径字典的原料）:
+  - 每张数据卡的 measures: 字段名/别名/聚合方式/计算公式/高级计算(同比占比)/fdId
+  - dims: 卡片的行维度（指标的当前粒度，判断"换维度是否安全"的依据）
+  - _meta.dsFormulas: 各数据集的计算字段（virtualColumns）公式原文，
+    供卡片按 fdId 引用数据集计算字段时补全；--skip-ds-formulas 可关闭
 哨兵: 任何看板解析出 0 张卡片即整体报错退出（exit 2），禁止静默产出空资产。
 """
 import json, re, subprocess, sys, os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
@@ -39,8 +46,7 @@ def _fd_name_map(data):
 def _unit_hints(card):
     """从 zoneData.metric[].fieldFormat.numberFormat 提取单位线索（万/千/divideDataBy）"""
     hints = {}
-    zd = (((card.get("content") or {}).get("meta") or {}).get("chartMain") or {}).get("zoneData") or {}
-    for metric in zd.get("metric") or []:
+    for metric in _zone_data(card).get("metric") or []:
         if not isinstance(metric, dict):
             continue
         nf = ((metric.get("fieldFormat") or {}).get("numberFormat") or {})
@@ -58,11 +64,54 @@ def _unit_hints(card):
     return hints
 
 
+def _zone_data(card):
+    return (((card.get("content") or {}).get("meta") or {}).get("chartMain") or {}).get("zoneData") or {}
+
+
+def _card_dims(card):
+    """行维度名列表：指标的当前粒度（判断"换维度聚合是否安全"的基准）"""
+    dims = []
+    for d in _zone_data(card).get("row") or []:
+        if isinstance(d, dict) and d.get("name"):
+            dims.append(d["name"])
+    return dims
+
+
+def _card_measures(card):
+    """收割度量字段：名称/别名/聚合方式/计算公式/高级计算/fdId——口径字典的原料"""
+    measures = []
+    for m in _zone_data(card).get("metric") or []:
+        if not isinstance(m, dict):
+            continue
+        adv = (m.get("advCalc") or {}).get("advType")
+        entry = {
+            "name": m.get("name") or "",
+            "alias": m.get("alias") or "",
+            "fdId": m.get("fdId") or "",
+            "dsId": m.get("dsId") or "",
+        }
+        if m.get("aggrType"):
+            entry["aggrType"] = m["aggrType"]
+        if m.get("calculationType") and m["calculationType"] != "normal":
+            entry["calcType"] = m["calculationType"]
+        if m.get("formula"):
+            entry["formula"] = m["formula"]
+        if adv:
+            entry["advType"] = adv
+            av = (m.get("advCalc") or {}).get("advValue") or {}
+            if adv == "COMPARATIVE":
+                entry["advParams"] = {k: av.get(k) for k in
+                                      ("granularity", "offset", "offsetType", "valueType") if av.get(k) is not None}
+        # 无公式的物理字段不记（没有信息增量），有公式/高级计算/聚合方式的才进字典
+        if len(entry) > 4:
+            measures.append(entry)
+    return measures
+
+
 def _card_filters(card, fd_names):
     """CHART 卡片的过滤器：fdId 翻译为名称，保留过滤类型与值（理解卡片语义的关键）"""
-    zd = (((card.get("content") or {}).get("meta") or {}).get("chartMain") or {}).get("zoneData") or {}
     details = []
-    for f in zd.get("filters") or []:
+    for f in _zone_data(card).get("filters") or []:
         if not isinstance(f, dict):
             continue
         fd_id = f.get("fdId", "")
@@ -70,8 +119,43 @@ def _card_filters(card, fd_names):
             "field": fd_names.get(fd_id, fd_id),
             "filterType": f.get("filterType", ""),
             "filterValue": f.get("filterValue"),
+            "level": f.get("filterLevel", ""),
         })
     return details
+
+
+def fetch_ds_formulas(ds_ids, workers=4):
+    """收割数据集计算字段（virtualColumns）公式。ds get --raw --brief 轻量且含 virtualColumns；
+    单个失败不阻断整体（降级为只有卡片级公式）。"""
+    def fetch(ds_id):
+        code, out, err = run_guancli(["ds", "get", ds_id, "--raw", "--brief"], timeout=60)
+        if code != 0:
+            return ds_id, {"error": (err or out)[:150]}
+        try:
+            raw = json.loads(out)
+        except json.JSONDecodeError:
+            return ds_id, {"error": "RAW_NOT_JSON"}
+        data = raw.get("data") or raw
+        vcs = []
+        for vc in data.get("virtualColumns") or []:
+            if isinstance(vc, dict) and vc.get("name"):
+                vcs.append({"fdId": vc.get("fdId", ""), "name": vc["name"],
+                            "formula": vc.get("formula", ""),
+                            "calcType": vc.get("calculationType", ""),
+                            "aggrType": vc.get("aggrType", "")})
+        return ds_id, {"dsName": data.get("name", ""), "virtualColumns": vcs}
+
+    result = {}
+    if not ds_ids:
+        return result
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(fetch, d): d for d in ds_ids}
+        for fut in as_completed(futs):
+            ds_id, info = fut.result()
+            result[ds_id] = info
+            note = f"{len(info.get('virtualColumns', []))} 个计算字段" if "error" not in info else "获取失败(已跳过)"
+            print(f"  数据集公式收割 {ds_id}: {note}", flush=True)
+    return result
 
 
 def parse_page_raw(page_id):
@@ -114,6 +198,8 @@ def parse_page_raw(page_id):
             "filters": filters,
             "filterDetails": filter_details,
             "unitHints": _unit_hints(c),
+            "dims": _card_dims(c),
+            "measures": _card_measures(c),
         })
     return {
         "title": (data.get("name") or page_id).strip(),
@@ -153,6 +239,8 @@ def parse_page_text(page_id):
             "filters": [f.strip() for f in filters],
             "filterDetails": [],
             "unitHints": {},
+            "dims": [],
+            "measures": [],
         })
     return {"title": title, "pgId": page_id, "mtime": mtime, "dsIds": [], "cards": cards,
             "_parser": "text-fallback"}
@@ -169,24 +257,40 @@ def parse_page(page_id):
 def main():
     args = sys.argv[1:]
     out = '.'
+    skip_ds = '--skip-ds-formulas' in args
+    workers = 4
     page_ids = []
     i = 0
     while i < len(args):
         if args[i] == '-o':
             out = args[i + 1]
             i += 2
+        elif args[i] == '--skip-ds-formulas':
+            i += 1
+        elif args[i] == '--workers':
+            workers = int(args[i + 1])
+            i += 2
         else:
             page_ids.append(args[i])
             i += 1
     if not page_ids:
-        sys.exit("用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录>")
+        sys.exit("用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4]")
     os.makedirs(out, exist_ok=True)
+
+    # 并发解析各看板（保持用户勾选顺序输出）
+    parsed = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(parse_page, pid): pid for pid in page_ids}
+        for fut in as_completed(futs):
+            pid = futs[fut]
+            print(f"解析看板 {pid} ...", flush=True)
+            parsed[pid] = fut.result()
+
     result = {}
     failed, empty = [], []
     parsers = set()
     for pid in page_ids:
-        print(f"解析看板 {pid} ...", flush=True)
-        info = parse_page(pid)
+        info = parsed[pid]
         if "error" in info and info["error"] not in ("RAW_NOT_JSON", "RAW_SCHEMA_MISMATCH"):
             print(f"  失败: {info['error']}")
             failed.append(pid)
@@ -195,7 +299,7 @@ def main():
         raw_count = info.pop("_rawCardCount", None)
         if raw_count is not None and len(info["cards"]) < raw_count:
             # JSON 里明明有卡片却一张都没解析出来 = 输出结构已变更
-            print(f"  ❌ 哨兵: 原始数据含 {raw_count} 张卡片但解析出 0 张——"
+            print(f"  ❌ 哨兵: 原始数据含 {raw_count} 张卡片但解析出 {len(info['cards'])} 张——"
                   f"guancli 输出结构可能已变更，禁止继续")
             empty.append(pid)
             continue
@@ -204,14 +308,24 @@ def main():
             continue
         n_data = sum(1 for c in info['cards'] if c['type'] not in ('SELECTOR', 'TEXT'))
         n_pool = sum(1 for c in info['cards'] if c['inPool'])
+        n_formula = sum(1 for c in info['cards'] for m in c.get('measures', []) if m.get('formula'))
         print(f"  {info['title']}: {len(info['cards'])} 张卡片"
-              f"（数据卡 {n_data}，筛选器/文本 {len(info['cards'])-n_data}，卡片池 {n_pool}）")
+              f"（数据卡 {n_data}，筛选器/文本 {len(info['cards'])-n_data}，卡片池 {n_pool}，"
+              f"公式字段 {n_formula}）")
         result[info['title']] = info
     if empty:
         sys.exit(f"解析失败: {len(empty)} 个看板解析异常（{', '.join(empty)}）。"
                  f"请检查 guancli 版本兼容性后再试")
     if not result:
         sys.exit(f"解析失败: 全部 {len(failed)} 个看板获取失败（{', '.join(failed)}）")
+
+    # 数据集计算字段公式收割（卡片按 fdId 引用数据集计算字段时补全口径）
+    ds_formulas = {}
+    if not skip_ds:
+        all_ds = sorted({d for v in result.values() if isinstance(v, dict)
+                         for d in (v.get("dsIds") or [])})
+        ds_formulas = fetch_ds_formulas(all_ds, workers)
+
     # 学习时点元数据：供交付后体检（看板是否在 agent 学习后被改过）
     result["_meta"] = {
         "builtAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -219,6 +333,7 @@ def main():
         "parser": "+".join(sorted(parsers)),
         "pages": {v["pgId"]: {"title": k, "mtime": v.get("mtime", "")}
                   for k, v in result.items() if isinstance(v, dict) and "pgId" in v},
+        "dsFormulas": ds_formulas,
     }
     out_file = os.path.join(out, 'cards-raw.json')
     with open(out_file, 'w', encoding='utf-8') as f:
