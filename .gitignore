@@ -6,3 +6,4 @@ __pycache__/
 .alipay-sandbox.json
 .a2m-orders.db
 .workbuddy/
+_preview/

@@ -18,164 +18,276 @@ from urllib.parse import urlparse, parse_qs
 COMMON_CSS = r"""
 :root{
   color-scheme: light;
-  --bg:#f6f8f5; --card:#ffffff; --border:#dce7dd; --soft:#e8f0e9;
-  --pri:#3c8c4e; --deep:#1f7237; --text:#12261ae6; --text2:#12261ab3; --text3:#12261a80;
-  --ok-bg:#d1fae5; --ok:#047857; --warn-bg:#fef3c7; --warn:#b45309; --err-bg:#fee2e2; --err:#dc2626;
-  --cyan:#0e7490; --cyan-bg:#06b6d414;
-  --shadow:0 12px 24px -8px rgba(0,0,0,.05),0 2px 4px -4px rgba(0,0,0,.05);
-  --code-bg:#12261a; --code-fg:#d7f0dd;
+  --paper:#f7f5ef; --paper2:#efecdf; --sheet:#fdfcf7;
+  --ink:#1d1a15; --ink2:#5d584b; --ink3:#9a937e;
+  --line:#dfdac9; --line2:#c6bfa9;
+  --acc:#165f49; --acc-ink:#0d4031; --acc-soft:rgba(22,95,73,.07);
+  --ok:#1a7a4a; --warn:#a25c06; --err:#b3261e;
+  --ok-soft:rgba(26,122,74,.09); --warn-soft:rgba(162,92,6,.09); --err-soft:rgba(179,38,30,.07);
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --shadow:0 1px 0 rgba(29,26,21,.03),0 14px 30px -16px rgba(29,26,21,.22);
+  --code-bg:#151b17; --code-fg:#cfe3d6;
 }
 @media (prefers-color-scheme: dark){ :root{
   color-scheme: dark;
-  --bg:#0e130f; --card:#182019; --border:#2a352c; --soft:#1f2c22;
-  --pri:#59ac65; --deep:#8fca97; --text:#e8f0eadf; --text2:#e8f0eaaa; --text3:#e8f0ea73;
-  --ok-bg:#04785733; --ok:#4ade80; --warn-bg:#d9770629; --warn:#fbbf24; --err-bg:#dc262629; --err:#f87171;
-  --cyan:#67e8f9; --cyan-bg:#06b6d41f;
-  --shadow:0 12px 24px -8px rgba(0,0,0,.35),0 2px 4px -4px rgba(0,0,0,.3);
-  --code-bg:#0a0f0b; --code-fg:#b7e3c2;
+  --paper:#0d110e; --paper2:#111613; --sheet:#171e1a;
+  --ink:#e8e5da; --ink2:#aba696; --ink3:#6f6a5a;
+  --line:#262e28; --line2:#37423b;
+  --acc:#57b189; --acc-ink:#8fd2b2; --acc-soft:rgba(87,177,137,.10);
+  --ok:#4cc181; --warn:#e0a34a; --err:#e0655d;
+  --ok-soft:rgba(76,193,129,.13); --warn-soft:rgba(224,163,74,.13); --err-soft:rgba(224,101,93,.11);
+  --shadow:0 1px 0 rgba(0,0,0,.25),0 14px 30px -14px rgba(0,0,0,.55);
+  --code-bg:#090d0a; --code-fg:#b7d9c2;
 }}
+:root[data-theme=light]{
+  color-scheme: light;
+  --paper:#f7f5ef; --paper2:#efecdf; --sheet:#fdfcf7;
+  --ink:#1d1a15; --ink2:#5d584b; --ink3:#9a937e;
+  --line:#dfdac9; --line2:#c6bfa9;
+  --acc:#165f49; --acc-ink:#0d4031; --acc-soft:rgba(22,95,73,.07);
+  --ok:#1a7a4a; --warn:#a25c06; --err:#b3261e;
+  --ok-soft:rgba(26,122,74,.09); --warn-soft:rgba(162,92,6,.09); --err-soft:rgba(179,38,30,.07);
+  --shadow:0 1px 0 rgba(29,26,21,.03),0 14px 30px -16px rgba(29,26,21,.22);
+  --code-bg:#151b17; --code-fg:#cfe3d6;
+}
 :root[data-theme=dark]{
   color-scheme: dark;
-  --bg:#0e130f; --card:#182019; --border:#2a352c; --soft:#1f2c22;
-  --pri:#59ac65; --deep:#8fca97; --text:#e8f0eadf; --text2:#e8f0eaaa; --text3:#e8f0ea73;
-  --ok-bg:#04785733; --ok:#4ade80; --warn-bg:#d9770629; --warn:#fbbf24; --err-bg:#dc262629; --err:#f87171;
-  --cyan:#67e8f9; --cyan-bg:#06b6d41f;
-  --shadow:0 12px 24px -8px rgba(0,0,0,.35),0 2px 4px -4px rgba(0,0,0,.3);
-  --code-bg:#0a0f0b; --code-fg:#b7e3c2;
+  --paper:#0d110e; --paper2:#111613; --sheet:#171e1a;
+  --ink:#e8e5da; --ink2:#aba696; --ink3:#6f6a5a;
+  --line:#262e28; --line2:#37423b;
+  --acc:#57b189; --acc-ink:#8fd2b2; --acc-soft:rgba(87,177,137,.10);
+  --ok:#4cc181; --warn:#e0a34a; --err:#e0655d;
+  --ok-soft:rgba(76,193,129,.13); --warn-soft:rgba(224,163,74,.13); --err-soft:rgba(224,101,93,.11);
+  --shadow:0 1px 0 rgba(0,0,0,.25),0 14px 30px -14px rgba(0,0,0,.55);
+  --code-bg:#090d0a; --code-fg:#b7d9c2;
 }
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
-  font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-wrap:break-word;
+body{background:var(--paper);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-wrap:break-word;
   -webkit-tap-highlight-color:transparent}
-h1,h3{text-wrap:balance}
-a{color:var(--pri);text-decoration:none}
-a:hover{text-decoration:underline}
+h1,h2,h3{text-wrap:balance}
+a{color:var(--acc);text-decoration:none;box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--acc) 35%,transparent);
+  transition:box-shadow .15s,color .15s}
+a:hover{color:var(--acc-ink);box-shadow:inset 0 -1.5px 0 var(--acc)}
 button,textarea{touch-action:manipulation;font-family:inherit}
 button:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visible{
-  outline:2px solid var(--pri);outline-offset:2px;border-radius:6px}
-.shell{max-width:1080px;margin:0 auto;padding:24px 20px 64px;display:flex;gap:20px;align-items:flex-start}
-.side{flex:0 0 188px;position:sticky;top:24px}
-.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px}
-.brand .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#59ac65,#1f7237);
-  display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;color:#fff}
-.brand .t1{font-weight:600;font-size:14px}.brand .t2{font-size:11px;color:var(--text3)}
-.nav{display:flex;flex-direction:column;gap:4px}
-.nav button{display:flex;align-items:center;gap:9px;padding:9px 12px;border:none;border-radius:10px;
-  background:transparent;color:var(--text2);font-size:13.5px;cursor:pointer;text-align:left;
-  transition:background-color .15s,color .15s}
-.nav button:hover{background:#ffffff14}
-.nav button.on{background:var(--card);color:var(--deep);font-weight:600;box-shadow:var(--shadow)}
-.nav button.on .ico{background:var(--pri);color:#fff}
-.nav .ico{width:22px;height:22px;border-radius:7px;background:var(--soft);display:flex;
-  align-items:center;justify-content:center;font-size:12px;flex:none}
-.side .done{margin-top:18px;width:100%;padding:10px;border:none;border-radius:10px;background:var(--pri);
-  color:#fff;font-size:13.5px;cursor:pointer;box-shadow:var(--shadow);transition:background-color .15s}
-.side .done:hover{background:var(--deep)}
+  outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
+::selection{background:color-mix(in srgb,var(--acc) 22%,transparent)}
+
+/* ---------- 微型标签 / 状态灯 / 等宽数字 ---------- */
+.micro{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink3);font-weight:500}
+.led{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,currentColor 15%,transparent)}
+.led.pulse{animation:ledp 1.5s ease-in-out infinite}
+@keyframes ledp{50%{box-shadow:0 0 0 5px color-mix(in srgb,currentColor 6%,transparent);opacity:.6}}
+
+/* ---------- 骨架 ---------- */
+.shell{max-width:1120px;margin:0 auto;padding:30px 24px 80px;display:flex;gap:40px;align-items:flex-start}
+.side{flex:0 0 206px;position:sticky;top:30px}
+.brand{display:flex;align-items:center;gap:12px;padding:2px 4px 20px}
+.brand .mark{width:36px;height:36px;color:var(--ink);flex:none}
+.brand .t1{font-weight:650;font-size:14px;margin-top:2px}
+.brand .t2{font-size:11.5px;color:var(--ink3);margin-top:1px}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav button{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:baseline;padding:8px 10px;
+  border:none;background:transparent;color:var(--ink2);font-size:13.5px;cursor:pointer;text-align:left;
+  position:relative;transition:color .15s}
+.nav button .idx{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--ink3);
+  transition:color .15s}
+.nav button::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:1.5px;
+  background:var(--acc);transform:scaleX(0);transform-origin:left;transition:transform .28s cubic-bezier(.2,.7,.2,1)}
+.nav button:hover{color:var(--ink)}
+.nav button:hover::after{transform:scaleX(.3)}
+.nav button.on{color:var(--ink);font-weight:650}
+.nav button.on .idx{color:var(--acc)}
+.nav button.on::after{transform:scaleX(1)}
+.side .done{margin-top:22px;width:100%;padding:10px 12px;border:none;border-radius:9px;background:var(--ink);
+  color:var(--paper);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  gap:8px;transition:opacity .15s}
+.side .done:hover{opacity:.85}
 .main{flex:1;min-width:0}
-.topbar{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
-  padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.topbar h1{font-size:19px;font-weight:650}
-.topbar .meta{font-size:12px;color:var(--text3);margin-top:3px;font-variant-numeric:tabular-nums}
-.mode{margin-left:auto;font-size:12px;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--deep);flex:none}
-.mode.edit{background:var(--warn-bg);color:var(--warn)}
-.panel{display:none}.panel.on{display:block;animation:fadein .18s ease}
-@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.hint{background:var(--card);border:1px dashed var(--border);border-radius:12px;padding:10px 14px;
-  font-size:12.5px;color:var(--text2);margin-bottom:14px}
-.stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.stat{flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:12px;
-  padding:14px 18px;box-shadow:var(--shadow)}
-.stat .n{font-size:26px;font-weight:700;color:var(--deep);font-variant-numeric:tabular-nums;line-height:1.2}
-.stat .l{font-size:12px;color:var(--text3);margin-top:2px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:12px;
-  box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px}
-.card > h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.card > h3 .sub{font-size:12px;color:var(--text3);font-weight:400}
-.chip{display:inline-flex;align-items:center;padding:1px 9px;border-radius:999px;font-size:11.5px;font-weight:500}
-.c-ok{background:var(--ok-bg);color:var(--ok)}
-.c-warn{background:var(--warn-bg);color:var(--warn)}
-.c-err{background:var(--err-bg);color:var(--err)}
-.c-soft{background:var(--soft);color:var(--deep)}
-.c-cyan{background:var(--cyan-bg);color:var(--cyan)}
-details.card{padding:0}
-details.card > summary{list-style:none;cursor:pointer;padding:14px 18px;display:flex;align-items:center;
-  gap:8px;font-size:14.5px;font-weight:600;border-radius:12px;transition:background-color .15s}
-details.card > summary:hover{background:color-mix(in srgb,var(--pri) 6%,transparent)}
-details.card > summary::-webkit-details-marker{display:none}
-details.card > summary .arrow{transition:transform .15s;color:var(--text3);font-size:11px;flex:none}
-details.card[open] > summary .arrow{transform:rotate(90deg)}
-details.card > .body{padding:0 18px 16px;border-top:1px solid var(--border)}
-details.card .sub{font-size:12px;color:var(--text3);font-weight:400}
-.frow{display:flex;gap:10px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--text) 5%,transparent);font-size:13px}
+.dochead{border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:8px;
+  display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.dochead h1{font-size:26px;font-weight:750;letter-spacing:.01em;margin-top:4px}
+.dochead .meta{font-size:12px;color:var(--ink3);margin-top:5px;font-family:var(--mono);
+  font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.modebadge{margin-left:auto;display:inline-flex;align-items:center;gap:8px;flex:none;
+  border:1px solid var(--line2);border-radius:999px;padding:5px 13px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink2)}
+.modebadge.edit{border-color:color-mix(in srgb,var(--warn) 45%,transparent);color:var(--warn)}
+.panel{display:none}.panel.on{display:block;animation:fadein .2s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+/* ---------- 区块：细线分节，不叠卡片 ---------- */
+.hint{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink2);
+  margin:18px 0 16px;padding:0 2px}
+.hint::before{content:"";width:18px;height:1.5px;background:var(--acc);flex:none}
+.block{border-top:1px solid var(--line);padding:18px 0 22px}
+.block > h3{font-size:15px;font-weight:650;display:flex;align-items:baseline;gap:10px;
+  margin-bottom:12px;flex-wrap:wrap}
+.block > h3 .sub,.card > h3 .sub,details.card .sub{font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+.sheet{background:var(--sheet);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+
+/* 概览身份卡 */
+.idsheet{padding:24px 26px;margin:18px 0 22px}
+.id-top{display:flex;gap:18px;align-items:flex-start}
+.id-name{font-size:27px;font-weight:750;letter-spacing:.01em;margin:3px 0 6px}
+.id-desc{font-size:13.5px;color:var(--ink2);max-width:56em}
+.id-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:14px;
+  border-top:1px solid var(--line)}
+.id-meta{display:flex;gap:0;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:11.5px;color:var(--ink3);flex-wrap:wrap;row-gap:4px;
+  font-variant-numeric:tabular-nums;letter-spacing:.03em}
+.id-meta span + span::before{content:"·";margin:0 10px;color:var(--line2)}
+
+/* 指标行：无边框大数字 */
+.metrics{display:flex;margin:16px 0 26px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.metric{flex:1;min-width:110px;padding:16px 20px 15px;border-left:1px solid var(--line)}
+.metric:first-child{border-left:none;padding-left:2px}
+.metric .n{font-family:var(--mono);font-size:29px;font-weight:600;line-height:1.1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.metric .l{margin-top:5px}
+
+/* 标签（chip 继任者）：描边小胶囊 + 状态灯 */
+.tag{display:inline-flex;align-items:center;gap:6px;padding:1.5px 9px;border:1px solid var(--line2);
+  border-radius:999px;font-size:11.5px;color:var(--ink2);white-space:nowrap;vertical-align:1px}
+.tag .led{width:6px;height:6px;box-shadow:none}
+.t-ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 38%,transparent)}
+.t-warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 38%,transparent)}
+.t-err{color:var(--err);border-color:color-mix(in srgb,var(--err) 38%,transparent)}
+
+/* 键值行 */
+.frow{display:flex;gap:14px;padding:8px 2px;border-top:1px solid var(--line);font-size:13px;
+  align-items:baseline}
 .frow:first-of-type{border-top:none}
-.frow .k{flex:0 0 96px;color:var(--text3);font-size:12.5px;padding-top:1px}
+.frow .k{flex:0 0 108px;font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--ink3)}
 .frow .v{flex:1;min-width:0}
+
+/* 表格：细线 + 等宽表头 */
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{background:var(--soft);color:var(--deep);font-weight:600;text-align:left;padding:7px 10px}
-td{padding:7px 10px;border-top:1px solid color-mix(in srgb,var(--text) 6%,transparent)}
-tr:hover td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
-.rule{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);
-  padding:14px 16px;margin-bottom:10px;position:relative}
-.rule .head{display:flex;align-items:center;gap:10px;padding-right:150px}
-.num{flex:none;width:24px;height:24px;border-radius:8px;background:var(--soft);color:var(--deep);
-  font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
-  font-variant-numeric:tabular-nums}
-.rtitle{font-weight:600;font-size:14px}
-.rbody{margin-top:6px;padding-left:34px;color:var(--text2);font-size:13px;line-height:1.75;white-space:pre-wrap}
-.rule .acts{position:absolute;top:12px;right:12px;display:flex;gap:6px;align-items:center}
-.addrule{width:100%;padding:13px;border:1.5px dashed var(--border);border-radius:12px;background:transparent;
-  color:var(--text3);font-size:13px;cursor:pointer;transition:border-color .15s,color .15s,background-color .15s}
-.addrule:hover{border-color:var(--pri);color:var(--deep);background:color-mix(in srgb,var(--card) 60%,transparent)}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink3);font-weight:500;text-align:left;padding:9px 10px;
+  border-bottom:1.5px solid var(--ink)}
+td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:baseline}
+tr:hover td{background:var(--acc-soft)}
+td.mono,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* 口径台账 */
+.rule{display:grid;grid-template-columns:40px 1fr auto;gap:14px;padding:14px 0 15px;
+  border-top:1px solid var(--line)}
+.rule .num{font-family:var(--mono);font-size:12.5px;color:var(--ink3);padding-top:2px;
+  font-variant-numeric:tabular-nums;letter-spacing:.05em}
+.rule.formula{box-shadow:inset 3px 0 0 var(--acc);background:var(--acc-soft);
+  padding-left:14px;padding-right:10px}
+.rule .rhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.rtitle{font-weight:650;font-size:14px}
+.src{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--ink3);
+  border:1px solid var(--line2);border-radius:5px;padding:.5px 6px;white-space:nowrap}
+.src.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.rbody{margin-top:5px;color:var(--ink2);font-size:13px;line-height:1.75;white-space:pre-wrap}
+.rule .acts{display:flex;gap:6px;align-items:flex-start;opacity:.55;transition:opacity .15s}
+.rule:hover .acts,.rule:focus-within .acts{opacity:1}
+.addrule{width:100%;padding:13px;border:1.5px dashed var(--line2);border-radius:10px;background:transparent;
+  color:var(--ink3);font-family:var(--mono);font-size:12px;letter-spacing:.06em;cursor:pointer;
+  transition:border-color .15s,color .15s,background-color .15s;margin-top:14px}
+.addrule:hover{border-color:var(--acc);color:var(--acc-ink);background:var(--acc-soft)}
+
+/* 折叠区块：hover 展开强调线 */
+details.card{padding:0;border-top:1px solid var(--line)}
+details.card > summary{list-style:none;cursor:pointer;padding:15px 2px;display:flex;align-items:baseline;
+  gap:10px;font-size:14.5px;font-weight:650;position:relative;transition:color .15s}
+details.card > summary:hover{color:var(--acc-ink)}
+details.card > summary::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+  background:var(--acc);transform:scaleX(0);transform-origin:left;transition:transform .3s cubic-bezier(.2,.7,.2,1)}
+details.card > summary:hover::after{transform:scaleX(1)}
+details.card > summary::-webkit-details-marker{display:none}
+details.card > summary .arrow{transition:transform .18s;color:var(--ink3);font-size:10px;flex:none;
+  font-family:var(--mono)}
+details.card[open] > summary .arrow{transform:rotate(90deg);color:var(--acc)}
+details.card > .body{padding:2px 2px 18px}
+details.card .sub{font-weight:500}
+
+/* markdown-lite 元素 */
+.mh{font-weight:700;font-size:13.5px;margin:14px 0 6px}
+.mh:first-child{margin-top:2px}
+.block table,.panel .body table{margin:6px 0 10px}
 .step{display:flex;gap:10px;padding:5px 0;font-size:13px}
-.step .sn{flex:none;width:20px;height:20px;border-radius:6px;background:var(--cyan-bg);color:var(--cyan);
-  font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px;
+.step .sn{flex:none;font-family:var(--mono);font-size:11px;color:var(--acc);padding-top:2px;
   font-variant-numeric:tabular-nums}
-.bullet{display:flex;gap:8px;padding:3px 0;font-size:13px}
-.bullet::before{content:"";flex:none;width:5px;height:5px;border-radius:50%;background:var(--pri);margin-top:9px}
-.quote{border-left:3px solid var(--pri);background:var(--soft);border-radius:0 8px 8px 0;
-  padding:8px 12px;margin:8px 0;font-size:12.5px;color:var(--text2)}
-.legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-textarea{width:100%;min-height:110px;font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;
-  padding:10px 12px;border:1px solid var(--border);border-radius:10px;resize:vertical;
-  background:color-mix(in srgb,var(--soft) 40%,var(--card));color:var(--text);outline:none}
-textarea:focus-visible{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 20%,transparent)}
-.btn{padding:5px 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);
-  cursor:pointer;font-size:12.5px;color:var(--text);transition:border-color .15s,color .15s,background-color .15s}
-.btn:hover{border-color:var(--pri);color:var(--deep)}
-.btn.primary{background:var(--pri);border-color:var(--pri);color:#fff}
-.btn.primary:hover{background:var(--deep);border-color:var(--deep);color:#fff}
+.step .sn::after{content:"."}
+.bullet{display:flex;gap:9px;padding:3px 0;font-size:13px}
+.bullet::before{content:"";flex:none;width:5px;height:5px;background:var(--acc);margin-top:9px}
+.quote{border-left:2px solid var(--acc);background:var(--acc-soft);border-radius:0 8px 8px 0;
+  padding:8px 12px;margin:8px 0;font-size:12.5px;color:var(--ink2)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+
+/* 编辑与按钮 */
+textarea{width:100%;min-height:110px;font:13px/1.7 var(--mono);
+  padding:12px 14px;border:1px solid var(--line2);border-radius:10px;resize:vertical;
+  background:var(--sheet);color:var(--ink);outline:none}
+textarea:focus-visible{outline:none;border-color:var(--acc);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+.btn{padding:5px 14px;border-radius:8px;border:1px solid var(--line2);background:transparent;
+  cursor:pointer;font-size:12.5px;color:var(--ink2);
+  transition:border-color .15s,color .15s,background-color .15s}
+.btn:hover{border-color:var(--ink);color:var(--ink)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;
+  display:inline-flex;align-items:center;gap:8px}
+.btn.primary:hover{background:var(--acc-ink);border-color:var(--acc-ink);color:#fff}
+.btn.primary .led{box-shadow:0 0 0 3px rgba(255,255,255,.25)}
 .btn.danger:hover{border-color:var(--err);color:var(--err)}
-.btn.mini{padding:2px 10px;font-size:12px}
-.btnrow{margin-top:10px;display:flex;gap:8px;align-items:center}
-.saved{display:inline-flex;align-items:center;font-size:12px;color:var(--ok);font-weight:500}
-code.ic{background:var(--soft);border-radius:5px;padding:0 5px;font:12px ui-monospace,Menlo,monospace;color:var(--deep)}
-pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:14px;
-  font:12px/1.6 ui-monospace,Menlo,monospace;overflow:auto;max-height:420px}
-.empty{padding:32px 24px;text-align:center;color:var(--text3);font-size:13px}
-.empty .t{font-size:14px;color:var(--text2);margin-bottom:6px}
-.avatar{border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
-#toast{position:fixed;top:18px;right:20px;padding:9px 16px;border-radius:10px;font-size:13px;z-index:9;
-  display:none;box-shadow:var(--shadow)}
-#toast.ok{background:var(--ok-bg);color:var(--ok)}
-#toast.err{background:var(--err-bg);color:var(--err)}
+.btn.mini{padding:2px 10px;font-size:11.5px;font-family:var(--mono);letter-spacing:.03em}
+.btnrow{margin-top:12px;display:flex;gap:8px;align-items:center}
+.saved{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ok);
+  font-family:var(--mono);letter-spacing:.04em}
+code.ic{background:var(--paper2);border-radius:5px;padding:0 5px;font:12px var(--mono);color:var(--acc-ink)}
+pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:14px 16px;
+  font:12px/1.65 var(--mono);overflow:auto;max-height:420px}
+.fn{font-family:var(--mono);font-size:13px;font-weight:600}
+.empty{border:1.5px dashed var(--line2);border-radius:14px;padding:38px 24px;text-align:center;
+  color:var(--ink3);font-size:13px;margin:18px 0}
+.empty .t{font-size:14.5px;color:var(--ink2);margin-bottom:6px;font-weight:600}
+.avatar{border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;
+  flex:none;font-weight:700;letter-spacing:0}
+#toast{position:fixed;top:18px;right:20px;padding:10px 16px;border-radius:10px;font-size:12.5px;z-index:9;
+  display:none;background:var(--sheet);border:1px solid var(--line);box-shadow:var(--shadow);
+  border-left:3px solid var(--ok);color:var(--ink)}
+#toast.err{border-left-color:var(--err)}
 .hidden{display:none!important}
+
+/* 体检结果行 */
+.diag{display:flex;align-items:baseline;gap:10px;padding:8px 2px;border-top:1px solid var(--line);
+  font-size:13px}
+.diag:first-of-type{border-top:none}
+.diag .dt{flex:1;min-width:0}
+.diag .led{margin-top:1px}
+
 @media (max-width:760px){
-  .shell{flex-direction:column;padding:16px 12px 48px}
+  .shell{flex-direction:column;padding:16px 14px 48px;gap:18px}
   .side{position:static;flex:none;width:100%}
-  .nav{flex-direction:row;overflow-x:auto;padding-bottom:4px}
-  .nav button{flex:none}
+  .brand{padding-bottom:12px}
+  .nav{flex-direction:row;overflow-x:auto;padding-bottom:6px;gap:4px}
+  .nav button{flex:none;grid-template-columns:1fr;gap:0}
+  .nav button .idx{display:none}
   .side .done{width:auto}
-  .rule .head{padding-right:0}
-  .rule .acts{position:static;margin-top:8px;justify-content:flex-end}
+  .dochead h1{font-size:22px}
+  .rule{grid-template-columns:30px 1fr}
+  .rule .acts{grid-column:2;justify-content:flex-end;opacity:1}
+  .metric{padding:12px 12px}
+  .metric .n{font-size:22px}
 }
 @media print{
   body{background:#fff}
-  .side,#toast,.acts,.btnrow,.addrule,.mode{display:none!important}
+  .side,#toast,.acts,.btnrow,.addrule,.modebadge{display:none!important}
   .shell{display:block;max-width:none;padding:0}
+  .dochead{border-bottom-color:#000}
   .panel{display:block!important;animation:none}
   details.card > .body{display:block}
-  .card,.rule,.stat,details.card{box-shadow:none;break-inside:avoid}
+  .idsheet,.rule,.metric,details.card,.empty{box-shadow:none;break-inside:avoid}
+  a{box-shadow:none;color:inherit}
 }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
@@ -183,50 +295,49 @@ pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;paddi
 """
 
 COMMON_JS = r"""
-if(new URLSearchParams(location.search).has("dark")) document.documentElement.dataset.theme = "dark";
+const _q = new URLSearchParams(location.search);
+if(_q.has("dark")) document.documentElement.dataset.theme = "dark";
+if(_q.has("light")) document.documentElement.dataset.theme = "light";
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 function el(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstChild; }
 function toast(msg, ok=true){
   const t = document.getElementById("toast"); t.textContent = msg; t.className = ok ? "ok" : "err";
   t.style.display = "block"; setTimeout(()=> t.style.display = "none", 3000);
 }
-/* 业务头像：名称关键词 → 代表性 emoji + 哈希渐变 */
-const AVATAR_KW = [
-  [/餐饮|茶饮|外卖/, "🍜"], [/电商|跨境/, "🛒"], [/财务|费用|毛利|资金/, "💰"],
-  [/制造|工厂|生产/, "🏭"], [/会员|客户|用户/, "👥"], [/供应链|库存|采购/, "🚚"],
-  [/人力|人资|组织/, "🧑‍💼"], [/市场|品牌|营销/, "📣"], [/商品|产品/, "📦"],
-  [/零售|门店|连锁|销售|业绩/, "🛍"], [/经营|管理|分析/, "📈"],
-];
+/* 业务头像：名称首字符 + 哈希纯色 monogram（不用 emoji/渐变） */
 function avatarFor(name, size){
-  let emoji = "🧭";
-  for(const [re, e] of AVATAR_KW){ if(re.test(name)){ emoji = e; break; } }
-  if(emoji === "🧭"){ const pool = ["🧭","📊","🗺️","🔭","🧮","🎯"]; emoji = pool[[...name].reduce((a,c)=>a+c.charCodeAt(0),0) % pool.length]; }
-  const h = [...name].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7) % 360;
-  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.52)}px;
-    background:linear-gradient(135deg,hsl(${h},45%,55%),hsl(${(h+40)%360},50%,38%))">${emoji}</div>`;
+  const ch = [...String(name || "agent")][0] || "A";
+  const h = [...String(name)].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7) % 360;
+  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.42)}px;
+    background:hsl(${h} 30% 38%)">${esc(ch)}</div>`;
+}
+/* 状态灯：体检/模式徽章/图例共用 */
+function led(color, pulse){
+  return `<span class="led${pulse ? " pulse" : ""}"${color ? ` style="color:${color}"` : ""}></span>`;
 }
 """
 
 PAGE = r"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f6f8f5">
-<title>Data Agent 工作台</title>
+<meta name="theme-color" content="#f7f5ef">
+<title>Data Agent 校验工作台</title>
 <style>__CSS__</style></head><body>
 <div id="toast" aria-live="polite"></div>
 <div class="shell">
   <aside class="side">
-    <div class="brand"><div class="logo" aria-hidden="true">📊</div>
-      <div><div class="t1">Data Agent 工作台</div><div class="t2" id="agentName"></div></div>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 36 36" aria-hidden="true"><rect x="1.4" y="1.4" width="33.2" height="33.2" rx="9.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="18" r="9" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".4"/><circle cx="24" cy="12" r="3.1" fill="var(--acc)" stroke="none"/></svg>
+      <div><div class="micro">Data Agent</div><div class="t1">校验工作台</div><div class="t2" id="agentName"></div></div>
     </div>
     <nav class="nav" id="nav"></nav>
-    <button class="done hidden" id="doneBtn">✅ 完成，关闭工作台</button>
+    <button class="done hidden" id="doneBtn">✓ 完成 · 关闭工作台</button>
   </aside>
   <div class="main">
-    <div class="topbar">
-      <div><h1 id="pageTitle">概览</h1><div class="meta" id="meta"></div></div>
-      <span class="mode" id="modeBadge"></span>
-    </div>
+    <header class="dochead">
+      <div><div class="micro" id="docMeta">Agent Dossier</div><h1 id="pageTitle">概览</h1><div class="meta" id="meta"></div></div>
+      <span class="modebadge" id="modeBadge"></span>
+    </header>
     <div id="panels"></div>
   </div>
 </div>
@@ -260,15 +371,30 @@ function mdLite(text){
   const inline = s => esc(s)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, '<code class="ic">$1</code>');
-  const lines = text.split("\n"); let html = "", inPara = [];
+  const lines = text.split("\n"); let html = "", inPara = [], inTbl = [];
   const flush = () => {
     if(inPara.length){ html += `<div style="padding:3px 0;font-size:13px">${inPara.map(inline).join("<br>")}</div>`; inPara=[]; }
   };
+  const flushTbl = () => {
+    if(!inTbl.length) return;
+    const rows = inTbl.map(l => l.trim().replace(/^\||\|$/g,"").split("|").map(c => c.trim()));
+    const isSep = r => r.every(c => /^:?-{2,}:?$/.test(c));
+    let head = null;
+    if(rows.length > 1 && isSep(rows[1])){ head = rows[0]; rows.splice(0, 2); }
+    else if(isSep(rows[0])) rows.shift();
+    html += "<table>" + (head ? `<tr>${head.map(c=>`<th>${inline(c)}</th>`).join("")}</tr>` : "")
+      + rows.map(r=>`<tr>${r.map(c=>`<td>${inline(c)}</td>`).join("")}</tr>`).join("") + "</table>";
+    inTbl = [];
+  };
   for(const ln of lines){
     const t = ln.trim();
+    if(t.startsWith("|") && t.endsWith("|")){ flush(); inTbl.push(ln); continue; }
+    flushTbl();
     if(!t){ flush(); continue; }
     let m;
-    if(m = t.match(/^(\d+)[.、]\s*(.+)/)){ flush();
+    if(m = t.match(/^(#{1,4})\s+(.+)/)){ flush();
+      html += `<div class="mh">${inline(m[2])}</div>`;
+    } else if(m = t.match(/^(\d+)[.、]\s*(.+)/)){ flush();
       html += `<div class="step"><div class="sn">${m[1]}</div><div>${inline(m[2])}</div></div>`;
     } else if(t.startsWith("- ")){ flush();
       html += `<div class="bullet"><div>${inline(t.slice(2))}</div></div>`;
@@ -277,7 +403,7 @@ function mdLite(text){
     } else if(/^-{3,}$/.test(t)){ flush(); }
     else inPara.push(t);
   }
-  flush();
+  flushTbl(); flush();
   return html;
 }
 function biUrl(pgId){ return DATA.biBaseUrl ? DATA.biBaseUrl + "/page/" + pgId : null; }
@@ -289,7 +415,7 @@ function sectionEditor(file, renderChunk){
   chunks.forEach((chunk, i) => {
     const card = document.createElement("div");
     const paint = (justSaved) => {
-      card.innerHTML = ""; card.append(renderChunk(chunk, () => startEdit()));
+      card.innerHTML = ""; card.append(renderChunk(chunk, () => startEdit(), i));
       if(justSaved){ const h = card.querySelector("h3, summary"); if(h) savedBadge(h); }
     };
     const startEdit = () => {
@@ -312,7 +438,7 @@ function sectionEditor(file, renderChunk){
 }
 function editBtn(onClick){
   if(!EDIT) return document.createTextNode("");
-  const b = el('<button class="btn mini">✏️ 编辑</button>');
+  const b = el('<button class="btn mini">编辑</button>');
   b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onClick(); };
   return b;
 }
@@ -321,11 +447,28 @@ function secTitle(chunk){
   return m ? m[2].replace(/[*#]/g,"").trim().slice(0,40) : "说明";
 }
 function emptyState(title, guide){
-  return el(`<div class="card"><div class="empty"><div class="t">${esc(title)}</div>${esc(guide)}</div></div>`);
+  return el(`<div class="empty"><div class="t">${esc(title)}</div>${esc(guide)}</div>`);
 }
 function pagesOf(){
   if(!DATA.assets) return [];
-  return Object.entries(DATA.assets).filter(([k]) => k !== "_meta");
+  const norm = Object.entries(DATA.assets).filter(([k,v]) =>
+    k !== "_meta" && v && typeof v === "object" && !Array.isArray(v) && v.cards && !Array.isArray(v.cards));
+  if(norm.length) return norm;
+  /* 旧版结构降级：pages 为 {名称: pgId} 字典或 [{name, pageId, cards:[...]}] 列表 */
+  const old = DATA.assets.pages;
+  if(Array.isArray(old)) return old.map(p => [p.name || p.pageId || "看板", {pgId: p.pageId || p.pgId || "",
+    cards: Object.fromEntries((p.cards || []).map(c => [c.name || String(c), {type: c.type || "", notes: c.note || ""}]))}]);
+  if(old && typeof old === "object"){
+    /* 更旧的平铺 schema：cards 为 {"看板__卡片名": {page, type, ...}} 字典，按 page 字段归组 */
+    const flat = DATA.assets.cards, byPage = {};
+    if(flat && typeof flat === "object") for(const [k, c] of Object.entries(flat)){
+      const pg = (c && c.page) || k.split("__")[0];
+      const cn = k.includes("__") ? k.split("__").slice(1).join("__") : k;
+      (byPage[pg] = byPage[pg] || {})[cn] = c || {};
+    }
+    return Object.entries(old).map(([n, id]) => [n, {pgId: id, cards: byPage[n] || {}}]);
+  }
+  return [];
 }
 
 /* ---------- 概览 ---------- */
@@ -335,53 +478,59 @@ function overviewPanel(){
   const pages = pagesOf();
   let nCards = 0; pages.forEach(([,info]) => nCards += Object.keys(info.cards||{}).length);
   const meta = (DATA.assets && DATA.assets._meta) || {};
+  const bk = DATA.files["businessKnowledge.md"];
+  const nRules = bk ? (bk.match(/^(?:\*\*)?\d+\.(?=\s|【)/gm) || []).length : 0;
   /* 身份卡 */
-  const triggers = (id.triggers || []).map(t=>`<span class="chip c-soft" style="margin:2px 4px 2px 0">${esc(t)}</span>`).join("");
-  const card = el(`<div class="card" style="display:flex;gap:16px;align-items:flex-start">
-    ${avatarFor(id.name || "agent", 56)}
-    <div style="flex:1;min-width:0">
-      <h3 style="margin-bottom:4px">${esc(id.name || agentDisplayName())}
-        <span class="sub">${esc(id.version || "")}</span></h3>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">${esc(id.description || "（未找到 agent 描述）")}</div>
-      ${triggers ? `<div style="margin-bottom:8px"><span style="font-size:12px;color:var(--text3)">触发词：</span>${triggers}</div>` : ""}
-      <div style="font-size:12px;color:var(--text3)">
-        ${pages.length} 张看板 · ${nCards} 张卡片${meta.builtAt ? " · 学习于 " + esc(meta.builtAt) : ""}
-      </div>
-    </div></div>`);
+  const triggers = (id.triggers || []).map(t=>`<span class="tag">${esc(t)}</span>`).join("");
+  const metaBits = [`${pages.length} 张看板`, `${nCards} 张卡片`];
+  if(nRules) metaBits.push(`${nRules} 条口径`);
+  if(meta.builtAt) metaBits.push("学习于 " + esc(meta.builtAt));
+  const card = el(`<div class="sheet idsheet">
+    <div class="id-top">${avatarFor(id.name || "agent", 64)}
+      <div style="flex:1;min-width:0">
+        <div class="micro">Agent Identity${id.version ? " · v" + esc(id.version) : ""}</div>
+        <h2 class="id-name">${esc(id.name || agentDisplayName())}</h2>
+        <div class="id-desc">${esc(id.description || "（未找到 agent 描述）")}</div>
+      </div></div>
+    ${triggers ? `<div class="id-tags"><span class="micro" style="margin-right:4px">触发词</span>${triggers}</div>` : ""}
+    <div class="id-meta">${metaBits.map(b=>`<span>${b}</span>`).join("")}</div>
+  </div>`);
   wrap.append(card);
   /* 数据源链接 */
   if(pages.length){
-    const rows = pages.map(([name, info]) => {
+    const rows = pages.map(([name, info], i) => {
       const u = biUrl(info.pgId);
       const pm = (meta.pages||{})[info.pgId];
-      return `<div class="frow"><div class="k" style="flex-basis:auto;min-width:96px">📈 看板</div>
-        <div class="v">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(name)} ↗</a>` : esc(name)}
-        <span style="color:var(--text3);font-size:12px">${pm && pm.mtime ? " · 学习时更新于 " + esc(pm.mtime) : ""}</span></div></div>`;
+      return `<div class="frow"><div class="k">看板 ${String(i+1).padStart(2,"0")}</div>
+        <div class="v">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(name)}&nbsp;↗</a>` : esc(name)}
+        <span style="color:var(--ink3);font-size:12px">${pm && pm.mtime ? "&nbsp;&nbsp;学习时更新于 " + esc(pm.mtime) : ""}</span></div></div>`;
     }).join("");
-    wrap.append(el(`<div class="card"><h3>🔗 数据源（点击跳转 BI 平台）</h3>${rows}</div>`));
+    wrap.append(el(`<div class="block"><h3>数据源 <span class="sub">Source · 点击跳转 BI 平台</span></h3>${rows}</div>`));
   }
   /* 体检区 */
-  const hz = el(`<div class="card"><h3>🩺 资产体检</h3><div class="hbody" style="font-size:13px;color:var(--text2)"></div><div class="btnrow"></div></div>`);
+  const hz = el(`<div class="block"><h3>资产体检 <span class="sub">Diagnostic</span></h3>
+    <div class="hbody" style="font-size:13px;color:var(--ink2);max-width:56em"></div><div class="btnrow"></div></div>`);
   const hbody = hz.querySelector(".hbody"), hrow = hz.querySelector(".btnrow");
   if(!meta.pages){
     hbody.textContent = "这个 agent 没有记录学习时点（旧版搭建），无法自动体检。可重新搭建或在对话中说「体检资产」。";
   } else if(EDIT){
-    hbody.textContent = "检查看板在学习之后是否被修改过，改过则需要重新学习。";
-    const btn = el('<button class="btn primary">开始体检</button>');
-    const out = el('<div style="margin-top:10px"></div>');
+    hbody.textContent = "检查看板在学习之后是否被修改过；改过的看板需要重新学习，否则助手会引用旧数据。";
+    const btn = el(`<button class="btn primary">${led("#fff")}开始体检</button>`);
+    const out = el('<div style="margin-top:12px"></div>');
     btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = "体检中…";
+      btn.disabled = true; btn.innerHTML = led("#fff", true) + "体检中…";
       try{
         const r = await fetch("/check", {method:"POST"}); const j = await r.json();
-        out.innerHTML = j.pages.map(p =>
-          `<div class="frow"><div class="k" style="flex-basis:auto">📈</div><div class="v">${esc(p.title)}
-            ${p.error ? '<span class="chip c-err">看板不存在或无权访问</span>'
-              : p.stale ? `<span class="chip c-warn">已更新 ${esc(p.current)}</span>（学习时 ${esc(p.learned)||"未知"}）→ 建议重新学习`
-              : '<span class="chip c-ok">未变化</span>'}</div></div>`).join("");
+        out.innerHTML = j.pages.map(p => {
+          const st = p.error ? ["var(--err)", "看板不存在或无权访问"]
+            : p.stale ? ["var(--warn)", `已更新 ${esc(p.current)}（学习时 ${esc(p.learned)||"未知"}）→ 建议重新学习`]
+            : ["var(--ok)", "未变化"];
+          return `<div class="diag">${led(st[0])}<div class="dt">${esc(p.title)}&nbsp;&nbsp;<span style="color:var(--ink2)">${st[1]}</span></div></div>`;
+        }).join("");
         const staleN = j.pages.filter(p=>p.stale||p.error).length;
         toast(staleN ? `体检完成：${staleN} 张看板有变化，建议重新学习` : "体检完成：全部看板未变化 ✓", !staleN);
       }catch(e){ toast("体检失败：" + e.message, false); }
-      btn.disabled = false; btn.textContent = "重新体检";
+      btn.disabled = false; btn.innerHTML = led("#fff") + "重新体检";
     };
     hrow.append(btn); hz.append(out);
   } else {
@@ -398,44 +547,43 @@ function assetsPanel(){
   if(!pages.length){ wrap.append(emptyState("还没有数据资产", "完成第 2 步看板学习后，这里会列出所有看板和卡片。")); return wrap; }
   let nCards = 0, nDisabled = 0;
   pages.forEach(([,info]) => Object.values(info.cards||{}).forEach(c => { nCards++; if(c["禁用"]) nDisabled++; }));
-  wrap.append(el(`<div class="stats">
-    <div class="stat"><div class="n">${pages.length}</div><div class="l">看板</div></div>
-    <div class="stat"><div class="n">${nCards}</div><div class="l">数据卡片</div></div>
-    <div class="stat"><div class="n" style="color:${nDisabled?"var(--err)":"var(--deep)"}">${nDisabled}</div><div class="l">已标记禁用</div></div>
+  wrap.append(el(`<div class="metrics">
+    <div class="metric"><div class="n">${pages.length}</div><div class="l micro">看板 · Pages</div></div>
+    <div class="metric"><div class="n">${nCards}</div><div class="l micro">数据卡片 · Cards</div></div>
+    <div class="metric"><div class="n" style="color:${nDisabled?"var(--err)":"inherit"}">${nDisabled}</div><div class="l micro">标记禁用 · Disabled</div></div>
   </div>`));
   pages.forEach(([name, info], idx) => {
     let rows = "";
     for(const [cn, c] of Object.entries(info.cards || {})){
-      let chips = "";
-      if(c["全景"]) chips += '<span class="chip c-ok">全景</span> ';
-      if(c["下钻"]) chips += '<span class="chip c-warn">下钻/局部</span> ';
-      if(c["禁用"]) chips += '<span class="chip c-err">禁用</span>';
-      rows += `<tr><td>${esc(cn)}</td><td><span class="chip c-soft">${esc(c.type||"")}</span></td>
-        <td>${chips}</td><td style="color:var(--text2)">${esc(c.notes||"")}</td></tr>`;
+      let tags = "";
+      if(c["全景"]) tags += `<span class="tag t-ok">${led()}全景</span> `;
+      if(c["下钻"]) tags += `<span class="tag t-warn">${led()}下钻/局部</span> `;
+      if(c["禁用"]) tags += `<span class="tag t-err">${led()}禁用</span>`;
+      rows += `<tr><td>${esc(cn)}</td><td class="mono" style="font-size:11.5px;color:var(--ink2)">${esc(c.type||"—")}</td>
+        <td>${tags}</td><td style="color:var(--ink2)">${esc(c.notes||"")}</td></tr>`;
     }
     const u = biUrl(info.pgId);
-    const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="chip c-cyan" style="margin-left:auto">在 BI 中打开 ↗</a>` : "";
+    const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener" style="margin-left:auto;font-size:12px;font-weight:400">在 BI 中打开&nbsp;↗</a>` : "";
     const d = el(`<details class="card"${idx===0?" open":""}>
-      <summary><span class="arrow" aria-hidden="true">▶</span>📈 ${esc(name)}
-      <span class="sub">${Object.keys(info.cards||{}).length} 张卡片</span>${link}</summary>
-      <div class="body"><table><tr><th>卡片</th><th style="width:180px">类型</th><th style="width:150px">状态</th><th>备注</th></tr>${rows}</table></div>
+      <summary><span class="arrow" aria-hidden="true">▶</span>${esc(name)}
+      <span class="sub">${Object.keys(info.cards||{}).length} Cards</span>${link}</summary>
+      <div class="body"><table><tr><th>卡片 Card</th><th style="width:170px">类型 Type</th><th style="width:150px">状态 Status</th><th>备注 Notes</th></tr>${rows}</table></div>
     </details>`);
     wrap.append(d);
   });
   if(DATA.files["learningResult.md"]){
-    wrap.append(el('<div class="hint">📖 以下为 AI 对每张看板的理解（资产目录），逐块核对，点"编辑"可直接修改</div>'));
+    wrap.append(el('<div class="hint">以下为 AI 对每张看板的理解（资产目录），逐块核对，点「编辑」可直接修改</div>'));
     wrap.append(learningEditor());
   }
   return wrap;
 }
 function learningEditor(){
   return sectionEditor("learningResult.md", (chunk, startEdit) => {
-    const frag = document.createElement("div"); frag.className = "card";
+    const frag = document.createElement("div"); frag.className = "block";
     const title = secTitle(chunk);
-    const head = el(`<h3>🗂 ${esc(title)}</h3>`);
+    const head = el(`<h3>${esc(title)}</h3>`);
     head.append(editBtn(startEdit));
     frag.append(head);
-    const ICONS = {"核心价值":"🎯","全部筛选器":"🎛","关键筛选器":"🎛","核心数据模块":"🧩","使用场景":"💡","数据注意":"⚠️"};
     const body = chunk.replace(/^#{1,3}[^\n]*\n?/, "");
     const fieldRe = /^\*\*([^*：]+)[：:]\*\*\s*(.*)$/;
     const rows = []; let intro = [];
@@ -447,9 +595,8 @@ function learningEditor(){
     }
     let html = intro.join("\n").trim() ? mdLite(intro.join("\n")) : "";
     for(const r of rows){
-      const icon = Object.keys(ICONS).find(x=>r.k.includes(x));
       const v = r.lines.join("\n").trim();
-      html += `<div class="frow"><div class="k">${icon?ICONS[icon]:"▫️"} ${esc(r.k)}</div>
+      html += `<div class="frow"><div class="k">${esc(r.k)}</div>
         <div class="v">${v ? mdLite(v) : ""}</div></div>`;
     }
     const bd = document.createElement("div"); bd.innerHTML = html; frag.append(bd);
@@ -458,14 +605,34 @@ function learningEditor(){
 }
 
 /* ---------- 业务口径 ---------- */
+function parseRule(rule){
+  let r = rule.replace(/\n+$/,"");
+  /* 兼容整行加粗的标题行：**1.【确认】名称 = 内容**（去掉编号后首行仍带 ** 包裹） */
+  const nl = r.indexOf("\n");
+  const fl = (nl<0 ? r : r.slice(0,nl)).trim();
+  if(/^\*\*[^*]+\*\*$/.test(fl)) r = fl.slice(2,-2) + (nl<0 ? "" : r.slice(nl));
+  const m = r.match(/^(?:【([^】]+)】)?\s*(?:\*\*)?([^*=\n：:]{1,60}?)(?:\*\*)?\s*[=：:]\s*([\s\S]*)$/);
+  if(m){
+    let b = m[3].trim();
+    /* 旧版整行加粗拆分后，正文首行可能残留不配对的结尾 **，清掉 */
+    const bi = b.indexOf("\n");
+    const bf = bi<0 ? b : b.slice(0, bi);
+    if(/\*\*$/.test(bf) && (bf.split("**").length - 1) % 2 === 1)
+      b = bf.slice(0, -2) + (bi<0 ? "" : b.slice(bi));
+    return {src:m[1]||"", title:m[2].trim(), body:b};
+  }
+  const t = (nl<0 ? r : r.slice(0,nl)).replace(/\*\*/g,"").trim();
+  const sm = t.match(/^【([^】]+)】/);
+  return {src:sm?sm[1]:"", title:(sm?t.slice(sm[0].length):t).trim(), body:(nl<0?"":r.slice(nl+1).trim())};
+}
 function rulesPanel(){
   const wrap = document.createElement("div");
   const text = DATA.files["businessKnowledge.md"];
   if(!text) { wrap.append(emptyState("还没有业务口径", "完成第 4 步口径确认后，这里会列出逐条规则。")); return wrap; }
-  wrap.append(el(`<div class="hint">📏 共 <b class="ruleCount"></b> 条已确认口径。这些规则决定助手的计算方式，点卡片右上角可编辑或删除</div>`));
-  const parts = text.split(/(?=^\d+\.\s)/m);
+  wrap.append(el(`<div class="hint">共 <b class="ruleCount" style="font-family:var(--mono)"></b> 条已确认口径——它们决定助手的计算方式，逐条核对，右侧可编辑或删除</div>`));
+  const parts = text.split(/(?=^(?:\*\*)?\d+\.(?=\s|【))/m);
   const pre = parts[0];
-  const rules = parts.slice(1).map(r => r.replace(/^\d+\.\s*/, ""));
+  const rules = parts.slice(1).map(r => r.replace(/^(?:\*\*)?\d+\./, ""));
   const list = document.createElement("div"); wrap.append(list);
   async function commit(){
     const body = rules.map((r,i)=> (i+1)+". "+r.replace(/\n+$/,"")).join("\n") + "\n";
@@ -476,16 +643,18 @@ function rulesPanel(){
     const rc = wrap.querySelector(".ruleCount");
     if(rc) rc.textContent = rules.length;
     rules.forEach((rule, i) => {
-      const m = rule.match(/^\*\*([^*]+)\*\*\s*[=：:]\s*([\s\S]*)$/);
-      const title = m ? m[1].trim() : "";
-      const bodyT = m ? m[2].trim() : rule.trim();
-      const card = el(`<div class="rule">
-        <div class="head"><div class="num">${i+1}</div><div class="rtitle">${title?esc(title):"规则"}</div></div>
-        <div class="rbody">${mdLite(bodyT)}</div>
+      const p = parseRule(rule);
+      const warn = /^⚠️\s*/.test(p.title);
+      if(warn) p.title = p.title.replace(/^⚠️\s*/, "");
+      const isFormula = /公式|归因/.test(p.title);
+      const card = el(`<div class="rule${isFormula?" formula":""}">
+        <div class="num">${String(i+1).padStart(2,"0")}</div>
+        <div><div class="rhead">${p.src?`<span class="src">${esc(p.src)}</span>`:""}<span class="rtitle">${esc(p.title||"规则")}</span>${warn?'<span class="src warn">注意</span>':""}</div>
+        <div class="rbody">${mdLite(p.body)}</div></div>
         <div class="acts"></div></div>`);
       if(EDIT){
         const acts = card.querySelector(".acts");
-        const eb = el('<button class="btn mini">✏️ 编辑</button>');
+        const eb = el('<button class="btn mini">编辑</button>');
         const db = el('<button class="btn mini danger">删除</button>');
         eb.onclick = () => {
           card.innerHTML = "";
@@ -506,11 +675,11 @@ function rulesPanel(){
         };
         acts.append(eb, db);
       }
-      if(i === savedIdx) savedBadge(card.querySelector(".acts") || card.querySelector(".head"));
+      if(i === savedIdx) savedBadge(card.querySelector(".acts") || card.querySelector(".rhead"));
       list.append(card);
     });
     if(EDIT){
-      const add = el('<button class="addrule">＋ 加一条规则</button>');
+      const add = el('<button class="addrule">+ 加一条规则</button>');
       add.onclick = () => {
         const v = prompt('新规则（格式：**名称** = 内容，如 **达成率** = 实际 ÷ 预算）：');
         if(v){ rules.push(v.replace(/^\d+\.\s*/,"") + "\n"); dirty = true; commit().then(ok => ok && draw(rules.length-1)); }
@@ -523,26 +692,26 @@ function rulesPanel(){
 }
 
 /* ---------- 分析思路 ---------- */
-const SEC_ICONS = [
-  [/角色|约束/, "🎭"], [/诊断链|铁律/, "⛓️"], [/状态标记|标记规则/, "🚦"],
-  [/场景一|问数/, "💬"], [/场景二|归因/, "🔍"], [/场景三|异常/, "⚡"], [/场景四|综合|报告/, "📑"],
-];
 function thinkingPanel(){
   if(!DATA.files["insightThinking.md"])
     return emptyState("还没有分析思路", "完成第 6 步分析框架生成后，这里会展示助手的思考方式。");
   const wrap = document.createElement("div");
-  wrap.append(el('<div class="hint">🧠 助手的思考方式：角色约束、诊断链、状态阈值与四类场景流程，逐块核对</div>'));
-  wrap.append(sectionEditor("insightThinking.md", (chunk, startEdit) => {
+  wrap.append(el('<div class="hint">助手的思考方式：角色约束、诊断链、状态阈值与四类场景流程，逐块核对</div>'));
+  wrap.append(sectionEditor("insightThinking.md", (chunk, startEdit, idx) => {
     const title = secTitle(chunk);
-    const icon = (SEC_ICONS.find(([re]) => re.test(title)) || [,"📌"])[1];
-    const card = el(`<div class="card"><h3>${icon} ${esc(title)}</h3></div>`);
+    const card = el(`<div class="block"><h3>${esc(title)} <span class="sub">§ ${String(idx+1).padStart(2,"0")}</span></h3></div>`);
     card.querySelector("h3").append(editBtn(startEdit));
     const body = chunk.replace(/^#{1,3}[^\n]*\n?/, "");
     if(/状态标记/.test(title)){
       const items = [...body.matchAll(/^-\s*([🔴🟡🟢📈📉]+)\s*=\s*(.+)$/gm)];
       if(items.length){
         const lg = el('<div class="legend"></div>');
-        items.forEach(([,e,d]) => lg.append(el(`<span class="chip c-soft" style="font-size:12.5px">${e} ${esc(d)}</span>`)));
+        items.forEach(([,e,d]) => {
+          const c = (e.includes("🔴")||e.includes("📉")) ? "var(--err)"
+            : e.includes("🟡") ? "var(--warn)"
+            : (e.includes("🟢")||e.includes("📈")) ? "var(--ok)" : "var(--acc)";
+          lg.append(el(`<span class="tag" style="font-size:12.5px">${led(c)}${esc(d)}</span>`));
+        });
         card.append(lg);
         const rest = body.replace(/^-\s*[🔴🟡🟢📈📉]+\s*=.*$/gm, "").trim();
         if(rest){ const d=document.createElement("div"); d.innerHTML = mdLite(rest); card.append(d); }
@@ -564,10 +733,10 @@ function rawPanel(){
     any = true;
     if(f.endsWith(".json")){
       let pretty; try{ pretty = JSON.stringify(JSON.parse(DATA.files[f]), null, 2); }catch(e){ pretty = DATA.files[f]; }
-      const card = el(`<div class="card"><h3>🗂 ${esc(f)}</h3><pre class="json">${esc(pretty)}</pre></div>`);
+      const card = el(`<div class="block"><h3><span class="fn">${esc(f)}</span> <span class="sub">JSON</span></h3><pre class="json">${esc(pretty)}</pre></div>`);
       if(EDIT){
         card.querySelector("h3").append(editBtn(() => {
-          card.innerHTML = `<h3>🗂 ${esc(f)}</h3>`;
+          card.innerHTML = `<h3><span class="fn">${esc(f)}</span></h3>`;
           const ta = document.createElement("textarea"); ta.value = pretty; ta.rows = 18;
           ta.setAttribute("aria-label", "编辑 " + f);
           const row = document.createElement("div"); row.className = "btnrow";
@@ -585,7 +754,7 @@ function rawPanel(){
       wrap.append(card);
     } else {
       const w2 = sectionEditor(f, (chunk, startEdit) => {
-        const card = el(`<div class="card"><h3>📄 ${esc(f)} · ${esc(secTitle(chunk))}</h3></div>`);
+        const card = el(`<div class="block"><h3><span class="fn">${esc(f)}</span> <span class="sub">${esc(secTitle(chunk))}</span></h3></div>`);
         card.querySelector("h3").append(editBtn(startEdit));
         const d = document.createElement("div"); d.innerHTML = mdLite(chunk.replace(/^#{1,3}[^\n]*\n?/, ""));
         card.append(d); return card;
@@ -599,17 +768,17 @@ function rawPanel(){
 
 /* ---------- 框架 ---------- */
 const TABS = [
-  ["overview", "🏠", "概览", overviewPanel],
-  ["assets", "📦", "数据资产", assetsPanel],
-  ["rules", "📏", "业务口径", rulesPanel],
-  ["thinking", "🧠", "分析思路", thinkingPanel],
-  ["raw", "🗂", "输出模板与脚本", rawPanel],
+  ["overview", "01", "概览", "Overview", overviewPanel],
+  ["assets", "02", "数据资产", "Assets", assetsPanel],
+  ["rules", "03", "业务口径", "Rules", rulesPanel],
+  ["thinking", "04", "分析思路", "Thinking", thinkingPanel],
+  ["raw", "05", "输出与脚本", "Output", rawPanel],
 ];
 let curTab = (location.hash || "").slice(1);
 if(!TABS.some(([id]) => id === curTab)) curTab = "overview";
 function renderMain(){
   const panels = $("#panels"); panels.innerHTML = "";
-  TABS.forEach(([id,,,build]) => {
+  TABS.forEach(([id,,,,build]) => {
     const p = document.createElement("div"); p.className = "panel" + (id===curTab?" on":"");
     p.id = "p-"+id; p.append(build()); panels.append(p);
   });
@@ -629,28 +798,30 @@ function summaryLine(){
     bits.push(pages.length + " 张看板", cn + " 张卡片");
   }
   const bk = DATA.files["businessKnowledge.md"];
-  if(bk){ const n = (bk.match(/^\d+\.\s/gm) || []).length; if(n) bits.push(n + " 条口径"); }
+  if(bk){ const n = (bk.match(/^(?:\*\*)?\d+\.(?=\s|【)/gm) || []).length; if(n) bits.push(n + " 条口径"); }
   bits.push("更新于 " + DATA.generated);
   return bits.join(" · ");
 }
 (function init(){
   $("#agentName").textContent = agentDisplayName();
   $("#meta").textContent = summaryLine();
-  document.title = agentDisplayName() + " · Data Agent 工作台";
+  document.title = agentDisplayName() + " · Data Agent 校验工作台";
   const mb = $("#modeBadge");
-  mb.textContent = EDIT ? "编辑模式 · 保存即写回并备份" : "只读模式";
+  mb.innerHTML = EDIT ? led("currentColor", true) + "编辑模式 · 保存即写回" : led("currentColor") + "只读模式";
   if(EDIT) mb.classList.add("edit");
   const nav = $("#nav");
-  TABS.forEach(([id, ico, label]) => {
-    const b = el(`<button><span class="ico" aria-hidden="true">${ico}</span>${label}</button>`);
+  TABS.forEach(([id, idx, label, latin]) => {
+    const b = el(`<button><span class="idx" aria-hidden="true">${idx}</span><span>${label}</span></button>`);
     b.onclick = () => {
       curTab = id;
       history.replaceState(null, "", "#"+id);
       nav.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
       document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("on", p.id==="p-"+id));
       $("#pageTitle").textContent = label;
+      $("#docMeta").textContent = "Agent Dossier / " + latin;
     };
-    if(id===curTab){ b.classList.add("on"); $("#pageTitle").textContent = label; }
+    if(id===curTab){ b.classList.add("on"); $("#pageTitle").textContent = label;
+      $("#docMeta").textContent = "Agent Dossier / " + latin; }
     nav.append(b);
   });
   if(EDIT){
@@ -658,9 +829,10 @@ function summaryLine(){
     done.onclick = async () => {
       if(dirty && !confirm("有未保存修改，确定关闭？")) return;
       await fetch("/shutdown", {method:"POST"});
-      document.body.innerHTML = '<div style="max-width:480px;margin:120px auto;text-align:center">'
-        + '<div style="font-size:40px">✅</div><h2 style="margin:12px 0 6px">工作台已关闭</h2>'
-        + '<p style="color:var(--text2);font-size:13px">可以回到对话继续了</p></div>';
+      document.body.innerHTML = '<div style="max-width:460px;margin:140px auto;text-align:center">'
+        + '<div class="micro" style="color:var(--ok)">Session Closed</div>'
+        + '<h2 style="margin:14px 0 8px;font-size:24px">工作台已关闭</h2>'
+        + '<p style="color:var(--ink2);font-size:13px">可以回到对话继续了</p></div>';
     };
   }
   renderMain();
@@ -670,29 +842,32 @@ function summaryLine(){
 FLEET_PAGE = r"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f6f8f5">
+<meta name="theme-color" content="#f7f5ef">
 <title>我的 Data Agents</title>
 <style>__CSS__
-.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
-.agent-card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
-  padding:16px 18px;display:flex;flex-direction:column;gap:10px}
-.agent-card .hd{display:flex;gap:12px;align-items:center}
-.agent-card .nm{font-size:15px;font-weight:650}
-.agent-card .ds{font-size:12.5px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;
-  -webkit-box-orient:vertical;overflow:hidden;min-height:2.4em}
-.agent-card .ft{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text3)}
-.agent-card .acts{display:flex;gap:8px;margin-top:auto}
-.agent-card .btn{flex:1;text-align:center}
-.stalebar{font-size:12.5px;border-radius:8px;padding:6px 10px}
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px;margin-top:22px}
+.agent-card{background:var(--sheet);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+  padding:18px 20px 16px;display:flex;flex-direction:column;gap:12px}
+.agent-card .hd{display:flex;gap:13px;align-items:center}
+.agent-card .nm{font-size:15.5px;font-weight:700}
+.agent-card .ds{font-size:12.5px;color:var(--ink2);display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden;min-height:2.6em}
+.agent-card .ft{display:flex;flex-wrap:wrap;row-gap:3px;font-family:var(--mono);font-size:11px;
+  color:var(--ink3);letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.agent-card .ft span + span::before{content:"·";margin:0 8px;color:var(--line2)}
+.agent-card .acts{display:flex;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+.agent-card .btn{flex:1;text-align:center;justify-content:center}
+.stalebar{display:flex;align-items:baseline;gap:8px;font-size:12px;border-radius:8px;padding:7px 11px}
+.stalebar .led{margin-top:1px}
 </style></head><body>
 <div id="toast" aria-live="polite"></div>
 <div class="shell" style="max-width:1160px">
   <div class="main" style="width:100%">
-    <div class="topbar">
-      <div class="logo avatar" style="width:34px;height:34px;font-size:17px;background:linear-gradient(135deg,#59ac65,#1f7237)" aria-hidden="true">🤖</div>
-      <div><h1>我的 Data Agents</h1><div class="meta" id="meta"></div></div>
-      <span class="mode" id="modeBadge"></span>
-    </div>
+    <header class="dochead">
+      <svg viewBox="0 0 36 36" style="width:34px;height:34px;color:var(--ink);flex:none" aria-hidden="true"><rect x="1.4" y="1.4" width="33.2" height="33.2" rx="9.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="18" r="9" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".4"/><circle cx="24" cy="12" r="3.1" fill="var(--acc)" stroke="none"/></svg>
+      <div><div class="micro">Fleet Overview</div><h1>我的 Data Agents</h1><div class="meta" id="meta"></div></div>
+      <span class="modebadge" id="modeBadge"></span>
+    </header>
     <div class="agent-grid" id="grid"></div>
   </div>
 </div>
@@ -702,52 +877,55 @@ const DATA = __DATA__;
 const EDIT = __EDIT__;
 document.getElementById("meta").textContent =
   DATA.dir + " · " + DATA.agents.length + " 个 agent · 生成于 " + DATA.generated;
-document.getElementById("modeBadge").textContent = EDIT ? "可体检" : "只读";
-if(EDIT) document.getElementById("modeBadge").classList.add("edit");
+const _mb = document.getElementById("modeBadge");
+_mb.innerHTML = EDIT ? led("currentColor") + "可体检" : led("currentColor") + "只读";
+if(EDIT) _mb.classList.add("edit");
 const grid = document.getElementById("grid");
 if(!DATA.agents.length){
-  grid.append(el('<div class="card" style="grid-column:1/-1"><div class="empty"><div class="t">还没有搭建任何 data agent</div>在 WorkBuddy 里使用 guanbi-agent-builder 搭建后，会出现在这里。</div></div>'));
+  grid.append(el('<div class="empty" style="grid-column:1/-1"><div class="t">还没有搭建任何 data agent</div>在 WorkBuddy 里使用 guanbi-agent-builder 搭建后，会出现在这里。</div>'));
 }
 DATA.agents.forEach(a => {
-  const chips = [];
-  if(a.pages) chips.push(`<span class="chip c-soft">${a.pages} 看板</span>`);
-  if(a.cards) chips.push(`<span class="chip c-soft">${a.cards} 卡片</span>`);
-  if(a.rules) chips.push(`<span class="chip c-soft">${a.rules} 口径</span>`);
-  if(a.builtAt) chips.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
+  const bits = [];
+  if(a.pages) bits.push(`<span>${a.pages} 看板</span>`);
+  if(a.cards) bits.push(`<span>${a.cards} 卡片</span>`);
+  if(a.rules) bits.push(`<span>${a.rules} 口径</span>`);
+  if(a.builtAt) bits.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
   const card = el(`<div class="agent-card">
-    <div class="hd">${avatarFor(a.name, 44)}<div><div class="nm">${esc(a.name)}</div>
-      <div style="font-size:11.5px;color:var(--text3)">${esc(a.dirName)}</div></div></div>
+    <div class="hd">${avatarFor(a.name, 42)}<div><div class="nm">${esc(a.name)}</div>
+      <div class="micro" style="margin-top:2px">${esc(a.dirName)}</div></div></div>
     <div class="ds">${esc(a.description || "（无描述）")}</div>
-    <div class="ft">${chips.join("")}</div>
+    <div class="ft">${bits.join("")}</div>
     <div class="stale"></div>
     <div class="acts"></div></div>`);
   const acts = card.querySelector(".acts");
   if(a.workbenchUrl){
-    acts.append(el(`<a class="btn" href="${esc(a.workbenchUrl)}" target="_blank" rel="noopener">打开工作台 ↗</a>`));
+    acts.append(el(`<a class="btn" href="${esc(a.workbenchUrl)}" target="_blank" rel="noopener">打开工作台&nbsp;↗</a>`));
   }
   if(EDIT && a.hasMeta){
-    const cb = el('<button class="btn primary">🩺 体检</button>');
+    const cb = el(`<button class="btn primary">${led("#fff")}体检</button>`);
     cb.onclick = async () => {
-      cb.disabled = true; cb.textContent = "体检中…";
+      cb.disabled = true; cb.innerHTML = led("#fff", true) + "体检中…";
       const stale = card.querySelector(".stale");
       try{
         const r = await fetch("/check?agent=" + encodeURIComponent(a.dirName), {method:"POST"});
         const j = await r.json();
         const bad = j.pages.filter(p => p.stale || p.error);
         stale.innerHTML = bad.length
-          ? `<div class="stalebar" style="background:var(--warn-bg);color:var(--warn)">⚠️ ${bad.length} 张看板在学习后被修改：${bad.map(p=>esc(p.title)).join("、")}，建议对该 agent 重新学习</div>`
-          : `<div class="stalebar" style="background:var(--ok-bg);color:var(--ok)">✓ 全部 ${j.pages.length} 张看板未变化（${esc(j.checkedAt)}）</div>`;
+          ? `<div class="stalebar" style="background:var(--warn-soft);color:var(--warn)">${led("currentColor")}<span>${bad.length} 张看板在学习后被修改：${bad.map(p=>esc(p.title)).join("、")}，建议对该 agent 重新学习</span></div>`
+          : `<div class="stalebar" style="background:var(--ok-soft);color:var(--ok)">${led("currentColor")}<span>全部 ${j.pages.length} 张看板未变化（${esc(j.checkedAt)}）</span></div>`;
       }catch(e){ toast("体检失败：" + e.message, false); }
-      cb.disabled = false; cb.textContent = "🩺 重新体检";
+      cb.disabled = false; cb.innerHTML = led("#fff") + "重新体检";
     };
     acts.append(cb);
   }
   grid.append(card);
 });
 if(EDIT){
-  const done = el('<button class="btn" style="position:fixed;bottom:20px;right:20px;box-shadow:var(--shadow)">✅ 完成，关闭</button>');
+  const done = el('<button class="btn" style="position:fixed;bottom:20px;right:20px;background:var(--sheet);box-shadow:var(--shadow)">✓ 完成 · 关闭</button>');
   done.onclick = async () => { await fetch("/shutdown", {method:"POST"});
-    document.body.innerHTML = '<div style="max-width:480px;margin:120px auto;text-align:center"><div style="font-size:40px">✅</div><h2 style="margin:12px 0 6px">已关闭</h2></div>'; };
+    document.body.innerHTML = '<div style="max-width:460px;margin:140px auto;text-align:center">'
+      + '<div class="micro" style="color:var(--ok)">Session Closed</div>'
+      + '<h2 style="margin:14px 0 8px;font-size:24px">已关闭</h2></div>'; };
   document.body.append(done);
 }
 </script></body></html>"""
@@ -871,10 +1049,15 @@ def collect_agents(skills_dir):
                     a["cards"] += len(v["cards"])
                 elif k == "pages" and isinstance(v, dict):
                     a["pages"] += len(v)  # 旧版 schema：{pages: {名称: pgId}}
+                elif k == "pages" and isinstance(v, list):
+                    a["pages"] += len(v)  # 旧版 schema：{pages: [{name, pageId, cards:[...]}]}
+                    a["cards"] += sum(len(p.get("cards") or []) for p in v if isinstance(p, dict))
+                elif k == "cards" and isinstance(v, dict):
+                    a["cards"] += len(v)  # 更旧平铺 schema：{pages: {...}, cards: {"看板__卡片名": {...}}}
         bk = os.path.join(ref, "businessKnowledge.md")
         if os.path.exists(bk):
             with open(bk, encoding="utf-8") as f:
-                a["rules"] = len(re.findall(r'^\d+\.\s', f.read(), re.M))
+                a["rules"] = len(re.findall(r'^(?:\*\*)?\d+\.(?=\s|【)', f.read(), re.M))
         if os.path.exists(os.path.join(skills_dir, name, "workbench.html")):
             a["workbenchUrl"] = f"{name}/workbench.html"
         out.append(a)

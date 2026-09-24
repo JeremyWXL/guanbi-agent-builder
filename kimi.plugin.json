@@ -1,6 +1,6 @@
 {
   "name": "guanbi-agent-builder",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Data Agent 搭建向导：把观远 BI 看板变成 AI data agent 的引导式 skill（开源免费 · MIT）",
   "license": "MIT",
   "author": "Jeremy",
