@@ -2,10 +2,10 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "2.3.2"
+version: "2.4.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
-description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。v2.0 新增：行业认知预研 + 历史报告提炼，解决"裸看板搭建、缺业务输入"的核心短板。v2.2 新增：勾选式看板选择（自动列出用户有权限的仪表板供点击勾选/编号勾选）+ 全部确认点结构化出口。v2.3 新增：校验工作台——把资产目录/业务口径/分析思路变成浏览器里可查看、可直接编辑的本地页面（保存自动备份），交付包含只读工作台 workbench.html。
+description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。v2.0 新增：行业认知预研 + 历史报告提炼，解决"裸看板搭建、缺业务输入"的核心短板。v2.2 新增：勾选式看板选择（自动列出用户有权限的仪表板供点击勾选/编号勾选）+ 全部确认点结构化出口。v2.3 新增：校验工作台——把资产目录/业务口径/分析思路变成浏览器里可查看、可直接编辑的本地页面（保存自动备份），交付包含只读工作台 workbench.html。v2.4 新增：工作台概览页（agent 身份卡 + 看板一键跳转 BI）、资产体检（对比看板学习时点与当前更新时间，过期提醒重新学习）、多 agent 管理总览页（--agents，业务头像 + 独立卡片 + 逐个体检）。
 agent_created: true
 ---
 
@@ -35,11 +35,13 @@ python3 references/scripts/workbench.py <工作目录> --serve   # 打印 WORKBE
 open <WORKBENCH_URL>   # macOS 直接打开浏览器
 ```
 
-- 页面四个区块：**数据资产**（看板→卡片表格，含全景/下钻/禁用标记 + 资产目录）、**业务口径**（逐条规则编辑/删除/新增）、**分析思路**（分节编辑）、**其他文件**
+- 页面五个区块：**概览**（agent 身份卡：名称/描述/触发词/统计 + 数据源链接一键跳转 BI + 资产体检）、**数据资产**（看板→卡片表格，含全景/下钻/禁用标记 + 资产目录，看板名可点击跳转 BI）、**业务口径**（逐条规则编辑/删除/新增）、**分析思路**（分节编辑）、**输出模板与脚本**
 - 保存即写回源文件，**自动备份 `.bak-<时间戳>`**；改出问题可回滚
+- **资产体检**：serve 模式下概览页点"开始体检"，对比各看板学习时的更新时间与当前线上更新时间，被改过的看板标记"建议重新学习"；只读模式下提示用户在对话中说「体检资产」
+- **多 agent 总览**：用户有多个 data agent 时，`python3 references/scripts/workbench.py --agents` 生成总览页（每个 agent 一张卡片：业务头像/名称/描述/资产统计/打开工作台）；`--agents --serve` 支持逐个体检
 - 用户改完点页面上的"✅ 完成，关闭工作台"，或在对话里说"改完了"——AI 终止服务进程，**重新校验受影响内容**（口径改动需复述新口径请用户确认），再继续流程
 - 适用确认点：第 2 步（资产目录）、第 4 步（业务口径，强烈推荐）、第 6 步（分析框架）
-- 只读场景（如交付后查看）：`python3 workbench.py <目录>` 生成静态 workbench.html，双击即可打开，无需服务
+- 只读场景（如交付后查看）：`python3 workbench.py <目录>` 生成静态 workbench.html（references 目录时自动写到交付包根目录），双击即可打开，无需服务
 
 ## 七步向导
 
@@ -72,7 +74,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId> -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器），**必须按 Card 块内联的 `**ID:**` 解析，禁止用 brief 输出顺序配对**（SELECTOR 交错会错位——这是已踩过的坑）
+   解析出全部卡片（名称/ID/类型/筛选器），**必须按 Card 块内联的 `**ID:**` 解析，禁止用 brief 输出顺序配对**（SELECTOR 交错会错位——这是已踩过的坑）。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、BI 地址、各看板学习时的更新时间）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data

@@ -2,24 +2,20 @@
 """
 轻量工作台：把搭建/交付产物变成可校验、可编辑的本地页面（WorkBuddy 原生风格）
 用法:
-  python3 workbench.py <目录>             # 生成只读 <目录>/workbench.html（双击浏览器打开）
-  python3 workbench.py <目录> --serve     # 启动本地编辑服务，打印 WORKBENCH_URL=http://127.0.0.1:<port>
-编辑模式：页面内分块编辑 → 保存写回源文件（自动备份 .bak-<时间戳>）→ 侧栏"完成"自动关服务
-识别文件: cards.json（资产表格）、learningResult.md（看板卡片化）、
-          businessKnowledge.md（逐条规则卡片）、insightThinking.md（章节结构化）、
-          及其余 .md/.json（输出模板与脚本区）
-外观: 跟随系统亮/暗色（prefers-color-scheme）；URL 加 ?dark 可强制暗色
+  python3 workbench.py <目录>              # 生成只读 <目录>/workbench.html（双击浏览器打开）
+  python3 workbench.py <目录> --serve      # 本地编辑/体检服务，打印 WORKBENCH_URL
+  python3 workbench.py <目录> --check      # 体检：看板在 agent 学习后是否被改过（打印报告）
+  python3 workbench.py --agents [<skills目录>]           # 多 agent 管理总览 agents.html
+  python3 workbench.py --agents [<skills目录>] --serve   # 总览 + 逐个体检按钮
+识别文件: cards.json（资产表格，含 _meta 学习时点）、learningResult.md、businessKnowledge.md、
+          insightThinking.md；<目录>/../SKILL.md 存在时读取 agent 名称/描述/触发词
+外观: 跟随系统亮/暗色；URL 加 ?dark 可强制暗色
 """
-import json, os, sys, time
+import json, os, re, subprocess, sys, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
-PAGE = r"""<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f6f8f5">
-<title>Data Agent 工作台</title>
-<style>
+COMMON_CSS = r"""
 :root{
   color-scheme: light;
   --bg:#f6f8f5; --card:#ffffff; --border:#dce7dd; --soft:#e8f0e9;
@@ -53,22 +49,22 @@ body{background:var(--bg);color:var(--text);
   font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-wrap:break-word;
   -webkit-tap-highlight-color:transparent}
 h1,h3{text-wrap:balance}
+a{color:var(--pri);text-decoration:none}
+a:hover{text-decoration:underline}
 button,textarea{touch-action:manipulation;font-family:inherit}
 button:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visible{
   outline:2px solid var(--pri);outline-offset:2px;border-radius:6px}
 .shell{max-width:1080px;margin:0 auto;padding:24px 20px 64px;display:flex;gap:20px;align-items:flex-start}
-
-/* 侧栏 */
 .side{flex:0 0 188px;position:sticky;top:24px}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px}
 .brand .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#59ac65,#1f7237);
-  display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}
+  display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;color:#fff}
 .brand .t1{font-weight:600;font-size:14px}.brand .t2{font-size:11px;color:var(--text3)}
 .nav{display:flex;flex-direction:column;gap:4px}
 .nav button{display:flex;align-items:center;gap:9px;padding:9px 12px;border:none;border-radius:10px;
   background:transparent;color:var(--text2);font-size:13.5px;cursor:pointer;text-align:left;
   transition:background-color .15s,color .15s}
-.nav button:hover{background:#ffffff90}
+.nav button:hover{background:#ffffff14}
 .nav button.on{background:var(--card);color:var(--deep);font-weight:600;box-shadow:var(--shadow)}
 .nav button.on .ico{background:var(--pri);color:#fff}
 .nav .ico{width:22px;height:22px;border-radius:7px;background:var(--soft);display:flex;
@@ -76,8 +72,6 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visibl
 .side .done{margin-top:18px;width:100%;padding:10px;border:none;border-radius:10px;background:var(--pri);
   color:#fff;font-size:13.5px;cursor:pointer;box-shadow:var(--shadow);transition:background-color .15s}
 .side .done:hover{background:var(--deep)}
-
-/* 主区 */
 .main{flex:1;min-width:0}
 .topbar{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
   padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -94,8 +88,6 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visibl
   padding:14px 18px;box-shadow:var(--shadow)}
 .stat .n{font-size:26px;font-weight:700;color:var(--deep);font-variant-numeric:tabular-nums;line-height:1.2}
 .stat .l{font-size:12px;color:var(--text3);margin-top:2px}
-
-/* 卡片 */
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
   box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px}
 .card > h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -106,32 +98,23 @@ button:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visibl
 .c-err{background:var(--err-bg);color:var(--err)}
 .c-soft{background:var(--soft);color:var(--deep)}
 .c-cyan{background:var(--cyan-bg);color:var(--cyan)}
-
-/* 可折叠看板卡 */
 details.card{padding:0}
 details.card > summary{list-style:none;cursor:pointer;padding:14px 18px;display:flex;align-items:center;
   gap:8px;font-size:14.5px;font-weight:600;border-radius:12px;transition:background-color .15s}
-details.card > summary:hover{background:#3c8c4e0d}
+details.card > summary:hover{background:color-mix(in srgb,var(--pri) 6%,transparent)}
 details.card > summary::-webkit-details-marker{display:none}
 details.card > summary .arrow{transition:transform .15s;color:var(--text3);font-size:11px;flex:none}
 details.card[open] > summary .arrow{transform:rotate(90deg)}
 details.card > .body{padding:0 18px 16px;border-top:1px solid var(--border)}
 details.card .sub{font-size:12px;color:var(--text3);font-weight:400}
-details.card .editin{margin-left:auto}
-
-/* 字段行（看板资产目录） */
 .frow{display:flex;gap:10px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--text) 5%,transparent);font-size:13px}
 .frow:first-of-type{border-top:none}
 .frow .k{flex:0 0 96px;color:var(--text3);font-size:12.5px;padding-top:1px}
 .frow .v{flex:1;min-width:0}
-
-/* 表格 */
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{background:var(--soft);color:var(--deep);font-weight:600;text-align:left;padding:7px 10px}
 td{padding:7px 10px;border-top:1px solid color-mix(in srgb,var(--text) 6%,transparent)}
 tr:hover td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
-
-/* 规则卡 */
 .rule{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);
   padding:14px 16px;margin-bottom:10px;position:relative}
 .rule .head{display:flex;align-items:center;gap:10px;padding-right:150px}
@@ -144,8 +127,6 @@ tr:hover td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
 .addrule{width:100%;padding:13px;border:1.5px dashed var(--border);border-radius:12px;background:transparent;
   color:var(--text3);font-size:13px;cursor:pointer;transition:border-color .15s,color .15s,background-color .15s}
 .addrule:hover{border-color:var(--pri);color:var(--deep);background:color-mix(in srgb,var(--card) 60%,transparent)}
-
-/* 分析思路步骤 */
 .step{display:flex;gap:10px;padding:5px 0;font-size:13px}
 .step .sn{flex:none;width:20px;height:20px;border-radius:6px;background:var(--cyan-bg);color:var(--cyan);
   font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-top:1px;
@@ -155,8 +136,6 @@ tr:hover td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
 .quote{border-left:3px solid var(--pri);background:var(--soft);border-radius:0 8px 8px 0;
   padding:8px 12px;margin:8px 0;font-size:12.5px;color:var(--text2)}
 .legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-
-/* 编辑 */
 textarea{width:100%;min-height:110px;font:13px/1.7 ui-monospace,Menlo,Consolas,monospace;
   padding:10px 12px;border:1px solid var(--border);border-radius:10px;resize:vertical;
   background:color-mix(in srgb,var(--soft) 40%,var(--card));color:var(--text);outline:none}
@@ -168,20 +147,19 @@ textarea:focus-visible{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px
 .btn.primary:hover{background:var(--deep);border-color:var(--deep);color:#fff}
 .btn.danger:hover{border-color:var(--err);color:var(--err)}
 .btn.mini{padding:2px 10px;font-size:12px}
-.btnrow{margin-top:10px;display:flex;gap:8px}
+.btnrow{margin-top:10px;display:flex;gap:8px;align-items:center}
 .saved{display:inline-flex;align-items:center;font-size:12px;color:var(--ok);font-weight:500}
 code.ic{background:var(--soft);border-radius:5px;padding:0 5px;font:12px ui-monospace,Menlo,monospace;color:var(--deep)}
 pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:14px;
   font:12px/1.6 ui-monospace,Menlo,monospace;overflow:auto;max-height:420px}
 .empty{padding:32px 24px;text-align:center;color:var(--text3);font-size:13px}
 .empty .t{font-size:14px;color:var(--text2);margin-bottom:6px}
-
+.avatar{border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
 #toast{position:fixed;top:18px;right:20px;padding:9px 16px;border-radius:10px;font-size:13px;z-index:9;
   display:none;box-shadow:var(--shadow)}
 #toast.ok{background:var(--ok-bg);color:var(--ok)}
 #toast.err{background:var(--err-bg);color:var(--err)}
 .hidden{display:none!important}
-
 @media (max-width:760px){
   .shell{flex-direction:column;padding:16px 12px 48px}
   .side{position:static;flex:none;width:100%}
@@ -197,13 +175,44 @@ pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;paddi
   .shell{display:block;max-width:none;padding:0}
   .panel{display:block!important;animation:none}
   details.card > .body{display:block}
-  details.card:not([open]) > .body{display:block}
   .card,.rule,.stat,details.card{box-shadow:none;break-inside:avoid}
 }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
-</style></head><body>
+"""
+
+COMMON_JS = r"""
+if(new URLSearchParams(location.search).has("dark")) document.documentElement.dataset.theme = "dark";
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function el(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstChild; }
+function toast(msg, ok=true){
+  const t = document.getElementById("toast"); t.textContent = msg; t.className = ok ? "ok" : "err";
+  t.style.display = "block"; setTimeout(()=> t.style.display = "none", 3000);
+}
+/* 业务头像：名称关键词 → 代表性 emoji + 哈希渐变 */
+const AVATAR_KW = [
+  [/餐饮|茶饮|外卖/, "🍜"], [/电商|跨境/, "🛒"], [/财务|费用|毛利|资金/, "💰"],
+  [/制造|工厂|生产/, "🏭"], [/会员|客户|用户/, "👥"], [/供应链|库存|采购/, "🚚"],
+  [/人力|人资|组织/, "🧑‍💼"], [/市场|品牌|营销/, "📣"], [/商品|产品/, "📦"],
+  [/零售|门店|连锁|销售|业绩/, "🛍"], [/经营|管理|分析/, "📈"],
+];
+function avatarFor(name, size){
+  let emoji = "🧭";
+  for(const [re, e] of AVATAR_KW){ if(re.test(name)){ emoji = e; break; } }
+  if(emoji === "🧭"){ const pool = ["🧭","📊","🗺️","🔭","🧮","🎯"]; emoji = pool[[...name].reduce((a,c)=>a+c.charCodeAt(0),0) % pool.length]; }
+  const h = [...name].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7) % 360;
+  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size*0.52)}px;
+    background:linear-gradient(135deg,hsl(${h},45%,55%),hsl(${(h+40)%360},50%,38%))">${emoji}</div>`;
+}
+"""
+
+PAGE = r"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f6f8f5">
+<title>Data Agent 工作台</title>
+<style>__CSS__</style></head><body>
 <div id="toast" aria-live="polite"></div>
 <div class="shell">
   <aside class="side">
@@ -215,26 +224,21 @@ pre.json{background:var(--code-bg);color:var(--code-fg);border-radius:10px;paddi
   </aside>
   <div class="main">
     <div class="topbar">
-      <div><h1 id="pageTitle">数据资产</h1><div class="meta" id="meta"></div></div>
+      <div><h1 id="pageTitle">概览</h1><div class="meta" id="meta"></div></div>
       <span class="mode" id="modeBadge"></span>
     </div>
     <div id="panels"></div>
   </div>
 </div>
 <script>
-if(new URLSearchParams(location.search).has("dark")) document.documentElement.dataset.theme = "dark";
+__CJS__
 const DATA = __DATA__;
 const EDIT = __EDIT__;
 const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 let dirty = false;
 window.onbeforeunload = () => dirty ? "有未保存的修改" : null;
 
 /* ---------- 基础设施 ---------- */
-function toast(msg, ok=true){
-  const t = $("#toast"); t.textContent = msg; t.className = ok ? "ok" : "err";
-  t.style.display = "block"; setTimeout(()=> t.style.display = "none", 3000);
-}
 function savedBadge(host){
   const b = el('<span class="saved">✓ 已保存</span>');
   host.append(b); setTimeout(()=> b.remove(), 2600);
@@ -250,9 +254,8 @@ async function save(file, content){
   }catch(e){ toast("保存失败："+e.message+"。可检查工作台服务是否还在运行。", false); return false; }
 }
 function splitSections(text){ return text.split(/(?=^#{1,3}\s)/m).filter(c=>c.length); }
-function el(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstChild; }
 
-/* markdown-lite 渲染：粗体/行内代码/引用/有序步骤/无序列表 */
+/* markdown-lite 渲染 */
 function mdLite(text){
   const inline = s => esc(s)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -277,8 +280,9 @@ function mdLite(text){
   flush();
   return html;
 }
+function biUrl(pgId){ return DATA.biBaseUrl ? DATA.biBaseUrl + "/page/" + pgId : null; }
 
-/* 通用分节编辑器：展示=结构化渲染，编辑=本节原文 textarea，保存=整文件重建 */
+/* 通用分节编辑器 */
 function sectionEditor(file, renderChunk){
   const chunks = splitSections(DATA.files[file] || "");
   const wrap = document.createElement("div");
@@ -319,13 +323,79 @@ function secTitle(chunk){
 function emptyState(title, guide){
   return el(`<div class="card"><div class="empty"><div class="t">${esc(title)}</div>${esc(guide)}</div></div>`);
 }
+function pagesOf(){
+  if(!DATA.assets) return [];
+  return Object.entries(DATA.assets).filter(([k]) => k !== "_meta");
+}
+
+/* ---------- 概览 ---------- */
+function overviewPanel(){
+  const wrap = document.createElement("div");
+  const id = DATA.identity || {};
+  const pages = pagesOf();
+  let nCards = 0; pages.forEach(([,info]) => nCards += Object.keys(info.cards||{}).length);
+  const meta = (DATA.assets && DATA.assets._meta) || {};
+  /* 身份卡 */
+  const triggers = (id.triggers || []).map(t=>`<span class="chip c-soft" style="margin:2px 4px 2px 0">${esc(t)}</span>`).join("");
+  const card = el(`<div class="card" style="display:flex;gap:16px;align-items:flex-start">
+    ${avatarFor(id.name || "agent", 56)}
+    <div style="flex:1;min-width:0">
+      <h3 style="margin-bottom:4px">${esc(id.name || agentDisplayName())}
+        <span class="sub">${esc(id.version || "")}</span></h3>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">${esc(id.description || "（未找到 agent 描述）")}</div>
+      ${triggers ? `<div style="margin-bottom:8px"><span style="font-size:12px;color:var(--text3)">触发词：</span>${triggers}</div>` : ""}
+      <div style="font-size:12px;color:var(--text3)">
+        ${pages.length} 张看板 · ${nCards} 张卡片${meta.builtAt ? " · 学习于 " + esc(meta.builtAt) : ""}
+      </div>
+    </div></div>`);
+  wrap.append(card);
+  /* 数据源链接 */
+  if(pages.length){
+    const rows = pages.map(([name, info]) => {
+      const u = biUrl(info.pgId);
+      const pm = (meta.pages||{})[info.pgId];
+      return `<div class="frow"><div class="k" style="flex-basis:auto;min-width:96px">📈 看板</div>
+        <div class="v">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(name)} ↗</a>` : esc(name)}
+        <span style="color:var(--text3);font-size:12px">${pm && pm.mtime ? " · 学习时更新于 " + esc(pm.mtime) : ""}</span></div></div>`;
+    }).join("");
+    wrap.append(el(`<div class="card"><h3>🔗 数据源（点击跳转 BI 平台）</h3>${rows}</div>`));
+  }
+  /* 体检区 */
+  const hz = el(`<div class="card"><h3>🩺 资产体检</h3><div class="hbody" style="font-size:13px;color:var(--text2)"></div><div class="btnrow"></div></div>`);
+  const hbody = hz.querySelector(".hbody"), hrow = hz.querySelector(".btnrow");
+  if(!meta.pages){
+    hbody.textContent = "这个 agent 没有记录学习时点（旧版搭建），无法自动体检。可重新搭建或在对话中说「体检资产」。";
+  } else if(EDIT){
+    hbody.textContent = "检查看板在学习之后是否被修改过，改过则需要重新学习。";
+    const btn = el('<button class="btn primary">开始体检</button>');
+    const out = el('<div style="margin-top:10px"></div>');
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "体检中…";
+      try{
+        const r = await fetch("/check", {method:"POST"}); const j = await r.json();
+        out.innerHTML = j.pages.map(p =>
+          `<div class="frow"><div class="k" style="flex-basis:auto">📈</div><div class="v">${esc(p.title)}
+            ${p.error ? '<span class="chip c-err">看板不存在或无权访问</span>'
+              : p.stale ? `<span class="chip c-warn">已更新 ${esc(p.current)}</span>（学习时 ${esc(p.learned)||"未知"}）→ 建议重新学习`
+              : '<span class="chip c-ok">未变化</span>'}</div></div>`).join("");
+        const staleN = j.pages.filter(p=>p.stale||p.error).length;
+        toast(staleN ? `体检完成：${staleN} 张看板有变化，建议重新学习` : "体检完成：全部看板未变化 ✓", !staleN);
+      }catch(e){ toast("体检失败：" + e.message, false); }
+      btn.disabled = false; btn.textContent = "重新体检";
+    };
+    hrow.append(btn); hz.append(out);
+  } else {
+    hbody.textContent = "只读页面无法联网体检。想知道资产是否过期，在对话中对助手说「体检资产」即可。";
+  }
+  wrap.append(hz);
+  return wrap;
+}
 
 /* ---------- 数据资产 ---------- */
 function assetsPanel(){
   const wrap = document.createElement("div");
-  const a = DATA.assets;
-  if(!a) { wrap.append(emptyState("还没有数据资产", "完成第 2 步看板学习后，这里会列出所有看板和卡片。")); return wrap; }
-  const pages = Object.entries(a);
+  const pages = pagesOf();
+  if(!pages.length){ wrap.append(emptyState("还没有数据资产", "完成第 2 步看板学习后，这里会列出所有看板和卡片。")); return wrap; }
   let nCards = 0, nDisabled = 0;
   pages.forEach(([,info]) => Object.values(info.cards||{}).forEach(c => { nCards++; if(c["禁用"]) nDisabled++; }));
   wrap.append(el(`<div class="stats">
@@ -343,9 +413,11 @@ function assetsPanel(){
       rows += `<tr><td>${esc(cn)}</td><td><span class="chip c-soft">${esc(c.type||"")}</span></td>
         <td>${chips}</td><td style="color:var(--text2)">${esc(c.notes||"")}</td></tr>`;
     }
+    const u = biUrl(info.pgId);
+    const link = u ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="chip c-cyan" style="margin-left:auto">在 BI 中打开 ↗</a>` : "";
     const d = el(`<details class="card"${idx===0?" open":""}>
       <summary><span class="arrow" aria-hidden="true">▶</span>📈 ${esc(name)}
-      <span class="sub">${Object.keys(info.cards||{}).length} 张卡片</span></summary>
+      <span class="sub">${Object.keys(info.cards||{}).length} 张卡片</span>${link}</summary>
       <div class="body"><table><tr><th>卡片</th><th style="width:180px">类型</th><th style="width:150px">状态</th><th>备注</th></tr>${rows}</table></div>
     </details>`);
     wrap.append(d);
@@ -356,7 +428,6 @@ function assetsPanel(){
   }
   return wrap;
 }
-/* learningResult：按 ## 看板 切块，**字段：** 解析成标签行，字段下的列表归入该字段 */
 function learningEditor(){
   return sectionEditor("learningResult.md", (chunk, startEdit) => {
     const frag = document.createElement("div"); frag.className = "card";
@@ -528,13 +599,14 @@ function rawPanel(){
 
 /* ---------- 框架 ---------- */
 const TABS = [
+  ["overview", "🏠", "概览", overviewPanel],
   ["assets", "📦", "数据资产", assetsPanel],
   ["rules", "📏", "业务口径", rulesPanel],
   ["thinking", "🧠", "分析思路", thinkingPanel],
   ["raw", "🗂", "输出模板与脚本", rawPanel],
 ];
 let curTab = (location.hash || "").slice(1);
-if(!TABS.some(([id]) => id === curTab)) curTab = "assets";
+if(!TABS.some(([id]) => id === curTab)) curTab = "overview";
 function renderMain(){
   const panels = $("#panels"); panels.innerHTML = "";
   TABS.forEach(([id,,,build]) => {
@@ -543,6 +615,7 @@ function renderMain(){
   });
 }
 function agentDisplayName(){
+  if(DATA.identity && DATA.identity.name) return DATA.identity.name;
   const parts = DATA.dir.split("/").filter(Boolean);
   let name = parts[parts.length-1] || "";
   if(name === "references" && parts.length > 1) name = parts[parts.length-2];
@@ -550,10 +623,10 @@ function agentDisplayName(){
 }
 function summaryLine(){
   const bits = [];
-  if(DATA.assets){
-    const pn = Object.keys(DATA.assets).length;
-    let cn = 0; Object.values(DATA.assets).forEach(i => cn += Object.keys(i.cards||{}).length);
-    bits.push(pn + " 张看板", cn + " 张卡片");
+  const pages = pagesOf();
+  if(pages.length){
+    let cn = 0; pages.forEach(([,i]) => cn += Object.keys(i.cards||{}).length);
+    bits.push(pages.length + " 张看板", cn + " 张卡片");
   }
   const bk = DATA.files["businessKnowledge.md"];
   if(bk){ const n = (bk.match(/^\d+\.\s/gm) || []).length; if(n) bits.push(n + " 条口径"); }
@@ -594,14 +667,140 @@ function summaryLine(){
 })();
 </script></body></html>"""
 
+FLEET_PAGE = r"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f6f8f5">
+<title>我的 Data Agents</title>
+<style>__CSS__
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.agent-card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
+  padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.agent-card .hd{display:flex;gap:12px;align-items:center}
+.agent-card .nm{font-size:15px;font-weight:650}
+.agent-card .ds{font-size:12.5px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden;min-height:2.4em}
+.agent-card .ft{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text3)}
+.agent-card .acts{display:flex;gap:8px;margin-top:auto}
+.agent-card .btn{flex:1;text-align:center}
+.stalebar{font-size:12.5px;border-radius:8px;padding:6px 10px}
+</style></head><body>
+<div id="toast" aria-live="polite"></div>
+<div class="shell" style="max-width:1160px">
+  <div class="main" style="width:100%">
+    <div class="topbar">
+      <div class="logo avatar" style="width:34px;height:34px;font-size:17px;background:linear-gradient(135deg,#59ac65,#1f7237)" aria-hidden="true">🤖</div>
+      <div><h1>我的 Data Agents</h1><div class="meta" id="meta"></div></div>
+      <span class="mode" id="modeBadge"></span>
+    </div>
+    <div class="agent-grid" id="grid"></div>
+  </div>
+</div>
+<script>
+__CJS__
+const DATA = __DATA__;
+const EDIT = __EDIT__;
+document.getElementById("meta").textContent =
+  DATA.dir + " · " + DATA.agents.length + " 个 agent · 生成于 " + DATA.generated;
+document.getElementById("modeBadge").textContent = EDIT ? "可体检" : "只读";
+if(EDIT) document.getElementById("modeBadge").classList.add("edit");
+const grid = document.getElementById("grid");
+if(!DATA.agents.length){
+  grid.append(el('<div class="card" style="grid-column:1/-1"><div class="empty"><div class="t">还没有搭建任何 data agent</div>在 WorkBuddy 里使用 guanbi-agent-builder 搭建后，会出现在这里。</div></div>'));
+}
+DATA.agents.forEach(a => {
+  const chips = [];
+  if(a.pages) chips.push(`<span class="chip c-soft">${a.pages} 看板</span>`);
+  if(a.cards) chips.push(`<span class="chip c-soft">${a.cards} 卡片</span>`);
+  if(a.rules) chips.push(`<span class="chip c-soft">${a.rules} 口径</span>`);
+  if(a.builtAt) chips.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
+  const card = el(`<div class="agent-card">
+    <div class="hd">${avatarFor(a.name, 44)}<div><div class="nm">${esc(a.name)}</div>
+      <div style="font-size:11.5px;color:var(--text3)">${esc(a.dirName)}</div></div></div>
+    <div class="ds">${esc(a.description || "（无描述）")}</div>
+    <div class="ft">${chips.join("")}</div>
+    <div class="stale"></div>
+    <div class="acts"></div></div>`);
+  const acts = card.querySelector(".acts");
+  if(a.workbenchUrl){
+    acts.append(el(`<a class="btn" href="${esc(a.workbenchUrl)}" target="_blank" rel="noopener">打开工作台 ↗</a>`));
+  }
+  if(EDIT && a.hasMeta){
+    const cb = el('<button class="btn primary">🩺 体检</button>');
+    cb.onclick = async () => {
+      cb.disabled = true; cb.textContent = "体检中…";
+      const stale = card.querySelector(".stale");
+      try{
+        const r = await fetch("/check?agent=" + encodeURIComponent(a.dirName), {method:"POST"});
+        const j = await r.json();
+        const bad = j.pages.filter(p => p.stale || p.error);
+        stale.innerHTML = bad.length
+          ? `<div class="stalebar" style="background:var(--warn-bg);color:var(--warn)">⚠️ ${bad.length} 张看板在学习后被修改：${bad.map(p=>esc(p.title)).join("、")}，建议对该 agent 重新学习</div>`
+          : `<div class="stalebar" style="background:var(--ok-bg);color:var(--ok)">✓ 全部 ${j.pages.length} 张看板未变化（${esc(j.checkedAt)}）</div>`;
+      }catch(e){ toast("体检失败：" + e.message, false); }
+      cb.disabled = false; cb.textContent = "🩺 重新体检";
+    };
+    acts.append(cb);
+  }
+  grid.append(card);
+});
+if(EDIT){
+  const done = el('<button class="btn" style="position:fixed;bottom:20px;right:20px;box-shadow:var(--shadow)">✅ 完成，关闭</button>');
+  done.onclick = async () => { await fetch("/shutdown", {method:"POST"});
+    document.body.innerHTML = '<div style="max-width:480px;margin:120px auto;text-align:center"><div style="font-size:40px">✅</div><h2 style="margin:12px 0 6px">已关闭</h2></div>'; };
+  document.body.append(done);
+}
+</script></body></html>"""
+
+
+# ---------- 数据采集 ----------
+
+def bi_base_url():
+    try:
+        r = subprocess.run(["guancli", "auth", "status"],
+                           capture_output=True, text=True, timeout=30)
+        m = re.search(r'^URL:\s*(\S+)', r.stdout, re.M)
+        return m.group(1).rstrip('/') if m else ""
+    except Exception:
+        return ""
+
+
+def parse_skill_md(path):
+    """从 agent SKILL.md 提取名称/描述/触发词（名称优先 displayName → H1 → name）。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read(8000)
+    except OSError:
+        return None
+    name = re.search(r'^name:\s*(.+)$', text, re.M)
+    disp = re.search(r'^displayName:\s*(.+)$', text, re.M)
+    h1 = re.search(r'^#\s+(.+)$', text, re.M)
+    desc = re.search(r'^description:\s*(.+)$', text, re.M)
+    ver = re.search(r'^version:\s*"?([^"\n]+)"?\s*$', text, re.M)
+    if not name and not desc and not h1:
+        return None
+    d = desc.group(1).strip() if desc else ""
+    quoted = re.findall(r'["「](.+?)["」]', d)
+    return {
+        "name": (disp.group(1).strip() if disp else "") or (h1.group(1).strip() if h1 else "") \
+                or (name.group(1).strip() if name else ""),
+        "description": d[:160] + ("…" if len(d) > 160 else ""),
+        "version": ver.group(1) if ver else "",
+        "triggers": quoted[:5],
+    }
+
 
 def collect(workdir):
     data = {"dir": os.path.abspath(workdir), "generated": time.strftime("%Y-%m-%d %H:%M"),
-            "assets": None, "files": {}}
+            "assets": None, "files": {}, "identity": None, "biBaseUrl": ""}
     cj = os.path.join(workdir, "cards.json")
     if os.path.exists(cj):
         with open(cj, encoding="utf-8") as f:
             data["assets"] = json.load(f)
+    meta = (data["assets"] or {}).get("_meta") or {}
+    data["biBaseUrl"] = meta.get("biBaseUrl") or bi_base_url()
+    if os.path.basename(os.path.normpath(workdir)) == "references":
+        data["identity"] = parse_skill_md(os.path.join(os.path.dirname(os.path.abspath(workdir)), "SKILL.md"))
     for fn in sorted(os.listdir(workdir)):
         if fn.endswith((".md", ".json")) and not fn.startswith("_") and fn != "cards.json":
             with open(os.path.join(workdir, fn), encoding="utf-8") as f:
@@ -609,15 +808,79 @@ def collect(workdir):
     return data
 
 
-def render_page(data, edit):
+def page_mtime(pg_id):
+    r = subprocess.run(["guancli", "page", "get", pg_id],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return None
+    m = re.search(r'^更新时间: (.+)$', r.stdout, re.M)
+    return m.group(1).strip() if m else ""
+
+
+def check_staleness(workdir):
+    """对比 cards.json._meta 记录的学习时 mtime 与当前线上 mtime。"""
+    cj = os.path.join(workdir, "cards.json")
+    with open(cj, encoding="utf-8") as f:
+        meta = (json.load(f).get("_meta") or {})
+    pages = []
+    for pg_id, info in (meta.get("pages") or {}).items():
+        cur = page_mtime(pg_id)
+        pages.append({
+            "pgId": pg_id, "title": info.get("title", pg_id),
+            "learned": info.get("mtime", ""), "current": cur,
+            "error": cur is None,
+            "stale": bool(cur) and cur != info.get("mtime", ""),
+        })
+    return {"pages": pages, "checkedAt": time.strftime("%Y-%m-%d %H:%M")}
+
+
+def collect_agents(skills_dir):
+    out = []
+    for name in sorted(os.listdir(skills_dir)):
+        ref = os.path.join(skills_dir, name, "references")
+        if not name.startswith("agent-") or not os.path.isdir(ref):
+            continue
+        a = {"dirName": name, "name": name.replace("agent-", ""), "description": "",
+             "pages": 0, "cards": 0, "rules": 0, "builtAt": "", "hasMeta": False,
+             "workbenchUrl": ""}
+        ident = parse_skill_md(os.path.join(skills_dir, name, "SKILL.md"))
+        if ident:
+            a.update({k: ident[k] for k in ("name", "description") if ident.get(k)})
+        cj = os.path.join(ref, "cards.json")
+        if os.path.exists(cj):
+            with open(cj, encoding="utf-8") as f:
+                assets = json.load(f)
+            meta = assets.get("_meta") or {}
+            a["builtAt"] = meta.get("builtAt", "")
+            a["hasMeta"] = bool(meta.get("pages"))
+            for k, v in assets.items():
+                if k == "_meta":
+                    continue
+                if isinstance(v, dict) and isinstance(v.get("cards"), dict):
+                    a["pages"] += 1
+                    a["cards"] += len(v["cards"])
+                elif k == "pages" and isinstance(v, dict):
+                    a["pages"] += len(v)  # 旧版 schema：{pages: {名称: pgId}}
+        bk = os.path.join(ref, "businessKnowledge.md")
+        if os.path.exists(bk):
+            with open(bk, encoding="utf-8") as f:
+                a["rules"] = len(re.findall(r'^\d+\.\s', f.read(), re.M))
+        if os.path.exists(os.path.join(skills_dir, name, "workbench.html")):
+            a["workbenchUrl"] = f"{name}/workbench.html"
+        out.append(a)
+    return out
+
+
+# ---------- 渲染与服务 ----------
+
+def render(page_tpl, data, edit):
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
-    return (PAGE.replace("__DATA__", payload)
-                .replace("__EDIT__", "true" if edit else "false"))
+    return (page_tpl.replace("__CSS__", COMMON_CSS).replace("__CJS__", COMMON_JS)
+            .replace("__DATA__", payload)
+            .replace("__EDIT__", "true" if edit else "false"))
 
 
-def serve(workdir):
-    allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
-
+def make_handler(get_page, on_check=None, on_save=None):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -632,40 +895,75 @@ def serve(workdir):
 
         def do_GET(self):
             if urlparse(self.path).path == "/":
-                self._send(200, render_page(collect(workdir), True))
+                self._send(200, get_page())
             else:
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
-            path = urlparse(self.path).path
-            if path == "/shutdown":
+            u = urlparse(self.path)
+            if u.path == "/shutdown":
                 self._send(200, "{}", "application/json")
                 import threading
-                threading.Timer(0.3, server.shutdown).start()
+                threading.Timer(0.3, self.server.shutdown).start()
                 return
-            if path != "/save":
-                self._send(404, "{}", "application/json")
+            if u.path == "/check" and on_check:
+                q = parse_qs(u.query)
+                self._send(200, json.dumps(on_check(q.get("agent", [None])[0]),
+                                           ensure_ascii=False), "application/json")
                 return
-            try:
-                n = int(self.headers.get("Content-Length", 0))
-                req = json.loads(self.rfile.read(n) or b"{}")
-                fn, content = req.get("file", ""), req.get("content", "")
-                if fn not in allowed or "/" in fn:
-                    raise ValueError("不允许的文件: " + fn)
-                if fn.endswith(".json"):
-                    json.loads(content)
-                fp = os.path.join(workdir, fn)
-                backup = fn + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
-                if os.path.exists(fp):
-                    with open(fp, encoding="utf-8") as f, \
-                         open(os.path.join(workdir, backup), "w", encoding="utf-8") as g:
-                        g.write(f.read())
-                with open(fp, "w", encoding="utf-8") as f:
-                    f.write(content)
-                self._send(200, json.dumps({"ok": True, "backup": backup}), "application/json")
-            except Exception as e:
-                self._send(200, json.dumps({"ok": False, "error": str(e)[:200]}), "application/json")
+            if u.path == "/save" and on_save:
+                try:
+                    n = int(self.headers.get("Content-Length", 0))
+                    req = json.loads(self.rfile.read(n) or b"{}")
+                    self._send(200, json.dumps(on_save(req.get("file", ""),
+                               req.get("content", "")), ensure_ascii=False), "application/json")
+                except Exception as e:
+                    self._send(200, json.dumps({"ok": False, "error": str(e)[:200]}),
+                               "application/json")
+                return
+            self._send(404, "{}", "application/json")
 
+    return H
+
+
+def serve_single(workdir):
+    allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
+
+    def save_file(fn, content):
+        if fn not in allowed or "/" in fn:
+            return {"ok": False, "error": "不允许的文件: " + fn}
+        if fn.endswith(".json"):
+            json.loads(content)
+        fp = os.path.join(workdir, fn)
+        backup = fn + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+        if os.path.exists(fp):
+            with open(fp, encoding="utf-8") as f, \
+                 open(os.path.join(workdir, backup), "w", encoding="utf-8") as g:
+                g.write(f.read())
+        with open(fp, "w", encoding="utf-8") as f:
+            f.write(content)
+        return {"ok": True, "backup": backup}
+
+    H = make_handler(lambda: render(PAGE, collect(workdir), True),
+                     on_check=lambda _a: check_staleness(workdir),
+                     on_save=save_file)
+    server = HTTPServer(("127.0.0.1", 0), H)
+    print(f"WORKBENCH_URL=http://127.0.0.1:{server.server_port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+def serve_fleet(skills_dir):
+    def check(agent_name):
+        ref = os.path.join(skills_dir, agent_name or "", "references")
+        if not agent_name or not os.path.isdir(ref):
+            return {"pages": [], "checkedAt": time.strftime("%Y-%m-%d %H:%M")}
+        return check_staleness(ref)
+    H = make_handler(lambda: render(FLEET_PAGE, {
+        "dir": os.path.abspath(skills_dir), "generated": time.strftime("%Y-%m-%d %H:%M"),
+        "agents": collect_agents(skills_dir)}, True), on_check=check)
     server = HTTPServer(("127.0.0.1", 0), H)
     print(f"WORKBENCH_URL=http://127.0.0.1:{server.server_port}", flush=True)
     try:
@@ -675,18 +973,53 @@ def serve(workdir):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    argv = sys.argv[1:]
+    serve_mode = "--serve" in argv
+    check_mode = "--check" in argv
+    agents_mode = "--agents" in argv
+    args = [a for a in argv if not a.startswith("--")]
+
+    if agents_mode:
+        skills_dir = os.path.expanduser(args[0] if args else "~/.workbuddy/skills")
+        if not os.path.isdir(skills_dir):
+            sys.exit(f"目录不存在: {skills_dir}")
+        if serve_mode:
+            serve_fleet(skills_dir)
+        else:
+            out = os.path.join(skills_dir, "agents.html")
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(render(FLEET_PAGE, {
+                    "dir": os.path.abspath(skills_dir),
+                    "generated": time.strftime("%Y-%m-%d %H:%M"),
+                    "agents": collect_agents(skills_dir)}, False))
+            print(f"已生成: {out}")
+        return
+
     if not args:
         sys.exit(__doc__)
     workdir = args[0]
     if not os.path.isdir(workdir):
         sys.exit(f"目录不存在: {workdir}")
-    if "--serve" in sys.argv:
-        serve(workdir)
+    if check_mode:
+        r = check_staleness(workdir)
+        print(f"资产体检（{r['checkedAt']}）")
+        for p in r["pages"]:
+            if p["error"]:
+                print(f"  ❌ {p['title']}：看板不存在或无权访问")
+            elif p["stale"]:
+                print(f"  ⚠️  {p['title']}：学习时 {p['learned'] or '未知'} → 当前 {p['current']}，建议重新学习")
+            else:
+                print(f"  ✓  {p['title']}：未变化")
+        return
+    if serve_mode:
+        serve_single(workdir)
     else:
-        out = os.path.join(workdir, "workbench.html")
+        out_dir = workdir
+        if os.path.basename(os.path.normpath(workdir)) == "references":
+            out_dir = os.path.dirname(os.path.abspath(workdir))  # 交付包根目录
+        out = os.path.join(out_dir, "workbench.html")
         with open(out, "w", encoding="utf-8") as f:
-            f.write(render_page(collect(workdir), False))
+            f.write(render(PAGE, collect(workdir), False))
         print(f"已生成: {out}")
 
 
