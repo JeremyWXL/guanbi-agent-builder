@@ -1,0 +1,17 @@
+[Unit]
+Description=A2M pay-per-use merchant server (guanbi-agent-builder)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/a2m-pay
+# 生产密钥与真实 serviceId 全部在 EnvironmentFile 中（chmod 600，不进 Git）
+EnvironmentFile=/home/ubuntu/a2m-pay/a2m-pay.env
+Environment=PORT=5099
+ExecStart=/home/ubuntu/a2m-pay/.venv/bin/python /home/ubuntu/a2m-pay/payment_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

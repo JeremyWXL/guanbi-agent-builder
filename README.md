@@ -1,0 +1,30 @@
+# guanbi-agent-builder
+
+Data Agent 搭建向导：把熟悉的观远 BI 看板变成 AI data agent 的引导式 skill。
+
+本 skill 以对话方式引导**不懂技术的业务用户**一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景，参照观远官方 Dashboard Agent 的配置结构（pages / learningResult / businessKnowledge / insightThinking / outputFormat）自动生成配置，关键环节由用户确认纠偏。
+
+## 特性
+
+- **七步向导**：选定数据范围 → 看板资产学习 → 业务认知补充 → 场景确认 → 配置生成 → 校验确认 → 交付使用
+- **行业认知预研 + 历史报告提炼**（v2.0 起）：解决"裸看板搭建、缺业务输入"的核心短板
+- **自动校验**：生成的卡片/页面配置带校验脚本，减少手工排错
+
+## 依赖
+
+- `guancli`（观远 BI CLI）：`guancli auth login`
+- `python3`（系统自带）：运行 `references/scripts/` 下的向导脚本
+
+## 安装
+
+将本仓库的 `SKILL.md` 与 `references/` 放入你的 skill 加载目录（如 `~/.workbuddy/skills/guanbi-agent-builder/`）即可。
+
+## License
+
+[MIT](LICENSE)
+
+> 本作品为个人开发者作品（作者：Jeremy），与观远数据（Guandata）官方无关；"观远 BI"等字样仅表示本工具面向该平台的数据看板使用。
+
+## 历史
+
+- 2026-09：曾尝试 PaySkill 收费版（v1.0.0–v3.0.1），经实测收费模式不成立，已封存于 [archive/](archive/README.md)，项目转为开源继续迭代。
