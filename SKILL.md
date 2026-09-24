@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "2.3.1"
+version: "2.3.2"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。v2.0 新增：行业认知预研 + 历史报告提炼，解决"裸看板搭建、缺业务输入"的核心短板。v2.2 新增：勾选式看板选择（自动列出用户有权限的仪表板供点击勾选/编号勾选）+ 全部确认点结构化出口。v2.3 新增：校验工作台——把资产目录/业务口径/分析思路变成浏览器里可查看、可直接编辑的本地页面（保存自动备份），交付包含只读工作台 workbench.html。
