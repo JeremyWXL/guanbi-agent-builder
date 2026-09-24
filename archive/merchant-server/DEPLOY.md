@@ -3,6 +3,8 @@
 > ✅ **2026-09-23 已部署上线**：服务跑在腾讯云 `/opt/a2m-pay`（venv 隔离），systemd 单元 `a2m-pay.service` 常驻（Restart=always），Caddy 反代 `www.jeremyai.site/a2m/* → 127.0.0.1:5001`，生产配置在 `/opt/a2m-pay/.env`（600 权限，含真实 serviceId）。公网验收：`curl -i https://www.jeremyai.site/a2m/resource` → HTTP 402 + Payment-Needed。
 >
 > 本文件保留作为**重建/迁移手册**与新部署参考。
+>
+> ⛔ **2026-09-24 已随收费版封存一并下线**：`a2m-pay.service` 已 stop + disable，Caddy `/a2m/` 路由已移除，公网 `/a2m/*` 返回 404。下方步骤仅在需要重建时参考。
 
 ## 当前架构（实际）
 
