@@ -29,7 +29,7 @@ guancli auth status   # 确认认证有效
 ## 执行流程
 
 1. **取数**：按 `references/cards.json` 的卡片映射，用 `guancli card preview <cdId> -f json` 取数（或用 `references/sample_cards.py` 批量刷新到本地）
-2. **SQL 直查（卡片粒度不够时切换）**：当卡片没有对应粒度（如"单月指标""卡片没拆的维度"）时，用 `guancli ds execute-sql` 直接对数据集写 SQL 聚合，见 `references/sql-guide.md`
+2. **SQL 直查（卡片粒度不够时切换）**：当卡片没有对应粒度（如"单月指标""卡片没拆的维度"）时，用 `python3 references/run_sql.py <数据集ID> '<SQL>'` 对数据集做只读聚合查询（该脚本强制单条 SELECT，写操作会被拦截），规则见 `references/sql-guide.md`
 3. **口径**：严格遵循 `references/businessKnowledge.md`（用户确认版业务规则）
 4. **路由**：按 `references/learningResult.md` 定位问题对应的看板与卡片
 5. **分析**：按 `references/insightThinking.md` 对应场景框架执行

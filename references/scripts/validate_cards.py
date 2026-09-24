@@ -28,8 +28,17 @@ def main():
         if name.startswith('_'):
             continue
         with open(fp, encoding='utf-8') as f:
-            rows = json.load(f)
+            payload = json.load(f)
+        truncated_note = None
+        if isinstance(payload, dict) and 'rows' in payload:
+            truncated_note = payload.get('_totalRows')
+            rows = payload['rows']
+        else:
+            rows = payload
         issues = []
+        if truncated_note:
+            issues.append({"level": "INFO", "type": "truncated",
+                           "msg": f"采样已截断（共 {truncated_note} 行，仅落盘前 {len(rows)} 行），合计类校验基于截断样本"})
         if not isinstance(rows, list) or not rows:
             issues.append({"level": "WARN", "type": "empty",
                            "msg": "0 行数据：依赖筛选器上下文或数据为空，需确认或找替代卡片"})
@@ -46,9 +55,10 @@ def main():
             issues.append({"level": "WARN", "type": "unit",
                            "msg": f"疑似元单位（引用需 /10000 转万）: {sorted(set(big))[:5]}"})
         # 2. 合计闭环：找"总计"行，校验维度列合计（仅对绝对值列；比率/占比/达成率列不可加总）
+        #    截断样本上行数不全，合计必然不闭环，跳过该校验
         RATIO_HINT = ('率', '占比', '同比', '达成', '差额', '缺口', '费比')
         total_rows = [r for r in rows if any(str(v) in ('总计', '合计', 'Total') for v in r.values())]
-        if total_rows and len(rows) > 2:
+        if total_rows and len(rows) > 2 and not truncated_note:
             t = total_rows[0]
             others = [r for r in rows if r not in total_rows]
             closed, not_closed = [], []

@@ -2,10 +2,10 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "2.4.0"
+version: "2.5.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
-description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。v2.0 新增：行业认知预研 + 历史报告提炼，解决"裸看板搭建、缺业务输入"的核心短板。v2.2 新增：勾选式看板选择（自动列出用户有权限的仪表板供点击勾选/编号勾选）+ 全部确认点结构化出口。v2.3 新增：校验工作台——把资产目录/业务口径/分析思路变成浏览器里可查看、可直接编辑的本地页面（保存自动备份），交付包含只读工作台 workbench.html。v2.4 新增：工作台概览页（agent 身份卡 + 看板一键跳转 BI）、资产体检（对比看板学习时点与当前更新时间，过期提醒重新学习）、多 agent 管理总览页（--agents，业务头像 + 独立卡片 + 逐个体检）。
+description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
 agent_created: true
 ---
 
@@ -22,9 +22,10 @@ agent_created: true
 ## 前置检查（第 0 步，静默执行）
 
 ```bash
-guancli auth status
+python3 references/scripts/preflight.py
 ```
-未认证或环境不对时，引导用户：`guancli auth login`（或 `guancli auth use <环境名>`）。认证通过后才进入第 1 步，不要向用户展示技术细节，只需说"已连接上您的 BI 系统"。
+
+一键检查 guancli 安装/版本、BI 认证、看板树与看板详情的 JSON 结构探针。未通过时按提示引导用户（通常是 `guancli auth login` 或 `guancli auth use <环境名>`）。全部通过后才进入第 1 步，不要向用户展示技术细节，只需说"已连接上您的 BI 系统"。
 
 ## 校验工作台（确认点的可视化校验 + 直接编辑）
 
@@ -43,7 +44,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 - 适用确认点：第 2 步（资产目录）、第 4 步（业务口径，强烈推荐）、第 6 步（分析框架）
 - 只读场景（如交付后查看）：`python3 workbench.py <目录>` 生成静态 workbench.html（references 目录时自动写到交付包根目录），双击即可打开，无需服务
 
-## 七步向导
+## 八步向导
 
 ### 第 1 步：选定数据范围（勾选式）
 
@@ -74,21 +75,22 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId> -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器），**必须按 Card 块内联的 `**ID:**` 解析，禁止用 brief 输出顺序配对**（SELECTOR 交错会错位——这是已踩过的坑）。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、BI 地址、各看板学习时的更新时间）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"的依据
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、BI 地址、各看板学习时的更新时间）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
    ```
+   每张卡默认最多落盘 200 行（防大卡片撑爆上下文，原始行数记入索引）；`_sample_index.json` 同时给出每列画像（数值列 min/max、低基数文本列的枚举值——回答筛选取值类问题时以枚举值为准，禁止编造取值）
 3. 强制质量校验：
    ```bash
    python3 references/scripts/validate_cards.py <工作目录>/card-data
    ```
    校验项（全部通过才可继续，不通过必须修复）：
-   - 单位探测：数值量级 >1e6 的字段标注"疑似元，需换算为万"
-   - 合计闭环：维度拆解卡片的合计 ≈ 对应总计卡片数值（如各 BU 收入合计 ≈ 集团净收入），不闭环的标记为"下钻/局部数据，禁止当全景使用"
+   - 单位探测：数值量级 >1e6 的字段标注"疑似元，需换算为万"（parse_page 提取的 unitHints 如"万"可作为旁证）
+   - 合计闭环：维度拆解卡片的合计 ≈ 对应总计卡片数值（如各 BU 收入合计 ≈ 集团净收入），不闭环的标记为"下钻/局部数据，禁止当全景使用"；截断采样的卡片自动跳过该项
    - 0 行卡片：标记"依赖筛选器上下文"，为其找同看板替代卡片
 4. 生成看板资产目录（模板：`references/templates/learningResult.md`）：每张看板的核心价值、筛选器、核心数据模块、使用场景
-5. **SQL 直查能力探查**：用 `guancli ds get <数据集ID> --brief` 探查数据集字段，判断是否有 SQL 直查能力（数据集级 SQL 查询，见 `references/sql-guide.md`）。若可用，记入资产目录——这决定了助手后续能否补充"卡片粒度不够"的查询（如单月指标、自定义时间段、卡片没拆的维度）
+5. **SQL 直查能力探查**：cards-raw.json 已记录每张卡片所属的数据集 ID（dsId），用 `guancli ds get <数据集ID> --brief` 探查数据集字段，判断是否有 SQL 直查能力（数据集级 SQL 查询，见 `references/sql-guide.md`）。若可用，记入资产目录——这决定了助手后续能否补充"卡片粒度不够"的查询（如单月指标、自定义时间段、卡片没拆的维度）
 6. **建立基础认知**：完成看板学习后，AI 已经对客户场景有了初步理解——知道这是什么业务、有哪些指标、看板能回答什么问题。这是后续一切分析的基础。
 
 **确认点**：把资产目录用业务语言讲给用户听："我从这 N 张看板里学到了这些分析能力：…这些理解对吗？有没有遗漏的重要分析角度？"（需要细看可启动校验工作台）用户确认/纠偏后进入第 3 步。
@@ -173,10 +175,10 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - 维度合计 ≈ 总计（闭环校验）
    - 趋势描述与逐期数值一致，禁止错位编造
    - 前后结论不矛盾
-3. **SQL 直查测试（若启用）**：如果数据集有 SQL 直查能力，测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
+3. **SQL 直查测试（若启用）**：如果数据集有 SQL 直查能力，用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
 4. 输出测试报告：每个场景的通过/失败及证据
 
-**确认点**：用户验收："这些回答的数据和您的看板对得上吗？分析结论符合您的业务认知吗？"不通过则定位到对应步骤（数据问题回第 2 步、口径问题回第 3 步、框架问题回第 5 步）修复后重测。
+**确认点**：用户验收："这些回答的数据和您的看板对得上吗？分析结论符合您的业务认知吗？"不通过则定位到对应步骤（数据问题回第 2 步、口径问题回第 4 步、框架问题回第 6 步）修复后重测。
 
 ### 第 8 步：固化交付
 
@@ -196,10 +198,11 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
        ├── conversation-insights.md # 历史对话沉淀（可选，若客户授权）
        ├── sql-guide.md       # SQL 直查指南（若数据集支持）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
+       ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py 复制进产物包 references/
-3. 若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py 复制进产物包 references/
+3. 若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md 与 run_sql.py
 4. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
 
 ## 全程红线
@@ -210,5 +213,6 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 4. **认知补充是可选的**（v2.0）：第 3 步必须主动询问客户是否需要补充业务知识，但客户说不需要就直接跳过，不得强制
 5. **补充认知必须客户确认**：若客户选择补充认知（选项 A/B/C），学到的东西必须先生成可编辑的过程文件，客户确认微调后才放行进入下一步
 6. **数据校验不过不往下走**：合计不闭环、单位存疑的卡片必须修复或标记禁用
-7. **失败回退**：测试不通过时明确指出回哪一步修什么，不要从头重来
-8. **每步落盘**：每步产物立即写入工作目录，会话中断也能续建（下次加载本 skill 后从最近的落盘产物继续）
+7. **SQL 直查必须走只读执行器**：一律用 `run_sql.py`，禁止直接调用 `guancli ds execute-sql`（脚本层强制只读单条 SELECT，prompt 约束之外加一道硬保险）
+8. **失败回退**：测试不通过时明确指出回哪一步修什么，不要从头重来
+9. **每步落盘**：每步产物立即写入工作目录，会话中断也能续建（下次加载本 skill 后从最近的落盘产物继续）

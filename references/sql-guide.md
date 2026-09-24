@@ -16,14 +16,16 @@
 # 1. 探查数据集字段（先用这个，拿到数据集 ID 和字段列表）
 guancli ds get <数据集ID> --brief
 
-# 2. 执行聚合查询（核心命令）
-guancli ds execute-sql -inputs <数据集ID> -sql 'SELECT ... FROM `数据集名称` WHERE ... GROUP BY ...' -f table
+# 2. 执行聚合查询（核心命令——必须走只读执行器，禁止直接调 guancli ds execute-sql）
+python3 references/run_sql.py <数据集ID> 'SELECT ... FROM `数据集名称` WHERE ... GROUP BY ...'
 ```
+
+`run_sql.py` 是 `guancli ds execute-sql` 的只读包装：强制单条 SELECT/WITH 查询，拦截多语句与写操作关键字。被拦截时说明 SQL 写错了，改写为纯查询即可。搭建向导阶段脚本路径为 `references/scripts/run_sql.py`。
 
 ### 示例：查某省份某月单月指标
 
 ```bash
-guancli ds execute-sql -inputs <数据集ID> -sql '
+python3 references/run_sql.py <数据集ID> '
 SELECT
   SUM(`销售额`) AS sales,
   SUM(`门店销售目标`) AS target,
@@ -33,7 +35,7 @@ SELECT
 FROM `数据集名称`
 WHERE `省份` = "安徽"
   AND YEAR(`日期`) = 2026 AND MONTH(`日期`) = 3
-' -f table
+'
 ```
 
 然后现算派生指标：
@@ -94,6 +96,6 @@ SQL 取数是自由查询，**自由意味着口径可能和看板不一致**。
 ## 搭建向导接入点
 
 在搭建 data agent 时：
-- **第 2 步（资产学习）**：探查数据集是否有 SQL 直查能力（`guancli ds get <dsId> --brief`），若有则记入资产目录
-- **第 6 步（测试验收）**：若启用 SQL 模式，测试至少 1 个"卡片粒度不够"的查询，验证 SQL 结果与卡片结果交叉闭环
-- **第 7 步（固化交付）**：若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md
+- **第 2 步（资产学习）**：cards-raw.json 已记录每张卡片的数据集 ID，用 `guancli ds get <dsId> --brief` 探查数据集是否有 SQL 直查能力，若有则记入资产目录
+- **第 7 步（测试验收）**：若启用 SQL 模式，用 run_sql.py 测试至少 1 个"卡片粒度不够"的查询，验证 SQL 结果与卡片结果交叉闭环
+- **第 8 步（固化交付）**：若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md 与 run_sql.py

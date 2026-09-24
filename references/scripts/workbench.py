@@ -809,6 +809,16 @@ def collect(workdir):
 
 
 def page_mtime(pg_id):
+    """优先走 --raw JSON（utime 字段），失败时回退文本正则。"""
+    r = subprocess.run(["guancli", "page", "get", pg_id, "--raw"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode == 0:
+        try:
+            data = json.loads(r.stdout).get("data") or {}
+            if data.get("utime"):
+                return data["utime"]
+        except json.JSONDecodeError:
+            pass
     r = subprocess.run(["guancli", "page", "get", pg_id],
                        capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
