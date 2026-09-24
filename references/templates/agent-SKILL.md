@@ -48,5 +48,7 @@ guancli auth status   # 确认认证有效
 ## 维护
 
 - 看板结构变更后：重新运行 sample_cards.py 刷新采样
-- 业务口径变化：直接编辑 businessKnowledge.md
+- 业务口径变化：直接编辑 businessKnowledge.md，或启动工作台可视化编辑：`python3 references/workbench.py references --serve`（浏览器打开 WORKBENCH_URL，保存自动备份）
+- 随时查看资产/口径/分析思路：双击交付包根目录的 workbench.html，或 `python3 references/workbench.py references` 重新生成
+- 用户在工作台改完口径后：复述改动涉及的新口径请用户确认，再投入使用
 - 月度数据刷新：数据随 BI 看板自动更新，无需维护
