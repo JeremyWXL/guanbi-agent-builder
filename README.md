@@ -29,6 +29,10 @@ Data Agent 搭建向导：把熟悉的观远 BI 看板变成 AI data agent 的�
 
 > 本作品为个人开发者作品（作者：Jeremy），与观远数据（Guandata）官方无关；"观远 BI"等字样仅表示本工具面向该平台的数据看板使用。
 
+## 迭代计划
+
+见 [ROADMAP.md](ROADMAP.md)（跨 session 接力：当前状态、v3.0 质量护城河计划、设计原则与已踩过的坑）。
+
 ## 历史
 
 - 2026-09：曾尝试 PaySkill 收费版（v1.0.0–v3.0.1），经实测收费模式不成立，已封存于 [archive/](archive/README.md)，项目转为开源继续迭代。
