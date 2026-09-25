@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.0.0"
+version: "1.1.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -40,7 +40,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-14 | 直达链接 | `make_link.py --list '<看板名>'` | 只列筛选栏内且有联动的筛选器；FIRST_PICK 页告警 |
 | L0-15 | 工作台 | `workbench.py <目录>` + `--agents` + `--check` | 静态页生成；总览页生成；体检报告具体增删卡 |
 | L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip |
-| L0-17 | 单测 | `python3 -m pytest references/scripts/test_workbench.py references/scripts/test_check_dims.py`（或 CI） | 全绿 |
+| L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -78,5 +78,8 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 ## 结果归档
 
 1. 详细报告：`_preview/_sandbox-<版本号>/test-report.md`
-2. 基线摘要：`tests/baselines/v<版本号>.md`——版本号、三层各自通过情况、L2 总分、发现的新问题清单、与上版基线的差异
+2. 基线摘要（双写）：
+   - `tests/baselines/v<版本号>.md`——人读：版本号、三层各自通过情况、L2 总分、发现的新问题清单、与上版基线的差异
+   - `tests/baselines/v<版本号>.json`——机器可读孪生：version/date/testerVersion/environment/unitTests/l0/l1/l2（含逐题 score）/issues（severity/title/status，status ∈ open/fixed/tracking，fixed 带 fixedIn），字段格式照 `v3.7.0.json`
+   - "与上版基线的差异"用脚本生成：`python3 tests/baselines/diff_baselines.py tests/baselines/v<旧版>.json tests/baselines/v<新版>.json`，输出三层变化、逐题涨跌、问题处置与回归焦点，人工复核后摘入 .md
 3. 新问题分级：**P0 阻断**（数据错误/闸门失效/红线被破坏，必须修才能发布）、**P1 功能缺陷**（体验受损但有绕行）、**P2 改进项**

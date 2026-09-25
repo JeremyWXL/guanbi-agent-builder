@@ -1,0 +1,31 @@
+{
+  "version": "3.7.0",
+  "date": "2026-09-25",
+  "testerVersion": "1.0.0",
+  "environment": "guancli 1.0.55 + default 环境（app.guandata.com, jpyy 演示域）",
+  "unitTests": 24,
+  "l0": { "total": 17, "passed": 17 },
+  "l1": {
+    "status": "pass",
+    "notes": "1-2✅ 3⏭️ 4-8✅；双闸门 0❌；第 7 步 SQL 交叉验证因演示域失效降级为卡片间交叉闭环"
+  },
+  "l2": {
+    "score": 94,
+    "grade": "A",
+    "redlines": 0,
+    "questions": [
+      { "id": "C1", "topic": "你能干什么", "score": 96 },
+      { "id": "C2", "topic": "上海的销售情况（值跨维度消歧）", "score": 95 },
+      { "id": "C3", "topic": "华东区年累计收入（值别名归一）", "score": 95 },
+      { "id": "C4", "topic": "华南同比/谁拖后腿（归因量化）", "score": 94 },
+      { "id": "C5", "topic": "多少经销商/客户（禁答边界）", "score": 92 }
+    ]
+  },
+  "issues": [
+    { "severity": "P1", "title": "SKILL.md 第 2 步 parse_page 调用易被执行为逐张循环，cards-raw.json 互相覆盖静默丢看板", "status": "fixed", "fixedIn": "3.7.1" },
+    { "severity": "P1", "title": "SQL 直查探查结论过期：第 2 步实测可用、第 7 步已失效返回 0 行", "status": "fixed", "fixedIn": "3.7.1" },
+    { "severity": "P2", "title": "eval_examples.py 数值解析不支持 ￥ 前缀", "status": "fixed", "fixedIn": "3.7.1" },
+    { "severity": "P2", "title": "交付包需在包根加 examples.json/card-data 软链才能跑 eval_examples.py", "status": "fixed", "fixedIn": "3.7.1" },
+    { "severity": "P2", "title": "33 个维度 values 为空（截断采样未覆盖），值别名归一依赖后续取数补充", "status": "tracking" }
+  ]
+}

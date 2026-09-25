@@ -2,6 +2,7 @@
 """
 前置检查（第 0 步）：一键确认搭建环境就绪
 用法: python3 preflight.py [工作目录] [--json]
+  --json 输出纯 JSON（人类可读行不混排，可直接管道解析）：{"ok": bool, "checks": [...]}
 检查项:
   0. 断点续建检测（仅当传入工作目录时）：存在 wizard-state.json 则提示续建进度
   1. guancli 可执行文件存在
@@ -23,9 +24,12 @@ def run(args, timeout=120):
 
 
 results = []
+_JSON_MODE = False  # True 时 check() 不打印人类可读行，stdout 只留 finish() 的纯 JSON
 
 def check(name, ok, hard, detail="", hint=""):
     results.append({"check": name, "ok": ok, "hard": hard, "detail": detail, "hint": hint})
+    if _JSON_MODE:
+        return
     icon = "✅" if ok else ("❌" if hard else "⚠️")
     print(f"{icon} {name}: {detail}" + (f" → {hint}" if not ok and hint else ""))
 
@@ -96,7 +100,9 @@ def check_resume(workdir):
 
 
 def main():
+    global _JSON_MODE
     as_json = "--json" in sys.argv
+    _JSON_MODE = as_json
     positional = [a for a in sys.argv[1:] if not a.startswith("-")]
 
     # 0. 断点续建检测（信息性，放在最前，不受后续硬失败影响）
@@ -175,6 +181,7 @@ def finish(as_json, base_code):
     code = 1 if hard_fail else base_code
     if as_json:
         print(json.dumps({"ok": code == 0, "checks": results}, ensure_ascii=False, indent=1))
+        sys.exit(code)
     if code == 0:
         print("\n前置检查通过，可以开始搭建。")
     else:
