@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.7.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "3.8.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -212,10 +212,11 @@ td.mono,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .medit{grid-column:1/-1;display:grid;grid-template-columns:76px 1fr;gap:8px 12px;
   align-items:center;padding:8px 0}
 .medit label{font-family:var(--mono);font-size:11px;color:var(--ink3);letter-spacing:.05em}
-.medit input,.medit select{width:100%;padding:7px 10px;border:1px solid var(--line2);
+.medit input,.medit select,.medit textarea{width:100%;padding:7px 10px;border:1px solid var(--line2);
   border-radius:8px;background:var(--sheet);color:var(--ink);font-size:13px;font-family:inherit;
   outline:none}
-.medit input:focus-visible,.medit select:focus-visible{border-color:var(--acc);
+.medit textarea{resize:vertical;font-family:var(--mono);font-size:12px;line-height:1.6}
+.medit input:focus-visible,.medit select:focus-visible,.medit textarea:focus-visible{border-color:var(--acc);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
 .medit .btnrow{grid-column:1/-1}
 .rej{margin-top:14px}
@@ -767,11 +768,128 @@ function metricsPanel(){
   return wrap;
 }
 
+/* ---------- 维度档案（dimensions.json 表格视图） ---------- */
+function dimsPanel(){
+  const raw = DATA.files["dimensions.json"];
+  if(!raw) return null;
+  const wrap = document.createElement("div");
+  let doc;
+  try{ doc = JSON.parse(raw); }catch(e){
+    wrap.append(el(`<div class="hint">dimensions.json 解析失败：${esc(e.message)}——可在「输出与脚本」页修复</div>`));
+    return wrap;
+  }
+  if(!Array.isArray(doc.dimensions)) doc.dimensions = [];
+  wrap.append(el(`<div class="hint">维度档案 <b style="font-family:var(--mono)">${doc.dimensions.length}</b> 个——助手靠它们判断「你在问哪个维度、说的是哪个成员值」，叫法与成员值逐行核对${EDIT?"，右侧可编辑":""}</div>`));
+  const list = document.createElement("div"); wrap.append(list);
+
+  async function commit(){
+    doc.updatedAt = new Date().toISOString().slice(0,10);
+    return save("dimensions.json", JSON.stringify(doc, null, 1) + "\n");
+  }
+  function editForm(d, idx){
+    const form = el(`<div class="medit"></div>`);
+    const csv = v => (v||[]).join("，");
+    const uncsv = s => s.split(/[,，、]/).map(x=>x.trim()).filter(Boolean);
+    const aliasText = Object.entries(d.valueAliases||{}).map(([k,v])=>`${k}=${v}`).join("\n");
+    form.innerHTML = `
+      <label>维度名</label><input data-k="name" value="${esc(d.name||"")}">
+      <label>字段名</label><input data-k="field" value="${esc(d.field||"")}" placeholder="数据集字段名，默认同维度名">
+      <label>叫法</label><input data-k="synonyms" value="${esc(csv(d.synonyms))}" placeholder="逗号分隔，禁止与其他维度/指标撞车">
+      <label>成员值</label><input data-k="values" value="${esc(csv(d.values))}" placeholder="逗号分隔，来自取数结果，禁止编造">
+      <label>值别名</label><textarea data-k="valueAliases" rows="3" placeholder="每行一条：别名=标准成员值，如 华东区=华东">${esc(aliasText)}</textarea>
+      <label>易混维度</label><input data-k="similarTo" value="${esc(csv(d.similarTo))}" placeholder="逗号分隔">
+      <label>层级上卷</label><input data-k="parent" value="${esc(d.parent||"")}" placeholder="如 城市 上卷到 省份">
+      <label>来源</label><select data-k="source">${Object.keys(SOURCE_LABEL).map(k=>
+        `<option value="${k}"${d.source===k?" selected":""}>${SOURCE_LABEL[k]}</option>`).join("")}</select>
+      <label>备注</label><input data-k="note" value="${esc(d.note||"")}">`;
+    const row = el('<div class="btnrow"></div>');
+    const ok = el('<button class="btn primary">保存</button>');
+    const no = el('<button class="btn">取消</button>');
+    ok.onclick = async () => {
+      form.querySelectorAll("[data-k]").forEach(inp => {
+        const k = inp.dataset.k, v = inp.value.trim();
+        if(k === "synonyms" || k === "values" || k === "similarTo"){
+          const arr = uncsv(v);
+          if(arr.length) d[k] = arr; else delete d[k];
+        }else if(k === "valueAliases"){
+          const obj = {};
+          v.split("\n").forEach(line => {
+            const m = line.match(/^([^=＝]+)[=＝](.+)$/);
+            if(m) obj[m[1].trim()] = m[2].trim();
+          });
+          if(Object.keys(obj).length) d.valueAliases = obj; else delete d.valueAliases;
+        }
+        else if(v) d[k] = v; else delete d[k];
+      });
+      if(!d.name){ toast("维度名不能为空", false); return; }
+      dirty = true;
+      if(await commit()) draw(idx);
+    };
+    no.onclick = () => draw();
+    row.append(ok, no); form.append(row);
+    return form;
+  }
+  function draw(savedIdx){
+    list.innerHTML = "";
+    doc.dimensions.forEach((d, i) => {
+      const tags = [];
+      if(d.source) tags.push(`<span class="src">${esc(SOURCE_LABEL[d.source]||d.source)}</span>`);
+      if(d.similarTo && d.similarTo.length)
+        tags.push(`<span class="src warn">易混：${esc(d.similarTo.join("、"))}</span>`);
+      if(d.parent) tags.push(`<span class="src">上卷 ${esc(d.parent)}</span>`);
+      const metaBits = [];
+      if(d.synonyms && d.synonyms.length) metaBits.push(`<span>叫法 <b>${esc(d.synonyms.join("、"))}</b></span>`);
+      if(d.values && d.values.length){
+        const shown = d.values.slice(0,8).join("、");
+        metaBits.push(`<span>成员值 <b>${d.values.length} 个</b>（${esc(shown)}${d.values.length>8?" 等":""}）</span>`);
+      }
+      const aliases = Object.entries(d.valueAliases||{});
+      const card = el(`<div class="rule formula">
+        <div class="num">${String(i+1).padStart(2,"0")}</div>
+        <div><div class="rhead"><span class="rtitle">${esc(d.name||"（未命名）")}</span>${tags.join("")}</div>
+        ${d.field && d.field !== d.name ? `<div class="mformula">${esc(d.field)}</div>` : ""}
+        ${metaBits.length?`<div class="mmeta">${metaBits.join("")}</div>`:""}
+        ${aliases.length?`<div class="mmeta">${aliases.map(([k,v])=>`<span class="src">${esc(k)} → ${esc(v)}</span>`).join("")}</div>`:""}
+        ${d.note?`<div class="mnote">${esc(d.note)}</div>`:""}</div>
+        <div class="acts"></div></div>`);
+      if(EDIT){
+        const acts = card.querySelector(".acts");
+        const eb = el('<button class="btn mini">编辑</button>');
+        const db = el('<button class="btn mini danger">删除</button>');
+        eb.onclick = () => { card.innerHTML = ""; card.append(editForm(d, i)); };
+        db.onclick = async () => {
+          if(!confirm(`删除维度「${d.name}」？保存会立即写回 dimensions.json（有备份可恢复）。`)) return;
+          doc.dimensions.splice(i,1); dirty = true; if(await commit()) draw();
+        };
+        acts.append(eb, db);
+      }
+      if(i === savedIdx) savedBadge(card.querySelector(".acts") || card.querySelector(".rhead"));
+      list.append(card);
+    });
+    if(EDIT){
+      const add = el('<button class="addrule">+ 加一条维度</button>');
+      add.onclick = () => {
+        const d = {name:"", synonyms:[], values:[], source:"user"};
+        doc.dimensions.push(d);
+        draw();
+        const cards = list.querySelectorAll(".rule");
+        const last = cards[cards.length-1];
+        last.innerHTML = ""; last.append(editForm(d, doc.dimensions.length-1));
+      };
+      list.append(add);
+    }
+  }
+  draw();
+  return wrap;
+}
+
 /* ---------- 业务口径 ---------- */
 function rulesPanel(){
   const wrap = document.createElement("div");
   const mb = metricsPanel();
   if(mb) wrap.append(mb);
+  const dp = dimsPanel();
+  if(dp) wrap.append(dp);
   const text = DATA.files["businessKnowledge.md"];
   if(!text) { wrap.append(emptyState("还没有业务口径", "完成第 4 步口径确认后，这里会列出逐条规则。")); return wrap; }
   wrap.append(el(`<div class="hint">共 <b class="ruleCount" style="font-family:var(--mono)"></b> 条已确认口径——它们决定助手的计算方式，逐条核对，右侧可编辑或删除</div>`));
@@ -946,6 +1064,8 @@ function summaryLine(){
   if(bk){ const n = (bk.match(/^(?:\*\*)?\d+\.(?=\s|【)/gm) || []).length; if(n) bits.push(n + " 条口径"); }
   try{ const mj = JSON.parse(DATA.files["metrics.json"] || "{}");
     if(Array.isArray(mj.metrics) && mj.metrics.length) bits.push(mj.metrics.length + " 项指标"); }catch(e){}
+  try{ const dj = JSON.parse(DATA.files["dimensions.json"] || "{}");
+    if(Array.isArray(dj.dimensions) && dj.dimensions.length) bits.push(dj.dimensions.length + " 个维度"); }catch(e){}
   bits.push("更新于 " + DATA.generated);
   return bits.join(" · ");
 }
@@ -1037,6 +1157,7 @@ DATA.agents.forEach(a => {
   if(a.cards) bits.push(`<span>${a.cards} 卡片</span>`);
   if(a.rules) bits.push(`<span>${a.rules} 口径</span>`);
   if(a.metrics) bits.push(`<span>${a.metrics} 指标</span>`);
+  if(a.dims) bits.push(`<span>${a.dims} 维度</span>`);
   if(a.builtAt) bits.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
   if(a.upgradeAvailable) bits.push(`<span style="color:var(--acc)">脚本可升级→v${esc(DATA.builderCurrent||"")}</span>`);
   const card = el(`<div class="agent-card">
@@ -1256,7 +1377,7 @@ def collect_agents(skills_dir):
         if not name.startswith("agent-") or not os.path.isdir(ref):
             continue
         a = {"dirName": name, "name": name.replace("agent-", ""), "description": "",
-             "pages": 0, "cards": 0, "rules": 0, "metrics": 0, "builtAt": "", "hasMeta": False,
+             "pages": 0, "cards": 0, "rules": 0, "metrics": 0, "dims": 0, "builtAt": "", "hasMeta": False,
              "builderVersion": "", "upgradeAvailable": False,
              "workbenchUrl": ""}
         ident = parse_skill_md(os.path.join(skills_dir, name, "SKILL.md"))
@@ -1294,6 +1415,13 @@ def collect_agents(skills_dir):
             try:
                 with open(mj, encoding="utf-8") as f:
                     a["metrics"] = len(json.load(f).get("metrics") or [])
+            except (json.JSONDecodeError, OSError):
+                pass
+        dj = os.path.join(ref, "dimensions.json")
+        if os.path.exists(dj):
+            try:
+                with open(dj, encoding="utf-8") as f:
+                    a["dims"] = len(json.load(f).get("dimensions") or [])
             except (json.JSONDecodeError, OSError):
                 pass
         if os.path.exists(os.path.join(skills_dir, name, "workbench.html")):

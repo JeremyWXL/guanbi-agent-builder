@@ -8,9 +8,20 @@
   python3 list_pages.py --dir 根目录/销售分析  # 只看某目录下（含子目录）的仪表板
   python3 list_pages.py --keyword 毛利         # 按名称/路径过滤
   python3 list_pages.py --limit 20            # 限制条数（默认 50）
-输出: JSON 数组 [{id, name, path, type, mtime}]；--dirs 时 [{id, name, path, pageCount}]
+输出: JSON 数组 [{id, name, path, type, mtime, url}]；--dirs 时 [{id, name, path, pageCount}]
+url 为 BI 平台看板链接（{BI地址}/page/{id}），供对话中呈现给用户点开核对；取不到 BI 地址时省略
 """
-import json, subprocess, sys
+import json, re, subprocess, sys
+
+
+def bi_base_url():
+    try:
+        r = subprocess.run(["guancli", "auth", "status"],
+                           capture_output=True, text=True, timeout=30)
+        m = re.search(r'^URL:\s*(\S+)', r.stdout, re.M)
+        return m.group(1).rstrip('/') if m else ""
+    except Exception:
+        return ""
 
 
 def fetch_tree():
@@ -74,6 +85,11 @@ def main():
             i += 1
 
     entries, _ = flatten(fetch_tree())
+    base = bi_base_url()
+    if base:
+        for e in entries:
+            if e["type"] == "page":
+                e["url"] = f"{base}/page/{e['id']}"
     if dirs_only:
         out = [e for e in entries if e["type"] == "dir"]
         for e in out:

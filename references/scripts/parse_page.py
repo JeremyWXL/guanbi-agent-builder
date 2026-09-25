@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "3.7.1"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "3.8.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
