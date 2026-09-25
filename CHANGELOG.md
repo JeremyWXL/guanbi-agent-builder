@@ -1,5 +1,11 @@
 # 变更日志
 
+## v3.2.1（2026-09-25）workbench.py 工程化 + CI
+
+- **最小单测落地**（`references/scripts/test_workbench.py`，10 例）：结构指纹稳定性与跨脚本一致性、版本元组比较、卡片增删改名 diff、check_staleness 全路径（具体增删报告/配置未变/旧版档案降级/看板失联）、collect() 数据收集、保存回调白名单与自动备份——全部打桩不触网
+- **服务层抽离**：工作台保存回调从 serve_single 闭包抽出为 `make_save_file(workdir)`，可独立测试
+- **CI 上线**（GitHub Actions）：push/PR 自动跑 py_compile 全脚本 + 单测 + frontmatter 必填字段 + 四处版本号一致性（SKILL.md / kimi.plugin.json / parse_page.py / workbench.py——版本漂移从此 push 即拦）
+
 ## v3.2.0（2026-09-25）businessKnowledge 结构化：机器可读口径档案
 
 - **`metrics.json` 机器可读口径档案**：businessKnowledge.md（人读台账）之外新增结构化孪生——每条确认的口径固化为 name/formula（或 baseField+aggrType）/dims/synonyms/safety/source/示例问题，字段设计向 OSI（开放语义交换标准）对齐，口径档案从此可被脚本校验、可跨工具存活；确认过但不收编的候选写入 rejected（含原因），防止重新学习时重复提问

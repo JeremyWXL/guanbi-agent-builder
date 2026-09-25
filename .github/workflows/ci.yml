@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: 语法编译检查（全部脚本）
+        run: python3 -m py_compile references/scripts/*.py
+      - name: 单元测试（workbench 核心路径）
+        run: python3 -m unittest discover -s references/scripts -p 'test_*.py'
+      - name: SKILL.md frontmatter 必填字段
+        run: |
+          for k in name slug displayName version summary license; do
+            grep -q "^${k}:" SKILL.md || { echo "frontmatter 缺 $k"; exit 1; }
+          done
+      - name: 版本号一致性（SKILL.md / kimi.plugin.json / 脚本 BUILDER_VERSION）
+        run: |
+          V=$(grep -oP '^version: "\K[^"]+' SKILL.md)
+          grep -q "\"version\": \"$V\"" kimi.plugin.json || { echo "kimi.plugin.json 版本漂移"; exit 1; }
+          for f in references/scripts/parse_page.py references/scripts/workbench.py; do
+            grep -q "BUILDER_VERSION = \"$V\"" "$f" || { echo "$f BUILDER_VERSION 漂移"; exit 1; }
+          done

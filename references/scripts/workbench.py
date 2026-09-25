@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.2.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "3.2.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -1224,7 +1224,8 @@ def make_handler(get_page, on_check=None, on_save=None):
     return H
 
 
-def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
+def make_save_file(workdir):
+    """生成保存回调：白名单文件（.md/.json）写回，JSON 先解析校验，旧版自动备份 .bak-<时间戳>。"""
     allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
 
     def save_file(fn, content):
@@ -1242,9 +1243,13 @@ def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
             f.write(content)
         return {"ok": True, "backup": backup}
 
+    return save_file
+
+
+def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     H = make_handler(lambda: render(PAGE, collect(workdir), True),
                      on_check=lambda _a: check_staleness(workdir, fresh_days),
-                     on_save=save_file)
+                     on_save=make_save_file(workdir))
     server = HTTPServer(("127.0.0.1", 0), H)
     print(f"WORKBENCH_URL=http://127.0.0.1:{server.server_port}", flush=True)
     try:
