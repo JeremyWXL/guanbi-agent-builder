@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 前置检查（第 0 步）：一键确认搭建环境就绪
-用法: python3 preflight.py [--json]
+用法: python3 preflight.py [工作目录] [--json]
 检查项:
+  0. 断点续建检测（仅当传入工作目录时）：存在 wizard-state.json 则提示续建进度
   1. guancli 可执行文件存在
   2. guancli 版本可读取（脚本对其输出格式有隐式依赖，版本异常时给出提醒）
   3. 认证状态有效（guancli auth status）
   4. 活探针：page tree --raw 可解析为 JSON；随机取一张看板验证 page get --raw 结构
 退出码: 0 全部通过 / 1 存在硬失败（认证缺失、CLI 不存在等，必须修复后才能继续）
 """
-import json, re, subprocess, sys, shutil
+import json, os, re, subprocess, sys, shutil
+from datetime import datetime
 
 
 def run(args, timeout=120):
@@ -44,8 +46,62 @@ def find_first_page(node):
     return None
 
 
+STEP_NAMES = {
+    1: "选定数据范围", 2: "看板资产学习", 3: "业务认知补充", 4: "业务口径确认",
+    5: "分析场景定义", 6: "分析框架与输出模板", 7: "测试验收", 8: "固化交付",
+}
+STATUS_LABELS = {
+    "pending": "未开始", "in_progress": "进行中", "confirming": "待用户确认",
+    "confirmed": "已确认", "skipped": "已跳过",
+}
+
+
+def check_resume(workdir):
+    """断点续建检测：信息性检查，永不影响退出码。
+    放在检查流程最前面——即使后续认证等硬检查失败，续建提示也必须展示。"""
+    path = os.path.join(workdir, "wizard-state.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        check("断点续建", True, False,
+              f"状态文件损坏无法解析（{e}），原文件保留于 {path}，请人工检查")
+        return
+    steps = state.get("steps", {})
+    nxt, entry = None, {}
+    for n in STEP_NAMES:
+        e = steps.get(str(n), {})
+        if e.get("status", "pending") not in ("confirmed", "skipped"):
+            nxt, entry = n, e
+            break
+    name = state.get("agentName") or "未命名"
+    if nxt is None:
+        check("断点续建", True, False,
+              f"agent「{name}」八步流程已全部完成，无需续建")
+        return
+    updated = state.get("updatedAt", "")
+    age = ""
+    try:
+        dt = datetime.fromisoformat(updated)
+        days = (datetime.now().astimezone() - dt).days
+        age = f"，更新于 {days} 天前" if days > 0 else "，更新于今天"
+    except (ValueError, TypeError):
+        pass
+    status = STATUS_LABELS.get(entry.get("status", "pending"), entry.get("status", ""))
+    check("断点续建", True, False,
+          f"检测到未完成的搭建：agent「{name}」，上次进行到第 {nxt} 步"
+          f"【{STEP_NAMES[nxt]}】（状态：{status}{age}）。继续请说「继续搭建」")
+
+
 def main():
     as_json = "--json" in sys.argv
+    positional = [a for a in sys.argv[1:] if not a.startswith("-")]
+
+    # 0. 断点续建检测（信息性，放在最前，不受后续硬失败影响）
+    if positional:
+        check_resume(positional[0])
 
     # 1. guancli 存在
     if not shutil.which("guancli"):

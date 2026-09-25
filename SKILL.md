@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "2.7.0"
+version: "3.0.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -22,10 +22,18 @@ agent_created: true
 ## 前置检查（第 0 步，静默执行）
 
 ```bash
-python3 references/scripts/preflight.py
+python3 references/scripts/preflight.py [工作目录]
 ```
 
 一键检查 guancli 安装/版本、BI 认证、看板树与看板详情的 JSON 结构探针。未通过时按提示引导用户（通常是 `guancli auth login` 或 `guancli auth use <环境名>`）。全部通过后才进入第 1 步，不要向用户展示技术细节，只需说"已连接上您的 BI 系统"。
+
+**断点续建**：传入工作目录时 preflight 会先检测断点——若目录里有上次未完成搭建的 wizard-state.json，会打印续建摘要（上次进行到第几步、状态、更新于何时），此时按摘要从断点步骤继续，禁止从零重来。新搭建选定工作目录后立即初始化状态机：
+
+```bash
+python3 references/scripts/wizard_state.py init <工作目录>
+```
+
+之后每步开始时 `set --step N --status in_progress`、产物待确认时 `--status confirming`、用户确认通过后 `python3 references/scripts/wizard_state.py confirm <工作目录> --step N`。状态文件是断点续建的唯一依据（见红线 9），用法详见脚本 docstring。
 
 ## 校验工作台（确认点的可视化校验 + 直接编辑）
 
@@ -163,6 +171,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - **综合洞察**：生成完整的分析报告（"出一份月度经营分析"）
 2. 问用户："您平时用这些看板主要做什么？能举 2-3 个最常被问到的分析问题吗？"
 3. 把用户的描述映射到四类能力，结合看板内容为每类场景推荐典型问题清单
+4. 用户确认后的典型问题固化为 `examples.json` 示例库种子（模板：`references/templates/examples.json`）：每题记 问题 → 路由看板/卡片 → 取数方式（card 采样文件或 SQL）→ 期望数值/结论要点。它是第 7 步验收的考题库、交付后 agent 的参照语料、看板改版后的回归基准
 
 **确认点**：场景清单 + 每类场景的典型问题，用户确认哪些要、哪些不要。
 
@@ -176,7 +185,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - 综合洞察：章节结构 + 分析步骤（参照官方 5 步框架，按用户场景裁剪）
 2. **注入诊断链方法论**：在第 4 步确认的归因公式基础上，把"诊断链"写进 insightThinking——不是只列"问数/归因/异常/洞察"四个场景的动作，而是定义**动态下钻纪律**：
    - 先抓关键异常，不平均分析所有因素
-   - 归因必须量化（"团购从71万降到37万，减少34万"而非"团购下滑明显"）
+   - 归因必须量化（"团购从71万降到37万，减少34万"而非"团购下滑明显"）；贡献额/贡献率/因子拆解的计算一律走归因引擎 `python3 references/scripts/attribute.py add|mul`（加法拆维度成员贡献、乘法拆"店数×单店"类因子贡献，结果自动闭环验证），禁止 LLM 口算
    - 满足条件必须追到对象层（单一片区贡献>30%负向变化时，必须追到门店）
    - 建议必须绑定前文已识别的具体对象
    这套方法论详见 `references/cognitive-foundation.md` 的"诊断链模板"。
@@ -193,8 +202,10 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - 维度合计 ≈ 总计（闭环校验）
    - 趋势描述与逐期数值一致，禁止错位编造
    - 前后结论不矛盾
+   - 归因类回答的贡献额/贡献率必须来自 attribute.py 计算输出，禁止口算
 3. **SQL 直查测试（若启用）**：如果数据集有 SQL 直查能力，用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
 4. 输出测试报告：每个场景的通过/失败及证据
+5. **验收通过的问答汇入 examples.json**：把实测期望值写入 `expect.values`、结论要点写入 `answerPoints`，用户验收通过后置 `humanConfirmed: true`——这是交付后的回归基准库。此后看板改版重新学习，用 `python3 references/scripts/eval_examples.py <工作目录>` 一键回归（数据层自动核验期望数值/关键词，结论要点逐条打印人工核对，按场景统计通过率），回答"新 agent 和旧 agent 一样准吗"
 
 **确认点**：用户验收："这些回答的数据和您的看板对得上吗？分析结论符合您的业务认知吗？"不通过则定位到对应步骤（数据问题回第 2 步、口径问题回第 4 步、框架问题回第 6 步）修复后重测。
 
@@ -216,6 +227,9 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
        ├── report-insights.md # 历史报告提炼（可选，若客户提供报告）
        ├── conversation-insights.md # 历史对话沉淀（可选，若客户授权）
        ├── sql-guide.md       # SQL 直查指南（若数据集支持）
+       ├── examples.json      # few-shot 示例库（验收通过的问答基准；回答参照语料 + 回归评测题库）
+       ├── attribute.py       # 归因计算引擎（复制自本 skill；贡献度计算唯一入口）
+       ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
@@ -234,8 +248,9 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 6. **数据校验不过不往下走**：合计不闭环、单位存疑的卡片必须修复或标记禁用
 7. **SQL 直查必须走只读执行器**：一律用 `run_sql.py`，禁止直接调用 `guancli ds execute-sql`（脚本层强制只读单条 SELECT，prompt 约束之外加一道硬保险）
 8. **失败回退**：测试不通过时明确指出回哪一步修什么，不要从头重来
-9. **每步落盘**：每步产物立即写入工作目录，会话中断也能续建（下次加载本 skill 后从最近的落盘产物继续）
+9. **每步落盘 + 状态机**：每步产物立即写入工作目录，并用 wizard_state.py 同步 wizard-state.json（断点续建的唯一依据）；会话中断后按 preflight 断点检测的续建摘要继续，禁止靠猜进度
 10. **SQL 直查公式纪律（实测踩坑）**：
     - 禁止 `AVG(明细比率)`——换维度后结果错得不多、最难察觉（实测 105% vs 103.6%）；比率型指标必须内联公式"分子分母分别求和再相除"
     - 禁止按名引用数据集计算字段（SQL 引擎只认物理列，直接报 UNRESOLVED_COLUMN）——必须内联展开公式原文
     - SQL 必须显式复写卡片的隐藏筛选条件（如 `时间维度='月累计'`）——漏掉就是数量级错误（实测差 259 倍）
+11. **归因算术禁止口算**：贡献额/贡献率/乘法因子拆解一律走 attribute.py，LLM 只负责解释脚本输出（LLM 口算贡献占比是"归因必须量化"最大的可靠性漏洞）

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-25",
+  "_readme": [
+    "few-shot 示例库：第 5 步与用户确认的典型问题 + 第 7 步验收通过的答案，固化于此",
+    "交付时随 agent 包带走，作为 agent 回答时的参照语料；eval_examples.py 用它做回归评测",
+    "scenarios 的 key 为场景名（问数/归因/异常/洞察，可按需增删），值为示例数组",
+    "route：该问题路由到哪个看板/卡片（供 agent 参照，脚本不校验）",
+    "fetch.type=card：读 card-data 采样文件，file 为相对工作目录的路径",
+    "fetch.type=sql：经 run_sql.py 重跑，需 dsId + sql（run_sql 只读校验兜底）",
+    "expect.values：期望在取数结果中出现的数值；tolerance 为相对容差，缺省 0.02（2%）",
+    "expect.keywords：期望在取数结果文本中出现的关键词（可省略）",
+    "answerPoints：结论要点，脚本无法自动判，评测时逐条打印为人工核对清单",
+    "humanConfirmed：人工核对结论通过后置为 true；false 的条目在报告中计入「待人工确认」"
+  ],
+  "scenarios": {
+    "问数": [
+      {
+        "id": "Q1",
+        "question": "3月淘系收入多少？",
+        "route": {"pageId": "12345", "pageName": "经营总览", "cards": ["渠道收入明细"]},
+        "fetch": {"type": "card", "file": "card-data/经营总览__渠道收入明细.json"},
+        "expect": {"values": [1234.5], "tolerance": 0.02, "keywords": ["淘系"]},
+        "answerPoints": ["3月淘系收入约 1234.5 万", "环比增长 X%"],
+        "humanConfirmed": false,
+        "_注释": "数值匹配容忍千分位/百分号/中文单位：1234.5 可命中 \"1,234.5\"，0.35 可命中 \"35%\""
+      }
+    ],
+    "归因": [
+      {
+        "id": "Q2",
+        "question": "3月收入环比下滑的主因是什么？",
+        "route": {"pageId": "12345", "pageName": "经营总览", "cards": ["渠道收入明细"]},
+        "fetch": {"type": "sql", "dsId": "67890", "sql": "SELECT 渠道, SUM(收入) AS 收入 FROM t WHERE 月份 = '2026-03' GROUP BY 渠道"},
+        "expect": {"values": [1234.5], "tolerance": 0.02, "keywords": ["淘系"]},
+        "answerPoints": ["下滑主因是 XX 渠道", "该渠道贡献了 Y% 的缺口"],
+        "humanConfirmed": false,
+        "_注释": "fetch.type=sql 时脚本调用 run_sql.py 重跑；run_sql 不可用时该条记 skip 而非 fail"
+      }
+    ],
+    "异常": [],
+    "洞察": []
+  }
+}
