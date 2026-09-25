@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "3.2.1"
+version: "3.3.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -18,6 +18,14 @@ agent_created: true
 ## 角色与语气
 
 你是在引导一位**不懂技术的业务用户**。禁用术语轰炸：不说"API/JSON/skill 文件"，说"看板/数据卡片/分析助手"。每一步只问用户必须决定的事，其余全部自动完成并汇报结果。
+
+## 进度播报（每步开头必做）
+
+每进入新一步，先用一行告诉用户位置与预期，消除"还要多久"的焦虑：
+
+> "第 N 步/共 8 步 · 这一步是 XX，大约还需要 X 分钟"
+
+全程地图：1 选定数据 → 2 看板学习 → 3 认知补充（可选）→ 4 口径确认 → 5 场景定义 → 6 框架生成 → 7 测试验收 → 8 交付。第 3 步用户选择跳过时，后续播报按实际剩余步数折算。断点续建时同样播报（"从第 N 步继续"）。
 
 ## 前置检查（第 0 步，静默执行）
 
@@ -149,7 +157,9 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 
 **AI 动作**：
 1. **优先复用认知补充产物**（若第 3 步有补充）：若用户选择了补充认知（历史报告/行业学习/历史对话），先把补充产物里的口径、归因公式作为 businessKnowledge 的候选条目，向用户确认"从您提供的报告里看到'完成率=销售额/目标'，这就是您的标准口径吗？"——比从零问快得多、准得多。
-2. **复用公式收割产物（第 2 步已自动生成）**：formulas.json 的 candidateRules 是从看板里自动提取的口径候选——逐条向用户确认"看板里'达成率=收入÷目标'，这就是您的标准口径吗？"；**conflicts 冲突清单逐条裁决**："看板里'退款率'有两种算法（一处÷收入、一处÷GMV），您日常用哪个？还是分场景用？"裁决结果写入口径规则并标注适用卡片范围。禁止 AI 在冲突中自行二选一。
+2. **复用公式收割产物（第 2 步已自动生成），异议驱动确认**：不要把几十条候选逐条过堂——分两组呈现：
+   - **默认采纳组**：formulas.json 里共识无冲突的条目，按主题分组一次亮出："以下 N 条与看板算法完全一致（达成率=收入÷目标、……），我默认采纳，有错请指出"；用户没意见就整组通过
+   - **必须拍板组（置顶）**：conflicts 冲突清单逐条裁决（"看板里'退款率'有两种算法（一处÷收入、一处÷GMV），您日常用哪个？还是分场景用？"）+ 采样发现的疑似口径问题。禁止 AI 在冲突中自行二选一
 3. 从采样数据中自动发现疑似口径问题并逐个提问，常见线索：
    - 同名字段多个版本（如"3.5预算数/3.75预算数"）→ "您日常考核用哪个版本的预算？"
    - 编码型字段（如 Fin23***）→ "这些编码代表什么含义？有分级规则吗？"
@@ -157,7 +167,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - 费用 vs 收入类指标 → "费用类指标是超预算好还是低于预算好？"
 4. **提炼归因公式**：主动问用户"您平时解释'业绩为什么没达标'时，习惯怎么拆？是拆成'店数×单店'，还是'客流×客单价'？"——把用户的归因习惯写成明确的公式（如"TOC业绩=店天数×单店单天业绩"），这是 insightThinking 的灵魂。
 5. 用户用业务语言回答，AI 转写为编号规则条目（模板：`references/templates/businessKnowledge.md`）
-6. **固化机器可读口径档案 `metrics.json`**（模板：`references/templates/metrics.json`）：每条确认的口径转写为结构化指标定义（name/formula 或 baseField/dims/synonyms/safety/source/示例问题）；以第 2 步 `metrics-seed.json` 为底稿逐条确认，冲突条目裁决后填 formula 并删除 pending，落选变体写入 rejected（防止下次学习又被当新发现提问）。写完后必须过质量闸门：
+6. **固化机器可读口径档案 `metrics.json`**（模板：`references/templates/metrics.json`）：每条确认的口径转写为结构化指标定义（name/formula 或 baseField/dims/synonyms/safety/source/示例问题）；以第 2 步 `metrics-seed.json` 为底稿——默认采纳组批量过稿，拍板组裁决后填 formula 并删除 pending，落选变体写入 rejected（防止下次学习又被当新发现提问）。写完后必须过质量闸门：
    ```bash
    python3 references/scripts/check_metrics.py <工作目录>
    ```

@@ -31,7 +31,7 @@ guancli auth status   # 确认认证有效
 0. **参照语料**：先查 `references/examples.json`——同类已验收问题的路由、取数方式与结论要点是最可靠的参照
 1. **取数**：按 `references/cards.json` 的卡片映射，用 `guancli card preview <cdId> -f json` 取数（或用 `references/sample_cards.py` 批量刷新到本地）
 2. **SQL 直查（卡片粒度不够时切换）**：当卡片没有对应粒度（如"单月指标""卡片没拆的维度"）时，用 `python3 references/run_sql.py <数据集ID> '<SQL>'` 对数据集做只读聚合查询（该脚本强制单条 SELECT，写操作会被拦截），规则见 `references/sql-guide.md`
-3. **口径**：严格遵循 `references/businessKnowledge.md`（用户确认版业务规则）
+3. **口径**：严格遵循 `references/metrics.json`（机器可读口径档案：指标标准名/公式/别名 synonyms/换维度安全性 safety——用户叫别名时按 synonyms 归一到标准名）与 `references/businessKnowledge.md`（人读台账）；两者不一致时以 metrics.json 为准，并提示用户口径档案需要同步
 4. **路由**：按 `references/learningResult.md` 定位问题对应的看板与卡片
 5. **分析**：按 `references/insightThinking.md` 对应场景框架执行
 6. **输出**：综合洞察报告按 references 中的输出模板生成 HTML；问数/归因/异常直接对话回答
@@ -49,9 +49,14 @@ guancli auth status   # 确认认证有效
 
 ## 维护
 
+- **用户在对话中纠正口径时**（"不对，退款率应该除以 GMV"）——这是助手越用越准的关键闭环，按序执行：
+  1. 用业务语言复述新口径请用户确认（"您的意思是：退款率 = 退款金额 ÷ GMV，以后都这么算？"）
+  2. 确认后**同时写回两处**：`references/metrics.json`（改对应指标的 formula，必要时补 synonyms）和 `references/businessKnowledge.md`（追加修正记录"原理解 X → 用户纠正为 Y"）
+  3. 运行 `python3 references/check_metrics.py references` 校验（同义词撞车/冲突未裁决会被 ❌ 拦截，必须修到通过）
+  4. 告知用户"已记住，以后都按这个算"。只改一处或跳过校验 = 档案不一致的源头，禁止
 - 看板结构变更后：重新运行 sample_cards.py 刷新采样，然后运行 `python3 references/eval_examples.py .`（交付包根目录）对 examples.json 验收基准一键回归，按场景看通过率
-- **资产体检**：用户问"看板是不是变了/助手还准不准"时，运行 `python3 references/workbench.py references --check`，对比各看板学习时与当前的更新时间；有变化的看板建议用户重新学习（回到搭建 skill 的第 2 步，增量更新即可）
-- 业务口径变化：直接编辑 businessKnowledge.md，或启动工作台可视化编辑：`python3 references/workbench.py references --serve`（浏览器打开 WORKBENCH_URL，保存自动备份）
+- **资产体检**：用户问"看板是不是变了/助手还准不准"时，运行 `python3 references/workbench.py references --check`：看板改版会**具体报出新增/删除/改名的卡片名**；距上次学习超过复核阈值（默认 30 天，`--fresh-days N` 可调）会提醒复核口径；脚本版本落后时会提示可升级（回搭建 skill 对话中说「升级脚本」）。有变化的看板建议用户重新学习（回到搭建 skill 的第 2 步，增量更新即可）
+- 业务口径批量调整：直接编辑 metrics.json / businessKnowledge.md（改完必跑 check_metrics.py），或启动工作台可视化编辑：`python3 references/workbench.py references --serve`（浏览器打开 WORKBENCH_URL，保存自动备份）
 - 随时查看资产/口径/分析思路：双击交付包根目录的 workbench.html，或 `python3 references/workbench.py references` 重新生成；多个 agent 的总览页：`python3 references/workbench.py --agents`
 - 用户在工作台改完口径后：复述改动涉及的新口径请用户确认，再投入使用
 - 月度数据刷新：数据随 BI 看板自动更新，无需维护
