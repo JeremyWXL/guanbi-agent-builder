@@ -6,7 +6,7 @@
 
 ## 当前状态快照
 
-- **版本**：v3.1.0（资产体检升级 + builderVersion 升级通道），GitHub 与 SkillHub（skillId=246636，免费版）上次发布于 v2.5.0，v2.6–v3.1 待发布
+- **版本**：v3.1.0（资产体检升级 + builderVersion 升级通道），已发布 GitHub（fc4195c）与 SkillHub（skillId=246636，409 探针确认入库；install 短时仍旧版本是索引延迟）
 - **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（12 个脚本）+ references/templates（6 个模板）+ references/cognitive-foundation.md + sql-guide.md
 - **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（1300+ 行单文件，无测试，是工程债）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
