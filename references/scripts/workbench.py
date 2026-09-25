@@ -4,16 +4,23 @@
 用法:
   python3 workbench.py <目录>              # 生成只读 <目录>/workbench.html（双击浏览器打开）
   python3 workbench.py <目录> --serve      # 本地编辑/体检服务，打印 WORKBENCH_URL
-  python3 workbench.py <目录> --check      # 体检：看板在 agent 学习后是否被改过（打印报告）
+  python3 workbench.py <目录> --check [--fresh-days 30]
+                                         # 体检：看板是否被改过（mtime+结构指纹双信号，具体报出增删卡片）、
+                                         #      超过复核阈值提醒、运行脚本可升级提示
   python3 workbench.py --agents [<skills目录>]           # 多 agent 管理总览 agents.html
   python3 workbench.py --agents [<skills目录>] --serve   # 总览 + 逐个体检按钮
-识别文件: cards.json（资产表格，含 _meta 学习时点）、learningResult.md、businessKnowledge.md、
-          insightThinking.md；<目录>/../SKILL.md 存在时读取 agent 名称/描述/触发词
+识别文件: cards.json（资产表格，含 _meta 学习时点/结构指纹/builderVersion）、learningResult.md、
+          businessKnowledge.md、insightThinking.md；<目录>/../SKILL.md 存在时读取 agent 名称/描述/触发词
 外观: 跟随系统亮/暗色；URL 加 ?dark 可强制暗色
 """
 import json, os, re, subprocess, sys, time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
+
+BUILDER_VERSION = "3.1.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
 :root{
@@ -514,7 +521,7 @@ function overviewPanel(){
   if(!meta.pages){
     hbody.textContent = "这个 agent 没有记录学习时点（旧版搭建），无法自动体检。可重新搭建或在对话中说「体检资产」。";
   } else if(EDIT){
-    hbody.textContent = "检查看板在学习之后是否被修改过；改过的看板需要重新学习，否则助手会引用旧数据。";
+    hbody.textContent = "检查看板在学习之后是否被修改过（具体报出增删的卡片）；改过的看板需要重新学习，否则助手会引用旧数据。";
     const btn = el(`<button class="btn primary">${led("#fff")}开始体检</button>`);
     const out = el('<div style="margin-top:12px"></div>');
     btn.onclick = async () => {
@@ -525,8 +532,13 @@ function overviewPanel(){
           const st = p.error ? ["var(--err)", "看板不存在或无权访问"]
             : p.stale ? ["var(--warn)", `已更新 ${esc(p.current)}（学习时 ${esc(p.learned)||"未知"}）→ 建议重新学习`]
             : ["var(--ok)", "未变化"];
-          return `<div class="diag">${led(st[0])}<div class="dt">${esc(p.title)}&nbsp;&nbsp;<span style="color:var(--ink2)">${st[1]}</span></div></div>`;
+          const detail = p.stale && p.detail ? `<div style="margin-top:2px;font-size:12px;color:var(--warn)">${esc(p.detail)}</div>` : "";
+          return `<div class="diag">${led(st[0])}<div class="dt">${esc(p.title)}&nbsp;&nbsp;<span style="color:var(--ink2)">${st[1]}</span>${detail}</div></div>`;
         }).join("");
+        let notes = "";
+        if(j.overdue) notes += `<div class="diag">${led("var(--warn)")}<div class="dt" style="color:var(--ink2)">距上次学习已 ${Math.floor(j.ageDays)} 天，超过 ${j.freshDays} 天复核阈值——即使看板未变，也建议复核口径是否仍然适用</div></div>`;
+        if(j.upgradeAvailable) notes += `<div class="diag">${led("var(--acc)")}<div class="dt" style="color:var(--ink2)">运行脚本可升级：搭建版本 v${esc(j.builderVersion)||"3.0-"} → 当前 v${esc(j.builderCurrent)}，在对话中说「升级脚本」即可更新</div></div>`;
+        out.innerHTML += notes;
         const staleN = j.pages.filter(p=>p.stale||p.error).length;
         toast(staleN ? `体检完成：${staleN} 张看板有变化，建议重新学习` : "体检完成：全部看板未变化 ✓", !staleN);
       }catch(e){ toast("体检失败：" + e.message, false); }
@@ -890,6 +902,7 @@ DATA.agents.forEach(a => {
   if(a.cards) bits.push(`<span>${a.cards} 卡片</span>`);
   if(a.rules) bits.push(`<span>${a.rules} 口径</span>`);
   if(a.builtAt) bits.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
+  if(a.upgradeAvailable) bits.push(`<span style="color:var(--acc)">脚本可升级→v${esc(DATA.builderCurrent||"")}</span>`);
   const card = el(`<div class="agent-card">
     <div class="hd">${avatarFor(a.name, 42)}<div><div class="nm">${esc(a.name)}</div>
       <div class="micro" style="margin-top:2px">${esc(a.dirName)}</div></div></div>
@@ -986,40 +999,118 @@ def collect(workdir):
     return data
 
 
-def page_mtime(pg_id):
-    """优先走 --raw JSON（utime 字段），失败时回退文本正则。"""
+def _structure_hash(cards):
+    """卡片结构指纹：cdId+名称排序后取 hash。与 parse_page.py 的实现必须保持一致。"""
+    items = sorted((c.get("cdId", ""), (c.get("name") or "").strip()) for c in cards)
+    return sha1(json.dumps(items, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+
+
+def _ver_tuple(s):
+    """"3.1.0" → (3,1,0)，解析失败返回空元组（恒小于任何有效版本）。"""
+    nums = re.findall(r"\d+", s or "")
+    return tuple(int(x) for x in nums[:3]) if nums else ()
+
+
+def page_snapshot(pg_id):
+    """取看板当前快照：{mtime, cards: [{cdId, name}] | None, error}。
+    cards 为 None 表示 --raw 不可用（只拿到 mtime，无法做结构对比）。"""
     r = subprocess.run(["guancli", "page", "get", pg_id, "--raw"],
                        capture_output=True, text=True, timeout=60)
     if r.returncode == 0:
         try:
             data = json.loads(r.stdout).get("data") or {}
-            if data.get("utime"):
-                return data["utime"]
+            cards = [{"cdId": c.get("cdId", ""),
+                      "name": (c.get("name") or "").strip() or c.get("cdId", "")}
+                     for c in data.get("cards") or [] if isinstance(c, dict) and c.get("cdId")]
+            return {"mtime": data.get("utime", ""), "cards": cards, "error": False}
         except json.JSONDecodeError:
             pass
+    # 回退：文本输出正则只拿更新时间（兼容旧版 guancli）
     r = subprocess.run(["guancli", "page", "get", pg_id],
                        capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
-        return None
+        return {"mtime": None, "cards": None, "error": True}
     m = re.search(r'^更新时间: (.+)$', r.stdout, re.M)
-    return m.group(1).strip() if m else ""
+    return {"mtime": m.group(1).strip() if m else "", "cards": None, "error": False}
 
 
-def check_staleness(workdir):
-    """对比 cards.json._meta 记录的学习时 mtime 与当前线上 mtime。"""
+def _diff_cards(learned, current):
+    """对比学习时与当前的卡片清单，报出具体增删/改名。"""
+    old = {c.get("cdId"): (c.get("name") or "").strip() for c in learned or []}
+    new = {c.get("cdId"): (c.get("name") or "").strip() for c in current or []}
+    added = [n for cid, n in new.items() if cid not in old]
+    removed = [n for cid, n in old.items() if cid not in new]
+    renamed = [f"{old[cid]}→{new[cid]}" for cid in old.keys() & new.keys() if old[cid] != new[cid]]
+    return {"added": added, "removed": removed, "renamed": renamed}
+
+
+def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
+    """体检：mtime + 卡片结构指纹双信号对比，附复核阈值与 builder 版本升级提示。"""
     cj = os.path.join(workdir, "cards.json")
     with open(cj, encoding="utf-8") as f:
         meta = (json.load(f).get("_meta") or {})
+    learned_pages = meta.get("pages") or {}
+
+    snapshots = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futs = {pool.submit(page_snapshot, pg_id): pg_id for pg_id in learned_pages}
+        for fut in as_completed(futs):
+            snapshots[futs[fut]] = fut.result()
+
     pages = []
-    for pg_id, info in (meta.get("pages") or {}).items():
-        cur = page_mtime(pg_id)
-        pages.append({
+    for pg_id, info in learned_pages.items():
+        snap = snapshots.get(pg_id) or {"mtime": None, "cards": None, "error": True}
+        cur = snap["mtime"]
+        stale = bool(cur) and cur != info.get("mtime", "")
+        entry = {
             "pgId": pg_id, "title": info.get("title", pg_id),
             "learned": info.get("mtime", ""), "current": cur,
-            "error": cur is None,
-            "stale": bool(cur) and cur != info.get("mtime", ""),
-        })
-    return {"pages": pages, "checkedAt": time.strftime("%Y-%m-%d %H:%M")}
+            "error": snap["error"], "stale": stale,
+            "changes": None, "detail": "",
+        }
+        if stale and snap["cards"] is not None:
+            if info.get("cards"):
+                # 有学习时卡片清单：报具体增删/改名
+                ch = _diff_cards(info["cards"], snap["cards"])
+                entry["changes"] = ch
+                bits = []
+                if ch["added"]:
+                    bits.append(f"新增 {len(ch['added'])} 张（{'、'.join(ch['added'][:5])}）")
+                if ch["removed"]:
+                    bits.append(f"删除 {len(ch['removed'])} 张（{'、'.join(ch['removed'][:5])}）")
+                if ch["renamed"]:
+                    bits.append(f"改名 {len(ch['renamed'])} 张（{'、'.join(ch['renamed'][:3])}）")
+                entry["detail"] = "；".join(bits) if bits else "卡片清单未变，是配置/布局调整"
+            elif info.get("cardHash"):
+                # 只有指纹没有清单：能判断是否动了卡片，但报不出具体名字
+                same = _structure_hash(snap["cards"]) == info["cardHash"]
+                entry["detail"] = ("卡片清单未变，是配置/布局调整" if same else
+                                   "卡片清单有增删（旧版档案未记录明细，重新学习后可看到具体卡片）")
+            else:
+                entry["detail"] = "旧版档案未记录卡片清单，无法具体对比"
+        pages.append(entry)
+
+    # 复核阈值：距上次学习超过 fresh_days 天即提醒（与看板是否变更无关）
+    built_at = meta.get("builtAt", "")
+    age_days = None
+    try:
+        age_days = (time.time() - time.mktime(time.strptime(built_at, "%Y-%m-%d %H:%M"))) / 86400
+    except (ValueError, OverflowError):
+        pass
+
+    # builder 版本升级通道：交付包记录的搭建版本落后于当前脚本即提示
+    pkg_ver = meta.get("builderVersion", "")
+
+    return {
+        "pages": pages, "checkedAt": time.strftime("%Y-%m-%d %H:%M"),
+        "builtAt": built_at,
+        "ageDays": round(age_days, 1) if age_days is not None else None,
+        "freshDays": fresh_days,
+        "overdue": age_days is not None and age_days > fresh_days,
+        "builderVersion": pkg_ver,
+        "builderCurrent": BUILDER_VERSION,
+        "upgradeAvailable": bool(learned_pages) and _ver_tuple(pkg_ver) < _ver_tuple(BUILDER_VERSION),
+    }
 
 
 def collect_agents(skills_dir):
@@ -1030,6 +1121,7 @@ def collect_agents(skills_dir):
             continue
         a = {"dirName": name, "name": name.replace("agent-", ""), "description": "",
              "pages": 0, "cards": 0, "rules": 0, "builtAt": "", "hasMeta": False,
+             "builderVersion": "", "upgradeAvailable": False,
              "workbenchUrl": ""}
         ident = parse_skill_md(os.path.join(skills_dir, name, "SKILL.md"))
         if ident:
@@ -1041,6 +1133,9 @@ def collect_agents(skills_dir):
             meta = assets.get("_meta") or {}
             a["builtAt"] = meta.get("builtAt", "")
             a["hasMeta"] = bool(meta.get("pages"))
+            a["builderVersion"] = meta.get("builderVersion", "")
+            a["upgradeAvailable"] = a["hasMeta"] and \
+                _ver_tuple(a["builderVersion"]) < _ver_tuple(BUILDER_VERSION)
             for k, v in assets.items():
                 if k == "_meta":
                     continue
@@ -1119,7 +1214,7 @@ def make_handler(get_page, on_check=None, on_save=None):
     return H
 
 
-def serve_single(workdir):
+def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
 
     def save_file(fn, content):
@@ -1138,7 +1233,7 @@ def serve_single(workdir):
         return {"ok": True, "backup": backup}
 
     H = make_handler(lambda: render(PAGE, collect(workdir), True),
-                     on_check=lambda _a: check_staleness(workdir),
+                     on_check=lambda _a: check_staleness(workdir, fresh_days),
                      on_save=save_file)
     server = HTTPServer(("127.0.0.1", 0), H)
     print(f"WORKBENCH_URL=http://127.0.0.1:{server.server_port}", flush=True)
@@ -1148,14 +1243,15 @@ def serve_single(workdir):
         pass
 
 
-def serve_fleet(skills_dir):
+def serve_fleet(skills_dir, fresh_days=FRESH_DAYS_DEFAULT):
     def check(agent_name):
         ref = os.path.join(skills_dir, agent_name or "", "references")
         if not agent_name or not os.path.isdir(ref):
             return {"pages": [], "checkedAt": time.strftime("%Y-%m-%d %H:%M")}
-        return check_staleness(ref)
+        return check_staleness(ref, fresh_days)
     H = make_handler(lambda: render(FLEET_PAGE, {
         "dir": os.path.abspath(skills_dir), "generated": time.strftime("%Y-%m-%d %H:%M"),
+        "builderCurrent": BUILDER_VERSION,
         "agents": collect_agents(skills_dir)}, True), on_check=check)
     server = HTTPServer(("127.0.0.1", 0), H)
     print(f"WORKBENCH_URL=http://127.0.0.1:{server.server_port}", flush=True)
@@ -1170,6 +1266,14 @@ def main():
     serve_mode = "--serve" in argv
     check_mode = "--check" in argv
     agents_mode = "--agents" in argv
+    fresh_days = FRESH_DAYS_DEFAULT
+    if "--fresh-days" in argv:
+        i = argv.index("--fresh-days")
+        try:
+            fresh_days = int(argv[i + 1])
+        except (IndexError, ValueError):
+            sys.exit("--fresh-days 需要一个整数天数")
+        argv = argv[:i] + argv[i + 2:]
     args = [a for a in argv if not a.startswith("--")]
 
     if agents_mode:
@@ -1177,13 +1281,14 @@ def main():
         if not os.path.isdir(skills_dir):
             sys.exit(f"目录不存在: {skills_dir}")
         if serve_mode:
-            serve_fleet(skills_dir)
+            serve_fleet(skills_dir, fresh_days)
         else:
             out = os.path.join(skills_dir, "agents.html")
             with open(out, "w", encoding="utf-8") as f:
                 f.write(render(FLEET_PAGE, {
                     "dir": os.path.abspath(skills_dir),
                     "generated": time.strftime("%Y-%m-%d %H:%M"),
+                    "builderCurrent": BUILDER_VERSION,
                     "agents": collect_agents(skills_dir)}, False))
             print(f"已生成: {out}")
         return
@@ -1194,18 +1299,26 @@ def main():
     if not os.path.isdir(workdir):
         sys.exit(f"目录不存在: {workdir}")
     if check_mode:
-        r = check_staleness(workdir)
-        print(f"资产体检（{r['checkedAt']}）")
+        r = check_staleness(workdir, fresh_days)
+        print(f"资产体检（{r['checkedAt']}）· 复核阈值 {r['freshDays']} 天")
         for p in r["pages"]:
             if p["error"]:
                 print(f"  ❌ {p['title']}：看板不存在或无权访问")
             elif p["stale"]:
                 print(f"  ⚠️  {p['title']}：学习时 {p['learned'] or '未知'} → 当前 {p['current']}，建议重新学习")
+                if p.get("detail"):
+                    print(f"      {p['detail']}")
             else:
                 print(f"  ✓  {p['title']}：未变化")
+        if r.get("overdue"):
+            print(f"⏰ 距上次学习已 {int(r['ageDays'])} 天，超过 {r['freshDays']} 天复核阈值——"
+                  f"即使看板未变，也建议复核口径是否仍然适用")
+        if r.get("upgradeAvailable"):
+            print(f"⬆️ 运行脚本可升级：搭建版本 v{r['builderVersion'] or '3.0-'} → 当前 v{r['builderCurrent']}，"
+                  f"在对话中说「升级脚本」即可更新交付包里的运行脚本")
         return
     if serve_mode:
-        serve_single(workdir)
+        serve_single(workdir, fresh_days)
     else:
         out_dir = workdir
         if os.path.basename(os.path.normpath(workdir)) == "references":

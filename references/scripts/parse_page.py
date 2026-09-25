@@ -7,7 +7,11 @@
 输出: <输出目录>/cards-raw.json
   {看板名: {pgId, mtime, dsIds, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails, unitHints,
                                         dims, measures}]},
-   "_meta": {builtAt, biBaseUrl, parser, pages: {...}, dsFormulas: {dsId: {dsName, virtualColumns}}}}
+   "_meta": {builtAt, builderVersion, biBaseUrl, parser,
+             pages: {pgId: {title, mtime, cardCount, cardHash, cards: [{cdId, name}]}},
+             dsFormulas: {dsId: {dsName, virtualColumns}}}}
+  pages[].cardHash/cards 是学习时点的卡片结构指纹：交付后体检对比 hash+mtime 双信号，
+  能具体报出"新增/删除了哪些卡片"（workbench.py --check）。
 公式收割（data agent 口径字典的原料）:
   - 每张数据卡的 measures: 字段名/别名/聚合方式/计算公式/高级计算(同比占比)/fdId
   - dims: 卡片的行维度（指标的当前粒度，判断"换维度是否安全"的依据）
@@ -18,6 +22,9 @@
 import json, re, subprocess, sys, os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from hashlib import sha1
+
+BUILDER_VERSION = "3.1.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -31,6 +38,12 @@ def bi_base_url():
     code, out, _ = run_guancli(["auth", "status"], timeout=30)
     m = re.search(r'^URL:\s*(\S+)', out, re.M)
     return m.group(1).rstrip('/') if m else ""
+
+
+def _structure_hash(cards):
+    """卡片结构指纹：cdId+名称排序后取 hash。与 workbench.py 的实现必须保持一致。"""
+    items = sorted((c.get("cdId", ""), (c.get("name") or "").strip()) for c in cards)
+    return sha1(json.dumps(items, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
 
 
 def _fd_name_map(data):
@@ -326,12 +339,16 @@ def main():
                          for d in (v.get("dsIds") or [])})
         ds_formulas = fetch_ds_formulas(all_ds, workers)
 
-    # 学习时点元数据：供交付后体检（看板是否在 agent 学习后被改过）
+    # 学习时点元数据：供交付后体检（看板是否在 agent 学习后被改过、改了什么、脚本可否升级）
     result["_meta"] = {
         "builtAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "builderVersion": BUILDER_VERSION,
         "biBaseUrl": bi_base_url(),
         "parser": "+".join(sorted(parsers)),
-        "pages": {v["pgId"]: {"title": k, "mtime": v.get("mtime", "")}
+        "pages": {v["pgId"]: {"title": k, "mtime": v.get("mtime", ""),
+                              "cardCount": len(v["cards"]),
+                              "cardHash": _structure_hash(v["cards"]),
+                              "cards": [{"cdId": c["cdId"], "name": c["name"]} for c in v["cards"]]}
                   for k, v in result.items() if isinstance(v, dict) and "pgId" in v},
         "dsFormulas": ds_formulas,
     }

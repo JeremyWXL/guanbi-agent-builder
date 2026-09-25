@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-25（v3.0.0）
+> 最近更新：2026-09-25（v3.1.0）
 
 ## 当前状态快照
 
-- **版本**：v3.0.0（质量护城河），GitHub 与 SkillHub（skillId=246636，免费版）上次发布于 v2.5.0，v2.6–v3.0 待发布
+- **版本**：v3.1.0（资产体检升级 + builderVersion 升级通道），GitHub 与 SkillHub（skillId=246636，免费版）上次发布于 v2.5.0，v2.6–v3.1 待发布
 - **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（12 个脚本）+ references/templates（6 个模板）+ references/cognitive-foundation.md + sql-guide.md
-- **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割）/ `check_formulas.py`（口径字典）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（1027 行单文件，无测试，是工程债）
+- **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（1300+ 行单文件，无测试，是工程债）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -26,10 +26,9 @@
 
 ## v3.x（治理与升级）——下一主线
 
+- ~~资产体检升级~~、~~builderVersion 升级通道~~ —— ✅ 已完成（v3.1.0）：结构指纹双信号 + 具体增删报告 + `--fresh-days` 复核阈值 + `_meta.builderVersion` 升级提示（总览页徽章）
 1. **businessKnowledge 结构化**：从自然语言规则清单升级为机器可读的指标定义（指标名/公式/维度/同义词/示例问题），可被脚本校验；字段设计向 OSI（开放语义交换标准）对齐，让口径档案跨工具可存活
-2. **资产体检升级**：mtime 对比 → 结构 hash diff（学习时存卡片清单 hash，体检对比 hash+mtime 双信号）；freshness 阈值可配置（"超过 N 天未复核即提醒"）；提示具体化（"《XX》新增 2 张卡片，建议补学"）
-3. **builderVersion 升级通道**：交付包写入 builder 版本号；体检时提示老 agent 可升级运行脚本（workbench.py 等交付副本目前永远停留在搭建时刻版本）
-4. **workbench.py 工程化**：拆分模板渲染/数据收集/服务层，对 collect()/check_staleness() 补最小单测（1027 行无测试是最大工程债）
+2. **workbench.py 工程化**：拆分模板渲染/数据收集/服务层，对 collect()/check_staleness() 补最小单测（1300+ 行无测试是最大工程债）
 
 ## 生态侧（随时可做）
 

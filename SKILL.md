@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "3.0.0"
+version: "3.1.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -46,7 +46,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 
 - 页面五个区块：**概览**（agent 身份卡：名称/描述/触发词/统计 + 数据源链接一键跳转 BI + 资产体检）、**数据资产**（看板→卡片表格，含全景/下钻/禁用标记 + 资产目录，看板名可点击跳转 BI）、**业务口径**（逐条规则编辑/删除/新增）、**分析思路**（分节编辑）、**输出与脚本**
 - 保存即写回源文件，**自动备份 `.bak-<时间戳>`**；改出问题可回滚
-- **资产体检**：serve 模式下概览页点"开始体检"，对比各看板学习时的更新时间与当前线上更新时间，被改过的看板标记"建议重新学习"；只读模式下提示用户在对话中说「体检资产」
+- **资产体检**：serve 模式下概览页点"开始体检"，对比各看板学习时的更新时间与**卡片结构指纹**——被改过的看板标记"建议重新学习"并**具体报出新增/删除/改名的卡片名**；距上次学习超过复核阈值（默认 30 天，`--fresh-days N` 可调）时提醒复核口径；交付包的搭建脚本版本落后于当前 builder 时提示升级（在对话中说「升级脚本」）。命令行版本：`python3 references/scripts/workbench.py <工作目录> --check [--fresh-days 30]`；只读模式下提示用户在对话中说「体检资产」
 - **多 agent 总览**：用户有多个 data agent 时，`python3 references/scripts/workbench.py --agents` 生成总览页（每个 agent 一张卡片：monogram 头像/名称/描述/资产统计/打开工作台）；`--agents --serve` 支持逐个体检
 - 用户改完点页面上的"✓ 完成 · 关闭工作台"，或在对话里说"改完了"——AI 终止服务进程，**重新校验受影响内容**（口径改动需复述新口径请用户确认），再继续流程
 - 适用确认点：第 2 步（资产目录）、第 4 步（业务口径，强烈推荐）、第 6 步（分析框架）
@@ -92,7 +92,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId> -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、BI 地址、各看板学习时的更新时间、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"的依据
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
