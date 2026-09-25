@@ -6,7 +6,7 @@
 
 ## 当前状态快照
 
-- **版本**：v3.3.0（交互体验第一批），已发布 GitHub 与 SkillHub（skillId=246636）至 v3.2.1，v3.3.0 待发布
+- **版本**：v3.3.1（交互体验第二批：对话体验规范），已发布 GitHub 与 SkillHub（skillId=246636）至 v3.3.0，v3.3.1 待发布
 - **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（14 个脚本 + test_workbench.py 单测）+ references/templates（7 个模板）+ references/cognitive-foundation.md + sql-guide.md；CI 在 .github/workflows/ci.yml
 - **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（保存回调已抽离为 make_save_file，核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
@@ -30,10 +30,7 @@
 
 - ~~P0 文档同步~~ —— ✅ v3.3.0：agent-SKILL.md 体检段更新为结构指纹版，口径来源接入 metrics.json/check_metrics.py
 - ~~P1.1 口径纠错对话闭环~~ —— ✅ v3.3.0：复述确认 → 双写回 metrics.json + businessKnowledge.md → check_metrics.py 校验 → "已记住"
-- **P1.2 首次对话自我介绍**：覆盖范围/数据时效/四类问题+示例，用户问"你能干什么"时触发
-- **P1.3 回答固定带"数据出身"**：来源看板/卡片 + 取数时间
-- **P1.4 模糊问题给选项而非反问**：一次只消歧一个关键点，给候选
-- **P1.5 超范围问题给出路**："需要《XX》看板，要不要加进来"→ 增量学习入口
+- ~~P1.2 首次对话自我介绍~~、~~P1.3 数据出身行~~、~~P1.4 模糊问题选项式消歧~~、~~P1.5 超范围给出路~~ —— ✅ v3.3.1：agent-SKILL.md 新增「对话体验规范」一节，insightThinking.md 场景一同步
 - ~~P2.6 口径确认异议驱动~~ —— ✅ v3.3.0：共识条目分组默认采纳，冲突/存疑项置顶拍板（红线不破）
 - ~~P2.7 每步进度播报~~ —— ✅ v3.3.0："第 N 步/共 8 步 · 干什么 · 还要多久"，断点续建同样播报
 - **P3 工作台指标档案表格视图**：metrics.json 从裸 JSON 变表单化展示/编辑（工作量最大，单列）
