@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "3.6.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "3.7.1"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -185,7 +185,9 @@ def parse_page_raw(page_id):
         return {"error": "RAW_SCHEMA_MISMATCH", "pgId": page_id}
 
     fd_names = _fd_name_map(data)
-    backlog = set((data.get("meta") or {}).get("backlogLayout") or [])
+    meta = data.get("meta") or {}
+    backlog = set(meta.get("backlogLayout") or [])
+    filter_bar = set(meta.get("filterLayout") or [])
     ds_ids = sorted({ds["dsId"] for ds in data.get("dsInfos") or [] if ds.get("dsId")})
     cards = []
     for c in data.get("cards") or []:
@@ -197,12 +199,13 @@ def parse_page_raw(page_id):
             src = content.get("source") or {}
             field_name = (src.get("field") or {}).get("name", "")
             filters = [field_name] if field_name else []
-            filter_details = [{"field": field_name, "selectorType": src.get("selectorType", ""),
-                               "multiSelect": src.get("multiSelect")}] if field_name else []
+            filter_details = [{"field": field_name,
+                               "selectorType": content.get("selectorType", ""),
+                               "multiSelect": content.get("multiSelect")}] if field_name else []
         else:
             filter_details = _card_filters(c, fd_names)
             filters = [d["field"] for d in filter_details]
-        cards.append({
+        card = {
             "name": (c.get("name") or "").strip() or c["cdId"],
             "cdId": c["cdId"],
             "type": cd_type,
@@ -213,7 +216,15 @@ def parse_page_raw(page_id):
             "unitHints": _unit_hints(c),
             "dims": _card_dims(c),
             "measures": _card_measures(c),
-        })
+        }
+        if c.get("cdType") == "SELECTOR":
+            # 筛选交互原料：直达链接选候选（筛选栏成员 + 有联动）与 FIRST_PICK 降级判断都靠这几个字段
+            card["inFilterBar"] = c["cdId"] in filter_bar
+            card["linkedCardCount"] = len(((c.get("settings") or {}).get("asFilter") or {}).get("targetCdIds") or [])
+            card["defaultValueType"] = (content.get("defaultValue") or {}).get("valueType", "")
+            card["multiSelect"] = bool(content.get("multiSelect"))
+            card["selectorType"] = content.get("selectorType", "")
+        cards.append(card)
     return {
         "title": (data.get("name") or page_id).strip(),
         "pgId": page_id,

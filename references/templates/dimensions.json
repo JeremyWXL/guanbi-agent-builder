@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-25",
+  "_readme": [
+    "机器可读维度档案：第 4 步与用户确认的维度定义，固化于此——交付助手理解「用户在问哪个维度、说的是哪个成员值」的唯一依据",
+    "name：维度标准名（必填、唯一，与卡片行维度/筛选器字段对齐）；field：数据集字段名（SQL 直查用，默认同 name）",
+    "synonyms：用户可能的叫法（禁止与其他维度的 name/synonyms 撞车，也禁止与 metrics.json 的指标名/别名撞车——撞车 = 问数路由歧义）",
+    "values：成员枚举值（来自采样列画像/取数结果，可陆续补充）；取值匹配的候选池，命中不了时禁止编造",
+    "valueAliases：值别名 → 标准成员值（相似值归一：用户说「华东区」按「华东」查）；目标值必须先收录在 values 中",
+    "similarTo：易混维度（如「销售大区」vs「财务大区」）——用户只叫「大区」时交付助手必须选项式消歧",
+    "parent：层级上卷维度（如 城市.parent=省份），供归因下钻路径参照；source：card / dataset / user / sql",
+    "校验：python3 references/scripts/check_dims.py <工作目录>——结构/同义词撞车/值跨维度重叠/相似值全部受检，❌ 未清零禁止进入第 5 步"
+  ],
+  "dimensions": [
+    {
+      "name": "销售大区",
+      "field": "大区",
+      "synonyms": ["大区", "销售区域"],
+      "values": ["华东", "华南", "华北", "西南"],
+      "valueAliases": {"华东区": "华东", "华东大区": "华东"},
+      "similarTo": ["财务大区"],
+      "source": "card",
+      "note": "用户口头说「区域」默认指销售大区；说「财务口径的区域」指财务大区"
+    },
+    {
+      "name": "财务大区",
+      "field": "财务区域",
+      "synonyms": ["财务区域"],
+      "values": ["华东", "华中", "西北"],
+      "valueAliases": {},
+      "similarTo": ["销售大区"],
+      "source": "dataset",
+      "note": "「华东」在两个维度都存在——用户说「华东」时若上下文未定维度，必须问「销售大区还是财务大区？」"
+    },
+    {
+      "name": "城市",
+      "field": "城市",
+      "synonyms": [],
+      "values": ["上海", "杭州", "北京"],
+      "valueAliases": {},
+      "parent": "省份",
+      "source": "card"
+    }
+  ]
+}

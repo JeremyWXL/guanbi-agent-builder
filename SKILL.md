@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "3.6.0"
+version: "3.7.1"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -96,11 +96,11 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 ### 第 2 步：看板资产学习（自动 + 强制校验）
 
 **AI 动作**（对用户表述为"我先把这几张看板的内容完整看一遍"）：
-1. 对每张看板执行：
+1. **一次性**解析全部已勾选看板（单次调用传入所有 pageId——脚本按次整体写入 cards-raw.json，逐张循环调用会互相覆盖、静默丢失看板）：
    ```bash
-   python3 references/scripts/parse_page.py <pageId> -o <工作目录>
+   python3 references/scripts/parse_page.py <pageId1> <pageId2> ... -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId 与关联字段名**——这是交付后 make_link.py 生成"筛好条件的看板直达链接"的原料
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
@@ -123,6 +123,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - **同名口径冲突检测**：同名指标公式不一致（如"退款率"在 A 卡分母是收入、B 卡是 GMV）列为冲突，**必须带入第 4 步请用户裁决，禁止 AI 自行二选一**
    - **口径候选条目**（candidateRules）：带出来源卡片与卡片的隐藏筛选（口径上下文，如"时间维度=月累计"），直接作为第 4 步逐条确认的素材
    - 追加 `--seed-metrics` 可同时生成 `metrics-seed.json`：共识指标预填公式/safety/维度成稿，冲突指标标 `pending`——这是第 4 步产出机器可读口径档案（metrics.json）的起草底稿
+   - 维度种子另跑 `python3 references/scripts/check_dims.py <工作目录> --seed-dims`：从卡片行维度/筛选器关联字段/指标 dims 收割维度清单，从采样列画像合并成员枚举值（values），名称互为包含的维度自动标 similarTo 易混建议——这是第 4 步产出机器可读维度档案（dimensions.json）的起草底稿
 5. 生成看板资产目录（模板：`references/templates/learningResult.md`）：每张看板的核心价值、筛选器、核心数据模块、使用场景；核心指标标注口径来源（详见 formulas.json）
 6. **SQL 直查能力探查**：cards-raw.json 已记录每张卡片所属的数据集 ID（dsId），用 `guancli ds get <数据集ID> --brief` 探查数据集字段，判断是否有 SQL 直查能力（数据集级 SQL 查询，见 `references/sql-guide.md`）。若可用，记入资产目录——这决定了助手后续能否补充"卡片粒度不够"的查询（如单月指标、自定义时间段、卡片没拆的维度）
 7. **建立基础认知**：完成看板学习后，AI 已经对客户场景有了初步理解——知道这是什么业务、有哪些指标、看板能回答什么问题。这是后续一切分析的基础。
@@ -172,8 +173,13 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    python3 references/scripts/check_metrics.py <工作目录>
    ```
    结构/同义词撞车/冲突未裁决（❌ 未清零禁止进入第 5 步）+ 公式一致性/候选未收编/维度未见（⚠️ 需在确认点告知用户）。businessKnowledge.md 仍是人读台账，metrics.json 是机器可读孪生，两者同步维护
-7. 业务背景提问："这个业务有什么季节性或特殊节点吗？（如 618、双 11）""有没有口径上的特殊约定？"
-8. **SQL 口径梳理（若启用 SQL 模式）**：当发现 SQL 算的指标与看板口径不一致时，必须把"SQL 口径"作为一条单独的规则写入 businessKnowledge.md，标注"SQL 计算口径 = XX，与看板口径 XX 的差异为 XX"。同时标记底层数据集中"看板卡片未使用的冗余字段"为"禁止引用"，防止后续 SQL 取数时口径混淆。
+7. **固化机器可读维度档案 `dimensions.json`**（模板：`references/templates/dimensions.json`）：以第 2 步 `dimensions-seed.json` 为底稿，同样异议驱动——默认采纳组成稿，重点与用户拍板三件事：① **维度叫法**（synonyms：用户口头怎么叫，"大区""区域"归到哪个标准维度）② **易混维度分工**（similarTo：名称相近的维度各管什么，"区域"默认指哪个）③ **值别名归一**（valueAliases：用户混用的相似取值，"华东区"→"华东"）；成员值 values 来自采样枚举，缺的从取数结果补，禁止编造。写完后必须过质量闸门：
+   ```bash
+   python3 references/scripts/check_dims.py <工作目录>
+   ```
+   结构/维度间及与指标的同义词撞车/值别名悬空（❌ 未清零禁止进入第 5 步）+ 值跨维度重叠/相似值未收编/维度未收录成员值（⚠️ 需在确认点告知用户——**值跨维度重叠清单就是交付后必须选项式消歧的取值清单**，如"华东"同时属于销售大区与财务大区）
+8. 业务背景提问："这个业务有什么季节性或特殊节点吗？（如 618、双 11）""有没有口径上的特殊约定？"
+9. **SQL 口径梳理（若启用 SQL 模式）**：当发现 SQL 算的指标与看板口径不一致时，必须把"SQL 口径"作为一条单独的规则写入 businessKnowledge.md，标注"SQL 计算口径 = XX，与看板口径 XX 的差异为 XX"。同时标记底层数据集中"看板卡片未使用的冗余字段"为"禁止引用"，防止后续 SQL 取数时口径混淆。
 
 **确认点**：逐条展示规则清单请用户确认："我把刚才聊的口径整理成了 N 条规则，其中归因公式是：…您看有没有说错的？"同时主动提供工作台选项："想在浏览器里逐条核对、直接改的话，我可以打开校验工作台。"**这一步不允许跳过**，口径错误是洞察质量的最大杀手。
 
@@ -219,7 +225,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    - 趋势描述与逐期数值一致，禁止错位编造
    - 前后结论不矛盾
    - 归因类回答的贡献额/贡献率必须来自 attribute.py 计算输出，禁止口算
-3. **SQL 直查测试（若启用）**：如果数据集有 SQL 直查能力，用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
+3. **SQL 直查测试（若启用）**：第 2 步探查过 SQL 能力不代表此时仍可用——测试前先探活（对每个要用的数据集跑一条 `SELECT COUNT(*)` 级轻量查询）：数据集失效（报错/返回 0 行且与卡片矛盾）时，降级为**卡片间交叉验证**（同指标两张卡互核、维度合计≈总计），并在交付时把 SQL 直查标注为"当前不可用"，禁止按第 2 步旧结论宣称可用。探活通过则用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
 4. 输出测试报告：每个场景的通过/失败及证据
 5. **验收通过的问答汇入 examples.json**：把实测期望值写入 `expect.values`、结论要点写入 `answerPoints`，用户验收通过后置 `humanConfirmed: true`——这是交付后的回归基准库。此后看板改版重新学习，用 `python3 references/scripts/eval_examples.py <工作目录>` 一键回归（数据层自动核验期望数值/关键词，结论要点逐条打印人工核对，按场景统计通过率），回答"新 agent 和旧 agent 一样准吗"
 
@@ -237,6 +243,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
        ├── cards.json         # 校验过的卡片映射
        ├── formulas.json      # 指标口径字典（公式+换维度安全性+冲突裁决结果）
        ├── metrics.json       # 机器可读口径档案（第 4 步确认，check_metrics.py 校验通过版）
+       ├── dimensions.json    # 机器可读维度档案（第 4 步确认，check_dims.py 校验通过版）
        ├── learningResult.md  # 看板资产目录（用户确认版）
        ├── businessKnowledge.md # 业务口径（用户确认版）
        ├── insightThinking.md # 分析框架（含诊断链方法论）
@@ -248,13 +255,14 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
        ├── attribute.py       # 归因计算引擎（复制自本 skill；贡献度计算唯一入口）
        ├── make_link.py       # 筛选直达链接生成器（复制自本 skill；回答附"筛好条件的看板"链接）
        ├── check_metrics.py   # 口径档案校验器（复制自本 skill；metrics.json 改动后必跑）
+       ├── check_dims.py      # 维度档案校验器（复制自本 skill；dimensions.json 改动后必跑）
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py 复制进产物包 references/
-3. 若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、check_metrics.py、check_dims.py 复制进产物包 references/
+3. SQL 直查能力标注**以第 7 步探活实测为准**：可用才在助手 SKILL.md 中标注"SQL 直查触发条件"；第 7 步探活失效的，明确标注"SQL 直查当前不可用"及恢复后的启用条件。两种情况都在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
 4. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
 
 ## 全程红线

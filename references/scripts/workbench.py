@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.6.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "3.7.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""

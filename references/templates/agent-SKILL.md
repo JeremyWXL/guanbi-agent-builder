@@ -38,11 +38,17 @@ agent_created: true
 > "这个问题需要《XX》看板的数据，我这边还没接入。要不要把它加进来？加一次以后就能问了。"
 用户同意后提示其回到搭建向导（guanbi-agent-builder）做增量学习；禁止只回答"我不知道"。
 
+**维度与取值消歧**：用户问题涉及维度时（"华东怎么样""各大区对比"），按 `references/dimensions.json` 归一，禁止凭猜测直接查：
+1. **定维度**：用户的维度叫法按 name/synonyms 归一到标准维度（如"区域"→销售大区）。一个词命中多个维度（dimensions.json 里有 similarTo 标记的易混维度），选项式消歧：
+   > "您说的「大区」是指？① 销售大区（华东/华南…）② 财务大区（华东/华中…）"
+2. **定取值**：维度值三级匹配——精确命中 values → valueAliases 归一（用户说"华东区"按"华东"查）→ 包含/相似匹配给候选（≤5 个列出让用户点选）。**查无此值时列出最接近的候选值**，禁止静默当空结果回答、禁止编造成员值。
+3. **值跨维度**：同一值属于多个维度时（如"华东"同时是销售大区和财务大区的成员，check_dims.py 校验报告有完整清单），先看问题上下文能否定维度（"华东门店"→按城市/门店维度），定不了就选项式问，禁止默认选一个。
+
 **看板直达链接**：问数/归因定位到具体对象（某地区、某门店）时，在回答末尾附"点这里看筛好条件的看板"链接：
 ```bash
 python3 references/make_link.py references <看板名> --filter "销售地区=华东" [--anchor 卡片名]
 ```
-链接点开就是已筛选的看板视图（观远 BI 页面 URL 原生支持筛选参数；--list 可先看某看板有哪些筛选器可带）。红线：筛选值必须来自取数结果或列画像枚举值，禁止编造；字段没有页面筛选器时脚本会明确报错，此时不给链接、用文字说明即可，禁止手拼 URL。
+链接点开就是已筛选的看板视图（观远 BI 页面 URL 原生支持筛选参数；--list 可先看某看板有哪些筛选器可带）。红线：筛选值必须来自取数结果或列画像枚举值，禁止编造；字段没有页面筛选器时脚本会明确报错，此时不给链接、用文字说明即可，禁止手拼 URL。若脚本输出「首选项（FIRST_PICK）」告警：链接照给，但必须如实告诉用户"这个看板打开后请确认数据已按条件过滤，如未过滤请手动点一下筛选"，禁止隐瞒告警。
 
 ## 前置检查
 
@@ -55,7 +61,7 @@ guancli auth status   # 确认认证有效
 0. **参照语料**：先查 `references/examples.json`——同类已验收问题的路由、取数方式与结论要点是最可靠的参照
 1. **取数**：按 `references/cards.json` 的卡片映射，用 `guancli card preview <cdId> -f json` 取数（或用 `references/sample_cards.py` 批量刷新到本地）
 2. **SQL 直查（卡片粒度不够时切换）**：当卡片没有对应粒度（如"单月指标""卡片没拆的维度"）时，用 `python3 references/run_sql.py <数据集ID> '<SQL>'` 对数据集做只读聚合查询（该脚本强制单条 SELECT，写操作会被拦截），规则见 `references/sql-guide.md`
-3. **口径**：严格遵循 `references/metrics.json`（机器可读口径档案：指标标准名/公式/别名 synonyms/换维度安全性 safety——用户叫别名时按 synonyms 归一到标准名）与 `references/businessKnowledge.md`（人读台账）；两者不一致时以 metrics.json 为准，并提示用户口径档案需要同步
+3. **口径**：严格遵循 `references/metrics.json`（机器可读口径档案：指标标准名/公式/别名 synonyms/换维度安全性 safety——用户叫别名时按 synonyms 归一到标准名）与 `references/businessKnowledge.md`（人读台账）；两者不一致时以 metrics.json 为准，并提示用户口径档案需要同步。维度同样遵循 `references/dimensions.json`（维度标准名/叫法 synonyms/成员值 values/值别名 valueAliases/易混维度 similarTo），归一与消歧规则见「对话体验规范」维度与取值消歧
 4. **路由**：按 `references/learningResult.md` 定位问题对应的看板与卡片
 5. **分析**：按 `references/insightThinking.md` 对应场景框架执行
 6. **输出**：综合洞察报告按 references 中的输出模板生成 HTML；问数/归因/异常直接对话回答
@@ -69,6 +75,7 @@ guancli auth status   # 确认认证有效
 - 标记为"下钻/局部"的卡片禁止当全景使用
 - 超出看板覆盖范围的问题直接说明，禁止编造；并给出出路（见「对话体验规范」超范围问题给出路）
 - 维度合计必须与总计闭环（误差 >2% 时先自查取数再回答）
+- 维度取值必须命中 dimensions.json 的 values/valueAliases 或取数结果中的真实值；查无此值给候选，禁止编造成员值
 - 归因场景的贡献额/贡献率必须用 `python3 references/attribute.py add|mul` 计算，禁止口算
 
 ## 维护
@@ -78,6 +85,11 @@ guancli auth status   # 确认认证有效
   2. 确认后**同时写回两处**：`references/metrics.json`（改对应指标的 formula，必要时补 synonyms）和 `references/businessKnowledge.md`（追加修正记录"原理解 X → 用户纠正为 Y"）
   3. 运行 `python3 references/check_metrics.py references` 校验（同义词撞车/冲突未裁决会被 ❌ 拦截，必须修到通过）
   4. 告知用户"已记住，以后都按这个算"。只改一处或跳过校验 = 档案不一致的源头，禁止
+- **用户在对话中纠正维度叫法或取值时**（"我们说的区域其实是战区""'华东区'就是'华东'"）——与口径纠错同规格闭环：
+  1. 复述确认（"您的意思是：以后说'区域'都按战区理解？"）
+  2. 确认后写回 `references/dimensions.json`（叫法进 synonyms，相似值进 valueAliases；若业务上有新维度认知，同步补进 businessKnowledge.md）
+  3. 运行 `python3 references/check_dims.py references` 校验（同义词撞车会被 ❌ 拦截，必须修到通过）
+  4. 告知用户"已记住"。纠正只在对话里生效、不落盘 = 下次还犯，禁止
 - 看板结构变更后：重新运行 sample_cards.py 刷新采样，然后运行 `python3 references/eval_examples.py .`（交付包根目录）对 examples.json 验收基准一键回归，按场景看通过率
 - **资产体检**：用户问"看板是不是变了/助手还准不准"时，运行 `python3 references/workbench.py references --check`：看板改版会**具体报出新增/删除/改名的卡片名**；距上次学习超过复核阈值（默认 30 天，`--fresh-days N` 可调）会提醒复核口径；脚本版本落后时会提示可升级（回搭建 skill 对话中说「升级脚本」）。有变化的看板建议用户重新学习（回到搭建 skill 的第 2 步，增量更新即可）
 - 业务口径批量调整：直接编辑 metrics.json / businessKnowledge.md（改完必跑 check_metrics.py），或启动工作台可视化编辑：`python3 references/workbench.py references --serve`（浏览器打开 WORKBENCH_URL，保存自动备份）

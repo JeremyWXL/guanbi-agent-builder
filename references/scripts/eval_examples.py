@@ -13,20 +13,24 @@
      - fetch.type=sql: 调用 run_sql.py 重跑（优先 <工作目录>/references/scripts/run_sql.py，
        回退与本脚本同目录的 run_sql.py），对结果文本做同样匹配；
        run_sql.py 不可用时该条记 skip 而非 fail
-     - 数值匹配容忍千分位（1,234.5）、百分号（35% ≈ 0.35）、中文单位（71万 ≈ 710000）
+     - 数值匹配容忍货币符号（￥1,234）、千分位（1,234.5）、百分号（35% ≈ 0.35）、中文单位（71万 ≈ 710000）
   2. 结论层人工核对: answerPoints 无法自动判，逐条打印为核对清单；
      humanConfirmed=false 的条目单独统计「待人工确认」
+工作目录形态:
+  examples.json 优先取 <工作目录>/examples.json；缺失时回退 <工作目录>/references/examples.json
+  （交付包形态），fetch.file 相对 examples.json 所在目录解析——交付包根目录直接
+  `python3 references/eval_examples.py .` 即可，无需软链
 退出码: 0=全部通过（或仅有待确认项）, 1=存在数据层失败, 2=examples.json 缺失/格式错误
 """
 import json, os, re, subprocess, sys
 
 DEFAULT_TOLERANCE = 0.02
 SQL_TIMEOUT = 180
-NUM_TOKEN = re.compile(r'-?\d[\d,]*(?:\.\d+)?\s*(?:%|万|亿)?')
+NUM_TOKEN = re.compile(r'[￥$¥]?\s*-?\d[\d,]*(?:\.\d+)?\s*(?:%|万|亿)?')
 
 
 def num_candidates(v):
-    """把单元格/文本值解析成候选浮点数，容忍千分位、百分号、中文单位（万/亿）"""
+    """把单元格/文本值解析成候选浮点数，容忍货币符号（￥/$/¥）、千分位、百分号、中文单位（万/亿）"""
     if isinstance(v, bool):
         return []
     if isinstance(v, (int, float)):
@@ -40,7 +44,8 @@ def num_candidates(v):
     elif '万' in s:
         mult = 1e4
     pct = '%' in s
-    cleaned = s.replace(',', '').replace('%', '').replace('万', '').replace('亿', '').strip()
+    cleaned = (s.replace(',', '').replace('%', '').replace('万', '').replace('亿', '')
+               .replace('￥', '').replace('$', '').replace('¥', '').strip())
     try:
         n = float(cleaned)
     except ValueError:
@@ -83,13 +88,14 @@ def check_expect(ex, text, candidates):
     return (not reasons), reasons
 
 
-def eval_card(workdir, ex):
-    """fetch.type=card：读采样文件核验。返回 (status, reasons, answerPoints)"""
+def eval_card(base_dir, ex):
+    """fetch.type=card：读采样文件核验。返回 (status, reasons, answerPoints)。
+    base_dir = examples.json 所在目录（工作目录，或交付包的 references/）"""
     fetch = ex.get('fetch') or {}
     rel = fetch.get('file')
     if not rel:
         return 'fail', ["fetch.file 缺失"], ex.get('answerPoints') or []
-    path = os.path.join(workdir, rel)
+    path = os.path.join(base_dir, rel)
     if not os.path.isfile(path):
         return 'fail', [f"采样文件缺失: {rel}（看板可能已改版，需要重新学习）"], ex.get('answerPoints') or []
     try:
@@ -163,8 +169,14 @@ def main():
 
     ex_path = os.path.join(workdir, 'examples.json')
     if not os.path.isfile(ex_path):
+        # 交付包形态：examples.json 与 card-data/ 都在 references/ 下
+        alt = os.path.join(workdir, 'references', 'examples.json')
+        if os.path.isfile(alt):
+            ex_path = alt
+    if not os.path.isfile(ex_path):
         print(f"❌ {MISSING_HINT}", file=sys.stderr)
         sys.exit(2)
+    base_dir = os.path.dirname(ex_path)  # fetch.file 相对 examples.json 所在目录解析
     try:
         with open(ex_path, encoding='utf-8') as f:
             doc = json.load(f)
@@ -195,7 +207,7 @@ def main():
             if fetch_type == 'sql':
                 status, reasons, points = eval_sql(workdir, ex, script_dir)
             else:
-                status, reasons, points = eval_card(workdir, ex)
+                status, reasons, points = eval_card(base_dir, ex)
             rows.append({
                 "id": ex.get('id', '?'),
                 "question": ex.get('question', ''),

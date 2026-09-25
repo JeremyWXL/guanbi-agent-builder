@@ -35,7 +35,7 @@
 - 注意：费用类指标方向相反（越低越好），按 businessKnowledge 规则执行
 
 # 场景一：问数查询
-1. 意图解析：提取问题中的指标、维度、时间
+1. 意图解析：提取问题中的指标、维度、时间——指标按 metrics.json 的 synonyms 归一到标准名；维度与取值按 dimensions.json 归一（synonyms 定维度、valueAliases 定取值，多命中/查无值时按 SKILL「对话体验规范」的维度与取值消歧执行）
 2. 路由：按 learningResult 资产目录定位看板 → 卡片
 3. 取数：guancli card preview <cdId>（必要时 --filter）
 4. 回答：先给数字，再给口径说明（来源看板/卡片、统计口径、单位、取数时间）
