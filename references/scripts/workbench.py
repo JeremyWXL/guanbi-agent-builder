@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.3.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "3.5.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -201,6 +201,26 @@ td.mono,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   color:var(--ink3);font-family:var(--mono);font-size:12px;letter-spacing:.06em;cursor:pointer;
   transition:border-color .15s,color .15s,background-color .15s;margin-top:14px}
 .addrule:hover{border-color:var(--acc);color:var(--acc-ink);background:var(--acc-soft)}
+
+/* 指标档案（metrics.json 表格视图） */
+.mformula{margin-top:6px;font-family:var(--mono);font-size:12.5px;color:var(--acc-ink);
+  background:var(--acc-soft);border-radius:7px;padding:6px 10px;display:inline-block;
+  max-width:100%;overflow-wrap:anywhere}
+.mmeta{margin-top:6px;font-size:12px;color:var(--ink3);display:flex;gap:6px;flex-wrap:wrap}
+.mmeta b{color:var(--ink2);font-weight:600}
+.mnote{margin-top:5px;font-size:12.5px;color:var(--ink2)}
+.medit{grid-column:1/-1;display:grid;grid-template-columns:76px 1fr;gap:8px 12px;
+  align-items:center;padding:8px 0}
+.medit label{font-family:var(--mono);font-size:11px;color:var(--ink3);letter-spacing:.05em}
+.medit input,.medit select{width:100%;padding:7px 10px;border:1px solid var(--line2);
+  border-radius:8px;background:var(--sheet);color:var(--ink);font-size:13px;font-family:inherit;
+  outline:none}
+.medit input:focus-visible,.medit select:focus-visible{border-color:var(--acc);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+.medit .btnrow{grid-column:1/-1}
+.rej{margin-top:14px}
+.rej .ritem{padding:7px 2px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink2)}
+.rej .ritem .rn{font-weight:600;color:var(--ink)}
 
 /* 折叠区块：hover 展开强调线 */
 details.card{padding:0;border-top:1px solid var(--line)}
@@ -637,8 +657,121 @@ function parseRule(rule){
   const sm = t.match(/^【([^】]+)】/);
   return {src:sm?sm[1]:"", title:(sm?t.slice(sm[0].length):t).trim(), body:(nl<0?"":r.slice(nl+1).trim())};
 }
+/* ---------- 指标档案（metrics.json 表格视图） ---------- */
+const SAFETY_LABEL = {FREE:"可自由换维度",DISTINCT:"换维度须明细现算·去重",AVG:"换维度须明细现算·均值",
+  NONADDITIVE:"换维度须明细现算·最值",ROW_LOGIC:"含行级判断逻辑",TIME_MACRO:"与时间宏绑定",CONSTANT:"硬编码常量"};
+const SOURCE_LABEL = {card:"看板卡片",dataset:"数据集",user:"用户确认",sql:"SQL 口径"};
+function metricsPanel(){
+  const raw = DATA.files["metrics.json"];
+  if(!raw) return null;
+  const wrap = document.createElement("div");
+  let doc;
+  try{ doc = JSON.parse(raw); }catch(e){
+    wrap.append(el(`<div class="hint">metrics.json 解析失败：${esc(e.message)}——可在「输出与脚本」页修复</div>`));
+    return wrap;
+  }
+  if(!Array.isArray(doc.metrics)) doc.metrics = [];
+  if(!Array.isArray(doc.rejected)) doc.rejected = [];
+  wrap.append(el(`<div class="hint">指标档案 <b style="font-family:var(--mono)">${doc.metrics.length}</b> 项——助手认这些标准名和别名，算法与换维度规则逐行核对${EDIT?"，右侧可编辑":""}</div>`));
+  const list = document.createElement("div"); wrap.append(list);
+
+  async function commit(){
+    doc.updatedAt = new Date().toISOString().slice(0,10);
+    return save("metrics.json", JSON.stringify(doc, null, 1) + "\n");
+  }
+  function editForm(m, idx){
+    const form = el(`<div class="medit"></div>`);
+    const csv = v => (v||[]).join("，");
+    const uncsv = s => s.split(/[,，、]/).map(x=>x.trim()).filter(Boolean);
+    form.innerHTML = `
+      <label>指标名</label><input data-k="name" value="${esc(m.name||"")}">
+      <label>算法</label><input data-k="formula" value="${esc(m.formula||"")}" placeholder="如 sum([实收])-sum([退款])；物理字段留空填下一行">
+      <label>物理字段</label><input data-k="baseField" value="${esc(m.baseField||"")}" placeholder="无公式时填字段名">
+      <label>别名</label><input data-k="synonyms" value="${esc(csv(m.synonyms))}" placeholder="逗号分隔，禁止与其他指标撞车">
+      <label>维度</label><input data-k="dims" value="${esc(csv(m.dims))}" placeholder="逗号分隔">
+      <label>单位</label><input data-k="unit" value="${esc(m.unit||"")}">
+      <label>换维度</label><select data-k="safety">${Object.keys(SAFETY_LABEL).map(k=>
+        `<option value="${k}"${m.safety===k?" selected":""}>${k} · ${SAFETY_LABEL[k]}</option>`).join("")}</select>
+      <label>来源</label><select data-k="source">${Object.keys(SOURCE_LABEL).map(k=>
+        `<option value="${k}"${m.source===k?" selected":""}>${SOURCE_LABEL[k]}</option>`).join("")}</select>
+      <label>备注</label><input data-k="note" value="${esc(m.note||"")}">`;
+    const row = el('<div class="btnrow"></div>');
+    const ok = el('<button class="btn primary">保存</button>');
+    const no = el('<button class="btn">取消</button>');
+    ok.onclick = async () => {
+      form.querySelectorAll("[data-k]").forEach(inp => {
+        const k = inp.dataset.k, v = inp.value.trim();
+        if(k === "synonyms" || k === "dims") m[k] = uncsv(v);
+        else if(v) m[k] = v; else delete m[k];
+      });
+      if(!m.name){ toast("指标名不能为空", false); return; }
+      dirty = true;
+      if(await commit()) draw(idx);
+    };
+    no.onclick = () => draw();
+    row.append(ok, no); form.append(row);
+    return form;
+  }
+  function draw(savedIdx){
+    list.innerHTML = "";
+    doc.metrics.forEach((m, i) => {
+      const tags = [];
+      if(m.safety) tags.push(`<span class="src">${esc(SAFETY_LABEL[m.safety]||m.safety)}</span>`);
+      if(m.source) tags.push(`<span class="src">${esc(SOURCE_LABEL[m.source]||m.source)}</span>`);
+      const metaBits = [];
+      if(m.synonyms && m.synonyms.length) metaBits.push(`<span>别名 <b>${esc(m.synonyms.join("、"))}</b></span>`);
+      if(m.dims && m.dims.length) metaBits.push(`<span>维度 <b>${esc(m.dims.join("、"))}</b></span>`);
+      if(m.unit) metaBits.push(`<span>单位 <b>${esc(m.unit)}</b></span>`);
+      const formula = m.formula || (m.baseField ? m.baseField + (m.aggrType ? "（" + m.aggrType + "）" : "") : "");
+      const card = el(`<div class="rule formula">
+        <div class="num">${String(i+1).padStart(2,"0")}</div>
+        <div><div class="rhead"><span class="rtitle">${esc(m.name||"（未命名）")}</span>${tags.join("")}</div>
+        ${formula?`<div class="mformula">${esc(formula)}</div>`:""}
+        ${metaBits.length?`<div class="mmeta">${metaBits.join("")}</div>`:""}
+        ${m.note?`<div class="mnote">${esc(m.note)}</div>`:""}</div>
+        <div class="acts"></div></div>`);
+      if(EDIT){
+        const acts = card.querySelector(".acts");
+        const eb = el('<button class="btn mini">编辑</button>');
+        const db = el('<button class="btn mini danger">删除</button>');
+        eb.onclick = () => { card.innerHTML = ""; card.append(editForm(m, i)); };
+        db.onclick = async () => {
+          if(!confirm(`删除指标「${m.name}」？保存会立即写回 metrics.json（有备份可恢复）。`)) return;
+          doc.metrics.splice(i,1); dirty = true; if(await commit()) draw();
+        };
+        acts.append(eb, db);
+      }
+      if(i === savedIdx) savedBadge(card.querySelector(".acts") || card.querySelector(".rhead"));
+      list.append(card);
+    });
+    if(doc.rejected.length){
+      const det = el(`<details class="card rej"><summary><span class="arrow">▶</span>已排除的候选 <span class="sub">${doc.rejected.length} 条——确认过但不收编，防止重新学习时重复提问</span></summary><div class="body"></div></details>`);
+      const body = det.querySelector(".body");
+      doc.rejected.forEach(r => body.append(el(`<div class="ritem"><span class="rn">${esc(r.name||"?")}</span>　${esc(r.formula||"")}${r.reason?`　· ${esc(r.reason)}`:""}</div>`)));
+      list.append(det);
+    }
+    if(EDIT){
+      const add = el('<button class="addrule">+ 加一条指标</button>');
+      add.onclick = () => {
+        const m = {name:"", formula:"", synonyms:[], dims:[], safety:"FREE", source:"user"};
+        doc.metrics.push(m);
+        draw();
+        const cards = list.querySelectorAll(".rule");
+        const last = cards[cards.length-1];
+        last.innerHTML = ""; last.append(editForm(m, doc.metrics.length-1));
+      };
+      list.append(add);
+    }
+  }
+  draw();
+  return wrap;
+}
+
+/* ---------- 业务口径 ---------- */
 function rulesPanel(){
   const wrap = document.createElement("div");
+  const mb = metricsPanel();
+  if(mb) wrap.append(mb);
   const text = DATA.files["businessKnowledge.md"];
   if(!text) { wrap.append(emptyState("还没有业务口径", "完成第 4 步口径确认后，这里会列出逐条规则。")); return wrap; }
   wrap.append(el(`<div class="hint">共 <b class="ruleCount" style="font-family:var(--mono)"></b> 条已确认口径——它们决定助手的计算方式，逐条核对，右侧可编辑或删除</div>`));
