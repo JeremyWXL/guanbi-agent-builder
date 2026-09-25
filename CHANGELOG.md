@@ -1,5 +1,17 @@
 # 变更日志
 
+## v3.6.0（2026-09-25）交互体验第三批：看板筛选直达链接（P1.6，已实机验证）
+
+- **`make_link.py` 筛选直达链接生成器**：把筛选条件拼进 BI 看板 URL（观远 BI 页面原生支持 `?筛选器ID=值` 查询参数；多值重复传参、`--anchor` 定位卡片、`--list` 列出可用筛选器），用户点开就是筛好条件的视图——归因定位到"华东拖后腿"时，回答末尾直接附"点这里看华东的看板"。字段没有页面筛选器时明确报错并列出可用字段，禁止静默忽略或手拼 URL
+- **实机验证结论**（app.guandata.com，页面「1｜集团总览」`?月份筛选器cdId=2020-04`：销售总额 636M→550M，取数请求 payload 确认 `sourceCdId` 带筛选）：
+  - **筛选器"线上 ID" = 卡片 cdId**，`guancli page get --raw` 直接可得，无需进编辑界面"复制筛选器ID"（与编辑 UI 复制结果逐一核对一致；编辑模式 draft API 的 `originCdId` 交叉验证）
+  - **同名筛选器必须选 `meta.filterLayout` 里的那个**（筛选栏成员）——页面可能存在不在筛选栏的同名筛选器，之前三次实机失败的根因就是拿错了 ID
+  - **只暴露有联动的筛选器**：`settings.asFilter.targetCdIds` 为空的筛选器只改 UI 不改数据，不作为直达链接候选
+  - **FIRST_PICK 降级**：筛选栏含 `defaultValue.valueType == "FIRST_PICK"`（首选项）筛选器的页面，首屏取数在 first-pick 异步解析前发出（filters 为空）且不再重查，URL 参数只填 UI 不进数据层，"查询"按钮保持 disabled——此类页面生成链接时明确告警
+- **parse_page.py 筛选交互学习**：cards-raw.json 的筛选器卡片新增 `inFilterBar`（是否在筛选栏）、`linkedCardCount`（联动卡片数）、`defaultValueType`（FIRST_PICK/FIXED_VALUE/ALL）、`multiSelect`、`selectorType` 字段——交付后 make_link.py 选候选、判降级全靠它们，也为交付助手理解页面筛选交互提供原料
+- **接线**：agent-SKILL.md 对话体验规范新增"看板直达链接"（筛选值必须来自取数结果/枚举值，禁止编造）；SKILL.md 第 2 步要求 cards.json 保留筛选器 cdId 与关联字段名（链接原料），第 8 步交付包纳入 make_link.py
+- 版本号说明：v3.4.0 曾预留给本特性（现场在 git stash），因 v3.5.0 先行发布，本特性以 v3.6.0 落地
+
 ## v3.5.0（2026-09-25）工作台指标档案表格视图（P3）
 
 - **metrics.json 表单化**：业务口径页顶部新增"指标档案"区块——结构化指标（标准名/算法/别名/维度/单位/换维度安全性/来源）从裸 JSON 变成台账式卡片，换维度安全性翻译成人话（"换维度须明细现算·去重"），已排除候选（rejected）折叠展示

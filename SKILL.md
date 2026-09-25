@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "3.5.0"
+version: "3.6.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -100,7 +100,7 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId> -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId 与关联字段名**——这是交付后 make_link.py 生成"筛好条件的看板直达链接"的原料
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
@@ -246,13 +246,14 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
        ├── sql-guide.md       # SQL 直查指南（若数据集支持）
        ├── examples.json      # few-shot 示例库（验收通过的问答基准；回答参照语料 + 回归评测题库）
        ├── attribute.py       # 归因计算引擎（复制自本 skill；贡献度计算唯一入口）
+       ├── make_link.py       # 筛选直达链接生成器（复制自本 skill；回答附"筛好条件的看板"链接）
        ├── check_metrics.py   # 口径档案校验器（复制自本 skill；metrics.json 改动后必跑）
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py 复制进产物包 references/
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py 复制进产物包 references/
 3. 若数据集有 SQL 直查能力，在助手 SKILL.md 中标注"SQL 直查触发条件"，并在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
 4. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
 
