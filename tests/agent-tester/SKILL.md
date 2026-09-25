@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.1.0"
+version: "1.2.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -41,6 +41,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-15 | 工作台 | `workbench.py <目录>` + `--agents` + `--check` | 静态页生成；总览页生成；体检报告具体增删卡 |
 | L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip |
 | L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
+| L0-18 | 记忆系统 | `memory.py init/log/recall/correct/status/distilled/clear`（沙箱目录） | init 幂等不覆盖已有文件；log 兜底初始化并追加；recall 命中相似历史、纠错后旧问答标 ⚠️；correct 拒绝非法 type；status 达阈值报 suggestDistill；clear 无 --yes 拒绝、有 --yes 先备份再清空 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -56,7 +57,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | 5 | 典型问题固化 examples.json（路由+取数方式） | — |
 | 6 | insightThinking 含诊断链五条纪律；维度消歧三级协议写入场景一 | — |
 | 7 | 每题数字有出处；归因走 attribute.py；SQL 与卡片交叉验证（误差<2%）；expect/answerPoints 回填；eval_examples 冒烟 | 口算贡献率 = 失败；不可答的题记 fail 而非硬答 |
-| 8 | 交付包结构完整（SKILL.md + workbench.html + references 全套）；包内 `eval_examples.py .` 自跑通；能力声明与实际验证结论一致（如 SQL 不可用时不得宣称可用） | 交付包能力不得超出第 7 步实测结论 |
+| 8 | 交付包结构完整（SKILL.md + workbench.html + memory/ 四文件 + references 全套含 memory.py）；memory.py init 已跑且幂等；包内 `eval_examples.py .` 自跑通；能力声明与实际验证结论一致（如 SQL 不可用时不得宣称可用） | 交付包能力不得超出第 7 步实测结论；memory/ 不得被任何升级/重学操作覆盖 |
 
 **模拟用户决策记录模板**（测试中必须显式写出）：勾选看板清单、每处口径冲突的裁决、拒绝/保留 ⚠️ 看板的决定、第 7 步验收结论。
 

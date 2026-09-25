@@ -140,6 +140,63 @@ class TestCollectAndSave(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             save("metrics.json", "{not json")
 
+    def _make_memory(self, parent):
+        memdir = os.path.join(parent, "memory")
+        os.makedirs(memdir, exist_ok=True)
+        with open(os.path.join(memdir, "profile.md"), "w", encoding="utf-8") as f:
+            f.write("# 用户画像\n\n## 关注重点\n- 收入\n")
+        with open(os.path.join(memdir, "qa-log.jsonl"), "w", encoding="utf-8") as f:
+            f.write('{"ts":"2026-09-25T10:00:00+08:00","question":"华东收入多少","route":"《销售》/卡1","note":"710万"}\n')
+            f.write('坏行不是JSON\n')
+        write_json(memdir, "corrections.json", {"corrections": [
+            {"ts": "2026-09-25T11:00:00+08:00", "type": "口径",
+             "before": "÷收入", "after": "÷GMV", "target": "metrics.json"}]})
+        return memdir
+
+    def test_collect_reads_memory_in_workdir(self):
+        write_json(self.dir, "cards.json", {"_meta": {"biBaseUrl": "https://bi.example.com"}})
+        self._make_memory(self.dir)
+        data = wb.collect(self.dir)
+        mem = data["memory"]
+        self.assertIsNotNone(mem)
+        self.assertIn("用户画像", mem["profile"])
+        self.assertEqual(mem["qaLogTotal"], 1)          # 坏行跳过
+        self.assertEqual(mem["qaLog"][0]["note"], "710万")
+        self.assertEqual(mem["corrections"][0]["after"], "÷GMV")
+
+    def test_collect_memory_via_references_parent(self):
+        # 交付包形态：workdir 是 <pkg>/references，memory/ 在包根
+        pkg = os.path.join(self.dir, "agent-demo")
+        ref = os.path.join(pkg, "references")
+        os.makedirs(ref)
+        write_json(ref, "cards.json", {"_meta": {"biBaseUrl": "https://bi.example.com"}})
+        self._make_memory(pkg)
+        data = wb.collect(ref)
+        self.assertIsNotNone(data["memory"])
+        self.assertEqual(data["memory"]["qaLogTotal"], 1)
+
+    def test_save_memory_profile_with_backup(self):
+        pkg = os.path.join(self.dir, "agent-demo")
+        ref = os.path.join(pkg, "references")
+        os.makedirs(ref)
+        write_json(ref, "cards.json", {"_meta": {"biBaseUrl": "https://bi.example.com"}})
+        memdir = self._make_memory(pkg)
+        save = wb.make_save_file(ref)
+        r = save("memory/profile.md", "# 改后的画像\n")
+        self.assertTrue(r["ok"])
+        with open(os.path.join(memdir, "profile.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# 改后的画像\n")
+        self.assertTrue(os.path.exists(os.path.join(memdir, os.path.basename(r["backup"]))))
+        # 流水与台账是 append-only，工作台禁止写
+        self.assertFalse(save("memory/qa-log.jsonl", "x")["ok"])
+        self.assertFalse(save("memory/corrections.json", "{}")["ok"])
+        self.assertFalse(save("memory/_meta.json", "{}")["ok"])
+
+    def test_save_memory_profile_rejected_without_memory_dir(self):
+        write_json(self.dir, "cards.json", {"_meta": {"biBaseUrl": "https://bi.example.com"}})
+        save = wb.make_save_file(self.dir)
+        self.assertFalse(save("memory/profile.md", "x")["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

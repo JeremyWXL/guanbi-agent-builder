@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "3.9.0"
+version: "4.0.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -52,7 +52,7 @@ python3 references/scripts/workbench.py <工作目录> --serve   # 打印 WORKBE
 open <WORKBENCH_URL>   # macOS 直接打开浏览器
 ```
 
-- 页面五个区块：**概览**（agent 身份卡：名称/描述/触发词/统计 + 数据源链接一键跳转 BI + 资产体检）、**数据资产**（看板→卡片表格，含全景/下钻/禁用标记 + 资产目录，看板名可点击跳转 BI）、**业务口径**（指标档案 + 维度档案表单化编辑 + 逐条规则编辑/删除/新增）、**分析思路**（分节编辑）、**输出与脚本**
+- 页面六个区块：**概览**（agent 身份卡：名称/描述/触发词/统计 + 数据源链接一键跳转 BI + 资产体检）、**数据资产**（看板→卡片表格，含全景/下钻/禁用标记 + 资产目录，看板名可点击跳转 BI）、**业务口径**（指标档案 + 维度档案表单化编辑 + 逐条规则编辑/删除/新增）、**分析思路**（分节编辑）、**输出与脚本**、**记忆**（v4.0：用户画像查看/编辑 + 问答流水 + 纠错台账；仅交付包有 memory/ 时显示）
 - 保存即写回源文件，**自动备份 `.bak-<时间戳>`**；改出问题可回滚
 - **资产体检**：serve 模式下概览页点"开始体检"，对比各看板学习时的更新时间与**卡片结构指纹**——被改过的看板标记"建议重新学习"并**具体报出新增/删除/改名的卡片名**；距上次学习超过复核阈值（默认 30 天，`--fresh-days N` 可调）时提醒复核口径；交付包的搭建脚本版本落后于当前 builder 时提示升级（在对话中说「升级脚本」）。命令行版本：`python3 references/scripts/workbench.py <工作目录> --check [--fresh-days 30]`；只读模式下提示用户在对话中说「体检资产」
 - **多 agent 总览**：用户有多个 data agent 时，`python3 references/scripts/workbench.py --agents` 生成总览页（每个 agent 一张卡片：monogram 头像/名称/描述/资产统计/打开工作台）；`--agents --serve` 支持逐个体检
@@ -245,8 +245,13 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
 1. 在 `~/.workbuddy/skills/agent-<场景名>/` 生成产物 skill 包（模板：`references/templates/agent-SKILL.md`）：
    ```
    agent-<场景名>/
-   ├── SKILL.md           # 触发词 + 场景路由 + 使用说明
-   ├── workbench.html     # 只读工作台（双击浏览器打开，随时查看资产/口径/分析思路）
+   ├── SKILL.md           # 触发词 + 场景路由 + 使用说明（含记忆系统纪律）
+   ├── workbench.html     # 只读工作台（双击浏览器打开，随时查看资产/口径/分析思路/记忆）
+   ├── memory/            # 用户资产区（v4.0）——升级永不覆盖
+   │   ├── profile.md         # 用户画像（蒸馏更新）
+   │   ├── qa-log.jsonl       # 问答流水（append-only）
+   │   ├── corrections.json   # 纠错台账（before→after 历史）
+   │   └── _meta.json         # memory schema 版本 + 蒸馏计数
    └── references/
        ├── cards.json         # 校验过的卡片映射
        ├── formulas.json      # 指标口径字典（公式+换维度安全性+冲突裁决结果）
@@ -262,6 +267,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── examples.json      # few-shot 示例库（验收通过的问答基准；回答参照语料 + 回归评测题库）
        ├── attribute.py       # 归因计算引擎（复制自本 skill；贡献度计算唯一入口）
        ├── make_link.py       # 筛选直达链接生成器（复制自本 skill；回答附"筛好条件的看板"链接）
+       ├── memory.py          # 记忆系统（复制自本 skill；log/recall/correct/status/clear）
        ├── check_metrics.py   # 口径档案校验器（复制自本 skill；metrics.json 改动后必跑）
        ├── check_dims.py      # 维度档案校验器（复制自本 skill；dimensions.json 改动后必跑）
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
@@ -269,9 +275,16 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、check_metrics.py、check_dims.py 复制进产物包 references/
-3. SQL 直查能力标注**以第 7 步探活实测为准**：可用才在助手 SKILL.md 中标注"SQL 直查触发条件"；第 7 步探活失效的，明确标注"SQL 直查当前不可用"及恢复后的启用条件。两种情况都在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
-4. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py 复制进产物包 references/
+3. **初始化记忆区**（交付包的长期记忆，从空开始随使用沉淀）：
+   ```bash
+   python3 <交付包路径>/references/memory.py init <交付包路径>
+   ```
+   init 幂等——已存在的 memory 文件永不覆盖（用户资产区，重跑/升级都安全）
+4. SQL 直查能力标注**以第 7 步探活实测为准**：可用才在助手 SKILL.md 中标注"SQL 直查触发条件"；第 7 步探活失效的，明确标注"SQL 直查当前不可用"及恢复后的启用条件。两种情况都在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
+5. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
+
+**升级通道（用户说「升级脚本」时执行）**：只替换交付包 `references/` 下的脚本、重新生成 workbench.html、更新 cards.json `_meta.builderVersion`——**`memory/` 目录永不在覆盖范围**（画像/问答流水/纠错台账是用户资产）；`SKILL.md` 模板有结构性新增（如记忆系统节）时，把新增节追加进交付包 SKILL.md 而不是整体覆盖（保留搭建时的场景化内容）。
 
 ## 全程红线
 

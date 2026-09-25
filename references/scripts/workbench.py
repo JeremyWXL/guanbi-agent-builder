@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.9.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.0.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -1029,6 +1029,76 @@ function rawPanel(){
   return wrap;
 }
 
+/* ---------- 记忆（v4.0，memory/ 用户资产区） ---------- */
+function memoryPanel(){
+  const wrap = document.createElement("div");
+  const mem = DATA.memory;
+  if(!mem){
+    wrap.append(emptyState("还没有记忆区", "v4.0 起交付包含 memory/（画像/问答流水/纠错台账）。老交付包由助手在对话中运行 memory.py init 后，这里即可查看。"));
+    return wrap;
+  }
+  wrap.append(el('<div class="hint">记忆属于用户资产：脚本升级只替换 references/ 与 SKILL.md，memory/ 永不被覆盖</div>'));
+
+  /* 用户画像（可编辑） */
+  const profCard = el('<div class="block"><h3>用户画像 <span class="sub">蒸馏自问答流水 · 可编辑</span></h3></div>');
+  const profBody = document.createElement("div");
+  const paintProfile = (justSaved) => {
+    profBody.innerHTML = mem.profile ? mdLite(mem.profile) : "";
+    if(!mem.profile) profBody.append(el('<div class="hint">画像还是空的——使用一段时间后，助手会把规律蒸馏到这里</div>'));
+    if(justSaved) savedBadge(profCard.querySelector("h3"));
+  };
+  paintProfile();
+  profCard.querySelector("h3").append(editBtn(() => {
+    profBody.innerHTML = "";
+    const ta = document.createElement("textarea"); ta.value = mem.profile || "";
+    ta.setAttribute("aria-label", "编辑用户画像");
+    ta.rows = Math.min(28, (mem.profile || "").split("\n").length + 2);
+    const row = document.createElement("div"); row.className = "btnrow";
+    const ok = el('<button class="btn primary">保存</button>');
+    const no = el('<button class="btn">取消</button>');
+    ok.onclick = async () => { dirty = true;
+      if(await save("memory/profile.md", ta.value)){ mem.profile = ta.value; paintProfile(true); } };
+    no.onclick = () => paintProfile();
+    row.append(ok, no); profBody.append(ta, row);
+    ta.focus();
+  }));
+  profCard.append(profBody);
+  wrap.append(profCard);
+
+  /* 纠错台账（只读，append-only） */
+  const corr = mem.corrections || [];
+  const corrCard = el(`<div class="block"><h3>纠错台账 <span class="sub">${corr.length} 条 · 只增不改</span></h3></div>`);
+  if(!corr.length){
+    corrCard.append(el('<div class="hint">还没有纠错记录——对话中纠正口径/维度/取值后自动记录</div>'));
+  } else {
+    const rows = corr.slice().reverse().map(c =>
+      `<tr><td class="mono">${esc((c.ts||"").slice(0,16).replace("T"," "))}</td>`
+      + `<td><span class="tag">${esc(c.type||"")}</span></td>`
+      + `<td>${esc(c.before||"")} → <strong>${esc(c.after||"")}</strong>`
+      + (c.question ? `<div style="color:var(--ink3);font-size:11.5px;margin-top:2px">问：${esc(c.question)}</div>` : "")
+      + `</td><td class="mono">${esc(c.target||"")}</td></tr>`).join("");
+    const t = el(`<table><tr><th style="width:118px">时间</th><th style="width:56px">类型</th><th>纠正内容（原 → 新）</th><th style="width:130px">落点</th></tr>${rows}</table>`);
+    corrCard.append(t);
+  }
+  wrap.append(corrCard);
+
+  /* 问答流水（只读，最近 200 条） */
+  const log = (mem.qaLog || []).slice().reverse();
+  const logCard = el(`<div class="block"><h3>问答流水 <span class="sub">共 ${mem.qaLogTotal || log.length} 条 · 显示最近 ${log.length} 条 · 只增不改</span></h3></div>`);
+  if(!log.length){
+    logCard.append(el('<div class="hint">还没有问答流水——交付后每次实质回答自动记录一行</div>'));
+  } else {
+    const rows = log.map(e =>
+      `<tr><td class="mono">${esc((e.ts||"").slice(0,16).replace("T"," "))}</td>`
+      + `<td>${esc(e.question||"")}${e.correction ? ' <span class="tag">含纠错</span>' : ""}</td>`
+      + `<td>${esc(e.route||"")}</td><td>${esc(e.note||"")}</td></tr>`).join("");
+    const t = el(`<table><tr><th style="width:118px">时间</th><th>问题</th><th style="width:200px">路由</th><th style="width:180px">结论</th></tr>${rows}</table>`);
+    logCard.append(t);
+  }
+  wrap.append(logCard);
+  return wrap;
+}
+
 /* ---------- 框架 ---------- */
 const TABS = [
   ["overview", "01", "概览", "Overview", overviewPanel],
@@ -1036,6 +1106,7 @@ const TABS = [
   ["rules", "03", "业务口径", "Rules", rulesPanel],
   ["thinking", "04", "分析思路", "Thinking", thinkingPanel],
   ["raw", "05", "输出与脚本", "Output", rawPanel],
+  ["memory", "06", "记忆", "Memory", memoryPanel],
 ];
 let curTab = (location.hash || "").slice(1);
 if(!TABS.some(([id]) => id === curTab)) curTab = "overview";
@@ -1066,6 +1137,7 @@ function summaryLine(){
     if(Array.isArray(mj.metrics) && mj.metrics.length) bits.push(mj.metrics.length + " 项指标"); }catch(e){}
   try{ const dj = JSON.parse(DATA.files["dimensions.json"] || "{}");
     if(Array.isArray(dj.dimensions) && dj.dimensions.length) bits.push(dj.dimensions.length + " 个维度"); }catch(e){}
+  if(DATA.memory && DATA.memory.qaLogTotal) bits.push(DATA.memory.qaLogTotal + " 条记忆");
   bits.push("更新于 " + DATA.generated);
   return bits.join(" · ");
 }
@@ -1238,9 +1310,17 @@ def parse_skill_md(path):
     }
 
 
+def _memory_dir(workdir):
+    """memory/ 定位：优先 <workdir>/memory（搭建工作目录），references 目录时取交付包根（与 identity 同规则）。"""
+    md = os.path.join(workdir, "memory")
+    if not os.path.isdir(md) and os.path.basename(os.path.normpath(workdir)) == "references":
+        md = os.path.join(os.path.dirname(os.path.abspath(workdir)), "memory")
+    return md if os.path.isdir(md) else None
+
+
 def collect(workdir):
     data = {"dir": os.path.abspath(workdir), "generated": time.strftime("%Y-%m-%d %H:%M"),
-            "assets": None, "files": {}, "identity": None, "biBaseUrl": ""}
+            "assets": None, "files": {}, "identity": None, "biBaseUrl": "", "memory": None}
     cj = os.path.join(workdir, "cards.json")
     if os.path.exists(cj):
         with open(cj, encoding="utf-8") as f:
@@ -1253,6 +1333,35 @@ def collect(workdir):
         if fn.endswith((".md", ".json")) and not fn.startswith("_") and fn != "cards.json":
             with open(os.path.join(workdir, fn), encoding="utf-8") as f:
                 data["files"][fn] = f.read()
+    memdir = _memory_dir(workdir)
+    if memdir:
+        mem = {"profile": "", "qaLog": [], "qaLogTotal": 0, "corrections": []}
+        try:
+            with open(os.path.join(memdir, "profile.md"), encoding="utf-8") as f:
+                mem["profile"] = f.read()
+        except OSError:
+            pass
+        entries = []
+        try:
+            with open(os.path.join(memdir, "qa-log.jsonl"), encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass  # 坏行跳过，不阻塞工作台
+        except OSError:
+            pass
+        mem["qaLogTotal"] = len(entries)
+        mem["qaLog"] = entries[-200:]  # 工作台只带最近 200 条，防大包撑页面
+        try:
+            with open(os.path.join(memdir, "corrections.json"), encoding="utf-8") as f:
+                mem["corrections"] = json.load(f).get("corrections") or []
+        except (json.JSONDecodeError, OSError):
+            pass
+        data["memory"] = mem
     return data
 
 
@@ -1486,10 +1595,24 @@ def make_handler(get_page, on_check=None, on_save=None):
 
 
 def make_save_file(workdir):
-    """生成保存回调：白名单文件（.md/.json）写回，JSON 先解析校验，旧版自动备份 .bak-<时间戳>。"""
+    """生成保存回调：白名单文件（.md/.json）写回，JSON 先解析校验，旧版自动备份 .bak-<时间戳>。
+    特例：memory/profile.md（用户画像）可写——位于 workdir 外的 memory/ 区，单独校验。"""
     allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
+    memdir = _memory_dir(workdir)
 
     def save_file(fn, content):
+        if fn == "memory/profile.md":
+            if not memdir:
+                return {"ok": False, "error": "本包还没有 memory/ 区"}
+            fp = os.path.join(memdir, "profile.md")
+            backup = "memory/profile.md.bak-" + time.strftime("%Y%m%d-%H%M%S")
+            if os.path.exists(fp):
+                with open(fp, encoding="utf-8") as f, \
+                     open(os.path.join(memdir, os.path.basename(backup)), "w", encoding="utf-8") as g:
+                    g.write(f.read())
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"ok": True, "backup": backup}
         if fn not in allowed or "/" in fn:
             return {"ok": False, "error": "不允许的文件: " + fn}
         if fn.endswith(".json"):

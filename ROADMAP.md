@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-25（v3.9.0）
+> 最近更新：2026-09-25（v4.0.0）
 
 ## 当前状态快照
 
-- **版本**：v3.9.0（工程质量补齐：attribute/eval_examples/make_link/preflight 单测 + preflight 纯 JSON + 基线对比脚本），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（15 个脚本 + 7 个测试文件 82 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md；CI 在 .github/workflows/ci.yml
-- **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（保存回调已抽离为 make_save_file，核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
+- **版本**：v4.0.0（记忆系统：交付包 memory/ 用户资产区，升级永不覆盖），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（16 个脚本 + 8 个测试文件 103 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md；CI 在 .github/workflows/ci.yml
+- **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -46,29 +46,9 @@
 - ~~businessKnowledge 结构化~~ —— ✅ v3.2.0：metrics.json 机器可读口径档案（OSI 对齐）+ check_metrics.py 校验闸门 + `--seed-metrics` 种子生成
 - ~~workbench.py 工程化~~ —— ✅ v3.2.1：保持单文件交付形态（约束），保存回调抽离 make_save_file + test_workbench.py 10 例最小单测 + GitHub Actions CI（含版本号一致性检查）
 
-## v4.0（记忆系统）——规划中（下一主线）
+## v4.0（记忆系统）——✅ 已完成（2026-09-25，v4.0.0）
 
-核心命题：交付 agent 的所有产物目前都是"搭建时点"的静态快照；使用中沉淀的价值——用户画像、问答经验、纠错历史——要么蒸发了，要么只回写档案而没有"以前是怎么说的"的历史。记忆系统让 agent 形成**每个用户独特的上下文，且永不随 builder/脚本升级被抹掉**。
-
-**存储布局**（交付包内分两个区，升级只碰其一）：
-
-```
-agent-<场景名>/
-├── SKILL.md / workbench.html / references/   # 升级可覆盖区（builder 版本升级只替换这里）
-└── memory/                                    # 用户资产区——升级通道永不写入
-    ├── profile.md        # 用户画像（人读）：角色/关注点/决策习惯/偏好口径与维度/输出偏好
-    ├── qa-log.jsonl      # 问答流水（append-only 只增不改）：问题/路由/消歧选择/关键结论/时间
-    ├── corrections.json  # 纠错台账：before→after、日期、双写回落点（metrics/dimensions 的历史层）
-    └── _meta.json        # memory schema 版本号（未来迁移依据）
-```
-
-**机制**（写进 agent-SKILL.md 模板的纪律）：
-- **写入**：实质回答后追加一条 qa-log（一行，便宜）；纠错发生时除现有双写回 metrics.json/dimensions.json 外，在 corrections.json 记 before→after 历史；**画像蒸馏**定期做（如每 20 条流水或用户说"整理一下你对我的了解"）——读流水归纳进 profile.md，改动向用户亮摘要
-- **读取**：回答前先在 qa-log 找相似历史问题（用 metrics/dimensions 的 synonyms 扩展后关键词匹配），命中则复用路由与消歧结论并声明（"上次按 XX 口径答过，这次沿用"）；画像参与消歧默认值选择（用户历史偏好优先于档案默认）
-- **与 examples.json 的边界**：qa-log 是有机流水（私人、不全对、不做回归）；examples.json 是策展基准（验收过、可回归）。用户明确验收的回答可"提拔"进 examples.json（问答回流），默认不自动
-- **升级安全（红线级）**：builder 升级通道只允许覆盖 references/ 与 SKILL.md/workbench.html，memory/ 永不写入；CI 加升级白名单测试防回归
-- **工作台**：新增"记忆"区块——画像查看/编辑、问答流水浏览、纠错台账时间线
-- **边界**：只记业务相关上下文，不记闲聊；用户可一键清空（"忘掉过去"）
+交付包分两个区：`references/` + SKILL.md + workbench.html 为升级可覆盖区，新增 **`memory/` 用户资产区**（profile.md 画像 / qa-log.jsonl 流水 / corrections.json 纠错台账 / _meta.json schema+蒸馏计数）——升级通道只替换脚本、重生成工作台、更新 builderVersion，memory/ 永不覆盖（SKILL.md 第 8 步升级通道 + 交付助手维护节双写明示）。`memory.py` 七个子命令（init 幂等/log 兜底初始化/recall 相似检索+纠错后旧问答自动标 ⚠️/correct/status 蒸馏阈值 20/distilled/clear 先备份再清空）；交付助手模板新增「记忆系统」节（写入/读取/蒸馏/边界四纪律，纠错双闭环各加台账步，执行流程第 0 步接入 recall）；工作台新增「记忆」页（画像可编辑走 make_save_file 特例白名单、流水与台账 append-only 禁写、概览加记忆计数）。与 examples.json 的边界钉死：qa-log 是私人流水非回归基准，验收过的回答才"提拔"进示例库。test_memory.py 17 例 + workbench 侧 5 例，单测 82 → 103 例；agent-tester v1.2.0（L0-18 + L1 第 8 步 memory 完整性）。详见 CHANGELOG。
 
 ## v3.9（工程质量补齐）——✅ 已完成（2026-09-25，v3.9.0）
 
