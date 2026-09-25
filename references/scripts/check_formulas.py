@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 指标公式分析器：把 parse_page.py 收割的公式变成问数 agent 的口径资产
-用法: python3 check_formulas.py <工作目录>     # 读 cards-raw.json → 写 formulas.json + 控制台报告
+用法: python3 check_formulas.py <工作目录> [--seed-metrics]
+                          # 读 cards-raw.json → 写 formulas.json + 控制台报告
+                          # --seed-metrics：额外写 metrics-seed.json（metrics.json 的起草种子，第 4 步逐条确认的素材）
 做的事:
   1. 汇总全部卡片/数据集的公式字段，按指标名归组
   2. 同名指标公式比对 → 口径冲突清单（如"退款率"在不同卡片分母不同）——第 4 步必须请用户裁决
@@ -69,7 +71,9 @@ def classify(formula, aggr_type=""):
 
 
 def main():
-    workdir = sys.argv[1] if len(sys.argv) > 1 else "."
+    argv = [a for a in sys.argv[1:] if a != "--seed-metrics"]
+    seed = len(argv) != len(sys.argv) - 1
+    workdir = argv[0] if argv else "."
     src = os.path.join(workdir, "cards-raw.json")
     if not os.path.exists(src):
         sys.exit(f"找不到 {src}——先运行 parse_page.py")
@@ -240,6 +244,41 @@ def main():
     else:
         print("\n✅ 无同名口径冲突")
     print(f"\n已生成口径候选 {len(out['candidateRules'])} 条 → {fp}")
+
+    if seed:
+        # metrics.json 起草种子：共识指标直接成稿，冲突指标标 pending 待第 4 步裁决
+        seed_metrics = []
+        for m in metrics:
+            if m["classification"] in ("PRESENTATION", "CONSTANT"):
+                continue
+            e = {"name": m["name"], "safety": m["classification"],
+                 "synonyms": [], "exampleQuestions": []}
+            dims = sorted({d for s in m.get("sources", []) for d in (s.get("dims") or [])})
+            if dims:
+                e["dims"] = dims
+            srcs = m.get("sources") or []
+            e["source"] = "dataset" if any(not s.get("page") for s in srcs) else "card"
+            if not m["consensus"]:
+                e["pending"] = True  # 口径冲突：第 4 步用户裁决后填 formula 并删除本标记
+                e["variants"] = m.get("variants", [])
+            elif m.get("formula"):
+                e["formula"] = re.sub(r'\s+', ' ', m["formula"]).strip()
+            else:
+                e["baseField"] = m.get("baseField", m["name"])
+                if m.get("aggrType"):
+                    e["aggrType"] = m["aggrType"]
+            seed_metrics.append(e)
+        seed_out = {"version": 1,
+                    "_readme": ["metrics.json 起草种子（check_formulas.py --seed-metrics 生成）："
+                                "共识指标已预填公式与 safety；pending=true 的是口径冲突，"
+                                "第 4 步请用户裁决后填 formula、删除 pending 与 variants；"
+                                "全部确认后另存为 metrics.json 并跑 check_metrics.py 校验"],
+                    "metrics": seed_metrics, "rejected": []}
+        sp = os.path.join(workdir, "metrics-seed.json")
+        with open(sp, "w", encoding="utf-8") as f:
+            json.dump(seed_out, f, ensure_ascii=False, indent=1)
+        n_pending = sum(1 for e in seed_metrics if e.get("pending"))
+        print(f"已生成指标种子 {len(seed_metrics)} 条（含 {n_pending} 条待裁决冲突）→ {sp}")
 
 
 if __name__ == '__main__':

@@ -1,5 +1,12 @@
 # 变更日志
 
+## v3.2.0（2026-09-25）businessKnowledge 结构化：机器可读口径档案
+
+- **`metrics.json` 机器可读口径档案**：businessKnowledge.md（人读台账）之外新增结构化孪生——每条确认的口径固化为 name/formula（或 baseField+aggrType）/dims/synonyms/safety/source/示例问题，字段设计向 OSI（开放语义交换标准）对齐，口径档案从此可被脚本校验、可跨工具存活；确认过但不收编的候选写入 rejected（含原因），防止重新学习时重复提问
+- **校验闸门 `check_metrics.py`**（第 4 步新增必跑项）：结构校验（name 唯一/formula 或 baseField 必填/pending 标记未清）+ 同义词撞车检测（撞车 = 问数路由歧义，❌）+ 冲突裁决闭环（formulas.json 的冲突必须在 metrics 或 rejected 有着落，❌）+ 公式一致性/候选未收编/维度未见（⚠️）；❌ 未清零禁止进入第 5 步
+- **种子生成 `check_formulas.py --seed-metrics`**（第 2 步）：共识指标预填公式/safety/维度直接成稿，冲突指标标 pending 待裁决——第 4 步从"逐条起草"变"逐条过稿"
+- **工作台**：概览统计行与多 agent 总览卡片新增"N 项指标"计数
+
 ## v3.1.0（2026-09-25）资产体检升级 + builderVersion 升级通道
 
 - **结构指纹双信号体检**：`_meta.pages` 新增每看板卡片结构指纹（cardHash）与卡片清单（cdId+名称），体检从"mtime 变了"升级为具体报告——"《经营驾驶舱》新增 2 张卡片（退款分析、费用趋势）、删除 1 张（门店排行）、改名 1 张（毛利率→综合毛利率）"；卡片清单未变时报"配置/布局调整"，避免误报吓到用户；旧版档案无指纹时降级为 mtime 对比并注明无法具体对比

@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "3.1.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "3.2.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -811,6 +811,8 @@ function summaryLine(){
   }
   const bk = DATA.files["businessKnowledge.md"];
   if(bk){ const n = (bk.match(/^(?:\*\*)?\d+\.(?=\s|【)/gm) || []).length; if(n) bits.push(n + " 条口径"); }
+  try{ const mj = JSON.parse(DATA.files["metrics.json"] || "{}");
+    if(Array.isArray(mj.metrics) && mj.metrics.length) bits.push(mj.metrics.length + " 项指标"); }catch(e){}
   bits.push("更新于 " + DATA.generated);
   return bits.join(" · ");
 }
@@ -901,6 +903,7 @@ DATA.agents.forEach(a => {
   if(a.pages) bits.push(`<span>${a.pages} 看板</span>`);
   if(a.cards) bits.push(`<span>${a.cards} 卡片</span>`);
   if(a.rules) bits.push(`<span>${a.rules} 口径</span>`);
+  if(a.metrics) bits.push(`<span>${a.metrics} 指标</span>`);
   if(a.builtAt) bits.push(`<span>学习于 ${esc(a.builtAt)}</span>`);
   if(a.upgradeAvailable) bits.push(`<span style="color:var(--acc)">脚本可升级→v${esc(DATA.builderCurrent||"")}</span>`);
   const card = el(`<div class="agent-card">
@@ -1120,7 +1123,7 @@ def collect_agents(skills_dir):
         if not name.startswith("agent-") or not os.path.isdir(ref):
             continue
         a = {"dirName": name, "name": name.replace("agent-", ""), "description": "",
-             "pages": 0, "cards": 0, "rules": 0, "builtAt": "", "hasMeta": False,
+             "pages": 0, "cards": 0, "rules": 0, "metrics": 0, "builtAt": "", "hasMeta": False,
              "builderVersion": "", "upgradeAvailable": False,
              "workbenchUrl": ""}
         ident = parse_skill_md(os.path.join(skills_dir, name, "SKILL.md"))
@@ -1153,6 +1156,13 @@ def collect_agents(skills_dir):
         if os.path.exists(bk):
             with open(bk, encoding="utf-8") as f:
                 a["rules"] = len(re.findall(r'^(?:\*\*)?\d+\.(?=\s|【)', f.read(), re.M))
+        mj = os.path.join(ref, "metrics.json")
+        if os.path.exists(mj):
+            try:
+                with open(mj, encoding="utf-8") as f:
+                    a["metrics"] = len(json.load(f).get("metrics") or [])
+            except (json.JSONDecodeError, OSError):
+                pass
         if os.path.exists(os.path.join(skills_dir, name, "workbench.html")):
             a["workbenchUrl"] = f"{name}/workbench.html"
         out.append(a)

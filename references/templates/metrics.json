@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-25",
+  "_readme": [
+    "机器可读指标口径档案：第 4 步与用户逐条确认的指标定义，固化于此（businessKnowledge.md 是人读台账，本文件是机器可读孪生）",
+    "字段设计向 OSI（开放语义交换标准）对齐：name/formula/dims/synonyms，让口径档案可跨工具存活、可被脚本校验",
+    "name：指标标准名（必填、唯一）；formula：内联公式原文（SQL 可复写）；无公式的物理字段用 baseField + aggrType 代替",
+    "dims：指标可用的分析维度；synonyms：用户可能叫的别名/同义词（禁止与其他指标的 name/synonyms 撞车）",
+    "safety：换维度聚合安全性（FREE/DISTINCT/AVG/NONADDITIVE/ROW_LOGIC/TIME_MACRO），与 formulas.json 分类一致，决定 SQL 直查能否换维度",
+    "source：card（看板卡片）/ dataset（数据集计算字段）/ user（用户口述口径）/ sql（SQL 专用口径）",
+    "exampleQuestions：用户问法示例（供 agent 路由参照）；unit/unitNote：单位约定",
+    "rejected：确认过但不收编的候选（如展示层派生、冲突落选变体），写明原因——防止下次学习又被当成新发现提问",
+    "校验：python3 references/scripts/check_metrics.py <工作目录>——结构/同义词撞车/冲突未裁决/候选未收编全部受检，❌ 未清零禁止进入第 5 步"
+  ],
+  "metrics": [
+    {
+      "name": "净收入",
+      "formula": "sum([实收金额]) - sum([退款金额])",
+      "synonyms": ["净额", "实收净额"],
+      "dims": ["日期", "渠道", "门店"],
+      "unit": "万元",
+      "safety": "FREE",
+      "source": "card",
+      "exampleQuestions": ["3月淘系净收入多少？"],
+      "note": "用户确认口径：退款按发生日冲减"
+    },
+    {
+      "name": "退款率",
+      "formula": "sum([退款金额]) / sum([GMV])",
+      "synonyms": [],
+      "dims": ["日期", "渠道"],
+      "safety": "FREE",
+      "source": "user",
+      "exampleQuestions": ["上月各渠道退款率？"],
+      "note": "冲突裁决：看板存在 ÷收入 与 ÷GMV 两种算法，用户裁定标准口径为 ÷GMV；趋势卡的 ÷收入 变体见 rejected"
+    },
+    {
+      "name": "会员数",
+      "baseField": "会员ID",
+      "aggrType": "COUNTDISTINCT",
+      "synonyms": ["会员总量"],
+      "dims": ["日期", "门店"],
+      "safety": "DISTINCT",
+      "source": "dataset",
+      "exampleQuestions": ["本月新增多少会员？"],
+      "note": "去重计数：换维度必须从明细现算，禁止把各分组结果相加"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "退款率",
+      "formula": "sum([退款金额]) / sum([收入])",
+      "reason": "冲突落选变体：仅《经营趋势》趋势卡局部使用，标准口径以 ÷GMV 为准"
+    }
+  ]
+}
