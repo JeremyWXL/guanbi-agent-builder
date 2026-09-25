@@ -6,7 +6,7 @@
 
 ## 当前状态快照
 
-- **版本**：v3.2.0（businessKnowledge 结构化），已发布 GitHub 与 SkillHub（skillId=246636）至 v3.1.0，v3.2.0 待发布
+- **版本**：v3.2.0（businessKnowledge 结构化），已发布 GitHub 与 SkillHub（skillId=246636，409 探针确认入库）
 - **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（14 个脚本）+ references/templates（7 个模板）+ references/cognitive-foundation.md + sql-guide.md
 - **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `workbench.py`（1340+ 行单文件，无测试，是工程债）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
