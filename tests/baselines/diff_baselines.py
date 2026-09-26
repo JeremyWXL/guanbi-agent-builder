@@ -58,10 +58,12 @@ def main():
     o2, n2 = old.get("l2", {}), new.get("l2", {})
     print("\n## L2 交付 agent 回答质量\n")
     dropped_questions = []
-    if "score" in o2 and "score" in n2:
+    if "score" in o2 and "score" in n2 and o2["score"] is not None and n2["score"] is not None:
         print(f"- 总分：{o2['score']} → {n2['score']}（{fmt_delta(n2['score'] - o2['score'])}）｜ "
               f"等级 {o2.get('grade', '?')} → {n2.get('grade', '?')} ｜ "
               f"红线 {o2.get('redlines', '?')} → {n2.get('redlines', '?')}")
+    elif n2.get("note"):
+        print(f"- 本次未测评：{n2['note']}")
     oq = {q.get("id"): q for q in o2.get("questions", [])}
     nq = {q.get("id"): q for q in n2.get("questions", [])}
     if nq:

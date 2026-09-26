@@ -2,9 +2,9 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.4.0"
-summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
-description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
+version: "1.5.0"
+summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
+description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L2 交付 agent 对话质量三层测试与评分标准。
 ---
 
 # guanbi-agent-builder 独立测试 Agent
@@ -25,7 +25,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | # | 检查点 | 命令 | 通过标准 |
 |---|--------|------|----------|
 | L0-1 | 前置检查 | `python3 references/scripts/preflight.py <沙箱目录>` | 5 项全 ✅；带目录时能打印断点摘要 |
-| L0-2 | 状态机 | `wizard_state.py init/set/confirm` | 状态流转正确；第 4、7 步 set skipped 被拒绝 |
+| L0-2 | 状态机 | `wizard_state.py init/set/confirm`（含 `--mode lite`） | 状态流转正确；第 4、7 步 set skipped 被拒绝（lite 下同样拒绝，退出码 3）；lite init 落盘 `mode: "lite"`，show/next 带模式标签 |
 | L0-3 | 看板扫描 | `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword "<词>"` | 三种模式均返回结构化结果 |
 | L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心 |
 | L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType；数据卡含 filtered 标记、页面含 dsUsage 分级（v4.2 取数加速层） |
@@ -61,6 +61,22 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | 8 | 交付包结构完整（SKILL.md + workbench.html + memory/ 四文件 + references 全套含 memory.py）；memory.py init 已跑且幂等；包内 `eval_examples.py .` 自跑通；能力声明与实际验证结论一致（如 SQL 不可用时不得宣称可用） | 交付包能力不得超出第 7 步实测结论；memory/ 不得被任何升级/重学操作覆盖 |
 
 **模拟用户决策记录模板**（测试中必须显式写出）：勾选看板清单、每处口径冲突的裁决、拒绝/保留 ⚠️ 看板的决定、第 7 步验收结论。
+
+## L1-lite · 快速模式五步 E2E（builder v4.3.0 起，约 20-30 分钟）
+
+模拟用户选择快速模式（`wizard_state.py init --mode lite`），按被测 skill 的「快速模式（lite）分支」执行。状态机仍按八步记录，逐步核对 wizard-state.json（第 3 步 skipped、合并步骤照常 confirm）。
+
+| lite 步 | 关键检查点 | 红线巡检 |
+|----|-----------|----------|
+| 模式选择 | 话术同时呈现快速/完整两种模式与时间预期；lite 明确从看板开始而非数据集直通 | 断点续建不重问模式，按 state 的 mode 恢复 |
+| L1 选定数据 | 适检三档 + agent-ready 评分照跑；**评分「低」/🔴 红线看板的提醒话术必须执行**（复述风险 + 建议治理），模拟用户坚持继续则放行并登记风险点 | 提醒义务不破；不得静默放行低分看板 |
+| L2 看板学习 | 与完整版第 2 步检查点相同（双种子必须生成——lite 成稿底稿） | 合计不闭环不往下走；空解析哨兵 |
+| L3 口径裁决 | 冲突逐条请用户拍板（模拟用户裁决并记录）；疑似口径问题 ≤3 条；共识组默认采纳；metrics.json/dimensions.json 种子成稿；businessKnowledge.md 顶部有"快速模式成稿"标注；**双闸门 ❌ 清零才放行** | 禁止 AI 自行二选一；skipped 第 4 步被拒 |
+| L4 场景与框架 | 只问 2-3 个典型问题；insightThinking 仍含诊断链五条纪律 | 诊断链不得被裁掉 |
+| L5 验收与交付 | 每场景 ≥1 题实测；交付包结构与完整版同构（含 memory/ 四文件、workbench.html、references 全套）；交付话术含"可深化"提示 | 验收实测不破； skipped 第 7 步被拒 |
+| 深化通道 | lite 交付后执行"深化"：preflight/`next` 提示可深化；回完整版第 4 步逐条确认后双闸门仍过；businessKnowledge 标注改为"已逐条确认"；memory/ 未被触碰 | 深化不得重建交付包结构 |
+
+L1-lite 的决策记录同样显式写出：模式选择、低分看板的去留决定、冲突裁决、验收结论、深化触发与结果。
 
 ## L2 · 交付 agent 回答质量测评（约 20 分钟）
 

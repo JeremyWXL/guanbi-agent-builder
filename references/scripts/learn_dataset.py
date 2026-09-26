@@ -21,7 +21,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-BUILDER_VERSION = "4.2.0"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
+BUILDER_VERSION = "4.3.0"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
 DEFAULT_MAX_ROWS = 200
 ENUM_LIMIT = 8       # 与 sample_cards.py 保持一致
 ENUM_CARD_MAX = 20

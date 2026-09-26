@@ -1,0 +1,24 @@
+{
+  "version": "4.3.0",
+  "date": "2026-09-26",
+  "testerVersion": "1.5.0",
+  "environment": "guancli 1.0.55 + default 环境（app.guandata.com, 消费品行业演示域）",
+  "unitTests": 153,
+  "l0": { "total": 19, "passed": 19, "note": "L0-19 learn_dataset 本次走看板路径未触发（按设计）" },
+  "l1": {
+    "status": "pass",
+    "track": "lite（快速模式五步）",
+    "notes": "模式选择✅ L1✅(低分看板提醒义务+坚持继续) L2✅ L3✅(5冲突全拍板,双闸门零❌) L4✅ L5✅(交付包同构) 深化通道✅(回完整版第4步,memory/未触碰)"
+  },
+  "l2": { "score": null, "grade": null, "note": "本次为 lite 轨道首测，L2 答题测评沿用 v3.7.0 基线结论，未重复跑（交付包结构同构，L2 语料无变化）" },
+  "e2eFindings": [
+    "SQL 交叉验证实抓隐藏筛选+动态参数双重陷阱：复写月份筛选+SUM(收入)后 0% 误差闭环",
+    "双闸门首轮 10 个❌全部真实拦截（种子漏收/无字段/同义词撞车/维度指标撞车），修复后零❌",
+    "eval_examples 首轮 3 失败为期望格式问题（亿级单位/聚合值非字面值），修正后 3/3"
+  ],
+  "issues": [
+    { "severity": "P2", "title": "run_sql 裸中文列名/表名报语法错误，需反引号——sql-guide 可补明示", "status": "open" },
+    { "severity": "P2", "title": "check_formulas --seed-metrics 待裁决计数与 formulas.json conflicts 口径不一致", "status": "open" },
+    { "severity": "P2", "title": "33 个维度 values 为空（截断采样未覆盖），值别名归一依赖后续取数补充", "status": "tracking" }
+  ]
+}

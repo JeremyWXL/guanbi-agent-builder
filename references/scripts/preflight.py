@@ -81,9 +81,13 @@ def check_resume(workdir):
             nxt, entry = n, e
             break
     name = state.get("agentName") or "未命名"
+    mode = state.get("mode", "full")
+    mode_label = "快速模式" if mode == "lite" else "完整模式"
     if nxt is None:
-        check("断点续建", True, False,
-              f"agent「{name}」八步流程已全部完成，无需续建")
+        detail = f"agent「{name}」八步流程已全部完成（{mode_label}），无需续建"
+        if mode == "lite":
+            detail += "；快速模式交付可回完整版第 4 步深化口径与维度档案，用户提起时按深化通道执行"
+        check("断点续建", True, False, detail)
         return
     updated = state.get("updatedAt", "")
     age = ""
@@ -95,7 +99,7 @@ def check_resume(workdir):
         pass
     status = STATUS_LABELS.get(entry.get("status", "pending"), entry.get("status", ""))
     check("断点续建", True, False,
-          f"检测到未完成的搭建：agent「{name}」，上次进行到第 {nxt} 步"
+          f"检测到未完成的搭建：agent「{name}」（{mode_label}），上次进行到第 {nxt} 步"
           f"【{STEP_NAMES[nxt]}】（状态：{status}{age}）。继续请说「继续搭建」")
 
 

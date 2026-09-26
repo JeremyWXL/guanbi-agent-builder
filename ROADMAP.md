@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-26（v4.2.0，已发布 GitHub + SkillHub 246636）
+> 最近更新：2026-09-26（v4.3.0 快速模式，代码 + E2E 完成待发布；L1-lite 沙箱实测通过，基线 v4.3.0 已归档）
 
 ## 当前状态快照
 
-- **版本**：v4.2.0（卡片取数加速层：parse_page 收割 filtered/dsUsage 分级——数据集级可二次计算、卡片级只作应答缓存；eval_examples 缓存占比统计；sql-guide 取数路径三层；workbench 体检加环境指标。前序：v4.1.1 数据集冷启动 / v4.1.0 看板质量前置闸），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
+- **版本**：v4.3.0（快速模式 lite 轨道：向导开头模式选择，五步快速搭建——砍确认深度不砍产物结构，交付包与完整版同构；深化通道复用断点续建回完整版第 4 步。前序：v4.2.0 取数加速层 / v4.1.1 数据集冷启动 / v4.1.0 看板质量前置闸），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E + L1-lite 五步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
 - **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（17 个脚本 + 11 个测试文件 146 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md（含取数路径三层）+ dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）；CI 在 .github/workflows/ci.yml
-- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级）/ `learn_dataset.py`（数据集直学：字段/计算字段/列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子；cards-raw 缺失回退 datasets-raw）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子，同样回退 datasets-raw）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + 取数路径缓存占比统计）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
+- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级）/ `learn_dataset.py`（数据集直学：字段/计算字段/列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子；cards-raw 缺失回退 datasets-raw）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子，同样回退 datasets-raw）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，摘要带模式标签与 lite 深化提示，--json 纯 JSON）/ `wizard_state.py`（断点状态机 + `--mode full|lite` 轨道标记）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + 取数路径缓存占比统计）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -72,7 +72,17 @@
 - ~~P2 取数路径分层写进 sql-guide~~ —— ✅ v4.2.0：卡片缓存 → 数据集级 → 明细层三层选择规则与降级条件 + 粒度陷阱红线
 - ~~P2 agent-ready 环境指标~~ —— ✅ v4.2.0：workbench --check 体检报告新增「取数加速层」（数据集复用率 + 数据集级/卡片级张数，纯本地计算；旧档案分级降级提示）；粒度覆盖度依赖 dsInfos 全量字段清单、学习时点才有，体检不重复计算（以 page-check.json 的 v4.1 评分为准）
 
-## v4.3（看板角色迁移）——规划中
+## v4.3（快速模式）——✅ 已完成（2026-09-26，v4.3.0）
+
+> 来源：2026-09-26 轻量化讨论。用户明确的约束：快速模式**从看板开始**（数据集直通缺业务信息太多，不作 lite 默认路径，保留为原触发条件下的兜底）；看板粗糙时尽提醒义务，用户坚持可继续。
+
+- **双轨道不分叉**：向导开头模式选择（快速 ≈15 分钟 / 完整 40-60 分钟）；`wizard_state.py init --mode lite` 落盘 mode 字段，断点续建按 mode 恢复行为；lite 五步地图（选数据 → 看板学习 → 口径裁决 → 场景与框架 → 验收与交付），状态机仍按八步记录
+- **砍确认深度，不砍产物结构**：L1/L2 与完整版全量一致（适检+评分+双种子照常）；L3 只保留冲突逐条拍板 + ≤3 条高风险疑似问题 + 一句话归因问法，共识组默认采纳，metrics/dimensions 以种子自动成稿、双闸门 ❌ 清零不破；L4/L5 合并 5+6、7+8，交付包结构同构（含 memory/）。三条不破底线：提醒义务 / 冲突裁决 / 验收实测
+- **深化通道（lite → 完整）**：无新机制——preflight/next 识别 lite 已交付即提示，回完整版第 4 步以已有档案为底稿逐条补确认 + 第 7 步扩题库；businessKnowledge.md 标注从"快速模式成稿"改为"已逐条确认"
+- **顺手修正**：wizard_state.py BUILDER_VERSION 3.0.0 → 4.3.0（与 frontmatter 同步的注释已漂移两个大版本）
+- **测试**：新建 test_wizard_state.py 7 例（mode 落盘/lite 下第 3 步可 skipped、第 4/7 步仍拒绝/旧档案无 mode 兼容/lite 完成提示深化）；单测 146 → 153 例；agent-tester 升 v1.5.0（L0-2 补 --mode lite、新增 L1-lite 五步 E2E 检查点表含深化通道实测）；**E2E 沙箱实测通过**（低分看板提醒义务+坚持继续、双闸门首轮 10❌ 拦截后零❌、交付包同构包内回归 3/3、深化通道 memory/ md5 未变；实抓隐藏筛选+DYNAMIC_PARAMS 双重陷阱，基线 v4.3.0 归档）
+
+## v4.4（看板角色迁移）——规划中（原 v4.3 顺延）
 
 > 来源：同上讨论（推演原文第二节）。知识抽象出来后看板不消失，角色迁移为：agent 的**训练语料 + 漂移检测基准 + 呈现模板库**。失去价值的只是"看板作为人与数据唯一界面"这一定位。
 

@@ -3,20 +3,25 @@
 搭建向导状态机：显式记录八步流程进度，支持会话中断后续建
 状态文件: <工作目录>/wizard-state.json
 用法:
-  python3 wizard_state.py init <工作目录> [--name <agent名>]
+  python3 wizard_state.py init <工作目录> [--name <agent名>] [--mode full|lite]
   python3 wizard_state.py set <工作目录> --step <N> --status <status> [--note "..."] [--artifact <路径>]...
   python3 wizard_state.py confirm <工作目录> --step <N> [--note "..."] [--artifact <路径>]...
   python3 wizard_state.py show <工作目录> [--json]
   python3 wizard_state.py next <工作目录>
 状态取值: pending / in_progress / confirming（已生成待用户确认）/ confirmed / skipped
-约束: 第 3 步可选允许 skipped；第 4、7 步是质量命门，禁止 skipped
+模式: full（完整八步，默认）/ lite（快速五步，合并执行时各步骤照常 confirm；
+  断点续建与深化通道靠 mode 字段恢复行为；旧状态文件无 mode 按 full 处理）
+约束: 第 3 步可选允许 skipped；第 4、7 步是质量命门，禁止 skipped（lite 同样适用）
 退出码: 0 成功 / 1 参数或状态文件错误 / 2 状态文件损坏 / 3 违反状态机约束
 """
 import argparse, json, os, sys, tempfile
 from datetime import datetime, timezone
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "3.0.0"
+BUILDER_VERSION = "4.3.0"
+
+MODES = ("full", "lite")
+MODE_LABELS = {"full": "完整模式", "lite": "快速模式"}
 
 STEP_NAMES = {
     1: "选定数据范围",
@@ -128,6 +133,7 @@ def cmd_init(args):
         "version": 1,
         "builderVersion": BUILDER_VERSION,
         "agentName": args.name or "",
+        "mode": args.mode,
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
         "currentStep": 1,
@@ -135,7 +141,10 @@ def cmd_init(args):
     }
     save_state(workdir, state)
     print(f"✅ 已初始化搭建状态: {path}")
-    print("   从第 1 步【选定数据范围】开始。")
+    if args.mode == "lite":
+        print("   快速模式（五步）：从第 1 步【选定数据范围】开始。")
+    else:
+        print("   从第 1 步【选定数据范围】开始。")
 
 
 def cmd_set(args, confirmed=False):
@@ -180,7 +189,8 @@ def cmd_show(args):
         print(json.dumps(state, ensure_ascii=False, indent=2))
         return
     name = state.get("agentName") or "（未命名）"
-    print(f"搭建进度 —— agent「{name}」")
+    mode = MODE_LABELS.get(state.get("mode", "full"), "完整模式")
+    print(f"搭建进度 —— agent「{name}」（{mode}）")
     print(f"创建于 {state.get('createdAt', '?')}，更新于 {state.get('updatedAt', '?')}"
           f"，当前第 {state.get('currentStep', '?')} 步\n")
     for n, sname in STEP_NAMES.items():
@@ -211,13 +221,18 @@ def cmd_next(args):
             nxt = n
             break
     name = state.get("agentName") or "（未命名）"
+    mode = state.get("mode", "full")
+    mode_label = MODE_LABELS.get(mode, "完整模式")
     if nxt is None:
-        print(f"🎉 agent「{name}」八步流程全部完成，搭建已交付。")
+        print(f"🎉 agent「{name}」八步流程全部完成，搭建已交付（{mode_label}）。")
+        if mode == "lite":
+            print("快速模式交付已完成。后续如需逐条打磨口径与维度、扩充验收题库，"
+                  "可回完整版第 4 步深化——已有档案直接作底稿，无需重建。")
         return
     entry = steps.get(str(nxt), {})
     status = entry.get("status", "pending")
     label = STATUS_LABELS.get(status, status)
-    print(f"上次进行到第 {nxt} 步【{STEP_NAMES[nxt]}】（状态：{label}）。")
+    print(f"上次进行到第 {nxt} 步【{STEP_NAMES[nxt]}】（状态：{label}，{mode_label}）。")
     arts = entry.get("artifacts") or []
     if arts:
         print(f"产物: {', '.join(arts)}")
@@ -241,6 +256,8 @@ def build_parser():
     pi = sub.add_parser("init", help="初始化状态文件")
     pi.add_argument("workdir", help="搭建工作目录")
     pi.add_argument("--name", default="", help="agent 名称")
+    pi.add_argument("--mode", default="full", choices=MODES,
+                    help="搭建模式：full 完整八步（默认）/ lite 快速五步")
     pi.set_defaults(func=cmd_init)
 
     ps = sub.add_parser("set", help="更新某一步的状态")
