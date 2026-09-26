@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-26（v4.1.1）
+> 最近更新：2026-09-26（v4.2.0）
 
 ## 当前状态快照
 
-- **版本**：v4.1.1（数据集冷启动路径：learn_dataset.py 直学数据集，交付"数据探索型"助手并诚实标注能力边界；v4.1.0 看板质量前置闸：check_pages.py 适检三档之上加 agent-ready 评分——口径一致性/权威标注率/数据集复用率/粒度覆盖度，口径冲突进 🔴 红线、覆盖不足进 🔷 边界），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（17 个脚本 + 10 个测试文件 135 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）；CI 在 .github/workflows/ci.yml
-- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `learn_dataset.py`（数据集直学：字段/计算字段/列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子；cards-raw 缺失回退 datasets-raw）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子，同样回退 datasets-raw）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
+- **版本**：v4.2.0（卡片取数加速层：parse_page 收割 filtered/dsUsage 分级——数据集级可二次计算、卡片级只作应答缓存；eval_examples 缓存占比统计；sql-guide 取数路径三层；workbench 体检加环境指标。前序：v4.1.1 数据集冷启动 / v4.1.0 看板质量前置闸），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（17 个脚本 + 11 个测试文件 146 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md（含取数路径三层）+ dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）；CI 在 .github/workflows/ci.yml
+- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级）/ `learn_dataset.py`（数据集直学：字段/计算字段/列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子；cards-raw 缺失回退 datasets-raw）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子，同样回退 datasets-raw）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + 取数路径缓存占比统计）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -63,14 +63,14 @@
 - ~~P1 口径冲突分级~~ —— ✅ v4.1.0：🔴 红线（口径混乱，有毒，必须先治理，有冲突评分封顶「中」）与 🔷 边界（覆盖不足，只压上限，只做能力边界标注）分开输出与处置
 - ~~P2 数据集冷启动路径~~ —— ✅ v4.1.1：`learn_dataset.py`（ds get 字段/计算字段 + preview 列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）+ check_formulas/check_dims 自动回退；第 1 步直通分支（知情同意前置）；交付模板「数据探索型」变体——能力边界写进自我介绍（能答"数据里有什么"，答不了"业务上该看什么"）
 
-## v4.2（卡片取数加速层）——规划中
+## v4.2（卡片取数加速层）——✅ 已完成（2026-09-26，v4.2.0）
 
 > 来源：同上讨论（推演原文第三节）。卡片对 agent 的价值定位：**物化视图 + 权限边界 + 应答缓存**，不是分析逻辑本身。它能吃掉日常查询负载的大部分取数成本，但对能力上限无贡献。
 
-- **P0 数据集级 / 卡片级分离**：parse_page.py 已收割筛选器字段，再进一步标注每个卡片数据集是否带筛选/裁剪——**数据集级**（未筛选）开放给 agent 二次计算，**卡片级**（带筛选）只允许作为已知问题的应答缓存被引用，禁止继续加工（粒度陷阱：带筛选数据集回答全局问题会产出隐蔽的口径错误）
-- **P1 高频问题应答缓存**：验收过的问答（examples.json 提拔机制）若命中卡片形态，直接读卡片结果/缓存取数，成本近零；eval_examples.py 增加"缓存命中率"统计
-- **P2 取数路径分层写进 sql-guide**：明细层（探索/下钻）→ 数据集级（粒度内重组，省 ETL 与权限重建）→ 卡片缓存（已知形态），三层的选择规则与降级条件
-- **P2 agent-ready 环境指标**：数据集复用率 + 粒度覆盖纳入体检报告，作为客户环境"值不值得建 agent"的预判依据（与 v4.1 P0 共用评分模型）
+- ~~P0 数据集级 / 卡片级分离~~ —— ✅ v4.2.0：parse_page.py 收割每卡 `filtered` 标记 + 每页 `dsUsage` 分级；**数据集级**（未筛选）开放二次计算，**卡片级**（带筛选）只作应答缓存、禁止二次加工（粒度陷阱）；纪律进交付模板取数流程与数据红线
+- ~~P1 高频问题应答缓存~~ —— ✅ v4.2.0：eval_examples.py 报告新增取数路径统计（卡片缓存/SQL 直查条数与缓存占比，--json 输出 fetchMix）
+- ~~P2 取数路径分层写进 sql-guide~~ —— ✅ v4.2.0：卡片缓存 → 数据集级 → 明细层三层选择规则与降级条件 + 粒度陷阱红线
+- ~~P2 agent-ready 环境指标~~ —— ✅ v4.2.0：workbench --check 体检报告新增「取数加速层」（数据集复用率 + 数据集级/卡片级张数，纯本地计算；旧档案分级降级提示）；粒度覆盖度依赖 dsInfos 全量字段清单、学习时点才有，体检不重复计算（以 page-check.json 的 v4.1 评分为准）
 
 ## v4.3（看板角色迁移）——规划中
 

@@ -109,7 +109,7 @@ guancli auth status   # 确认认证有效
 ## 执行流程
 
 0. **参照语料**：先查 `references/examples.json`——同类已验收问题的路由、取数方式与结论要点是最可靠的参照；再用 `python3 references/memory.py recall . "<问题>"` 查相似历史（命中复用并声明，⚠️ 条目以最新档案为准，见「记忆系统」）
-1. **取数**：按 `references/cards.json` 的卡片映射，用 `guancli card preview <cdId> -f json` 取数（或用 `references/sample_cards.py` 批量刷新到本地）
+1. **取数**：按 `references/cards.json` 的卡片映射取数，先想清走哪一层（三层规则详见 `references/sql-guide.md`「取数路径三层」）：已验收的同形态问题优先读卡片缓存（成本近零）；粒度内的新切片用**未筛选**（`filtered=false`，数据集级）卡片背后的数据集二次计算；探索/粒度以下下钻才 SQL 直查明细。**`filtered=true` 的卡片数据是为那张图裁剪过的，只作已知问题的应答缓存引用，禁止二次加工回答全局问题**（粒度陷阱：带筛选数据答全局问题 = 隐蔽口径错误）。取数动作：`guancli card preview <cdId> -f json`（或用 `references/sample_cards.py` 批量刷新到本地）
 2. **SQL 直查（卡片粒度不够时切换）**：当卡片没有对应粒度（如"单月指标""卡片没拆的维度"）时，用 `python3 references/run_sql.py <数据集ID> '<SQL>'` 对数据集做只读聚合查询（该脚本强制单条 SELECT，写操作会被拦截），规则见 `references/sql-guide.md`
 3. **口径**：严格遵循 `references/metrics.json`（机器可读口径档案：指标标准名/公式/别名 synonyms/换维度安全性 safety——用户叫别名时按 synonyms 归一到标准名）与 `references/businessKnowledge.md`（人读台账）；两者不一致时以 metrics.json 为准，并提示用户口径档案需要同步。维度同样遵循 `references/dimensions.json`（维度标准名/叫法 synonyms/成员值 values/值别名 valueAliases/易混维度 similarTo），归一与消歧规则见「对话体验规范」维度与取值消歧
 4. **路由**：按 `references/learningResult.md` 定位问题对应的看板与卡片
@@ -123,6 +123,7 @@ guancli auth status   # 确认认证有效
 - 所有数字必须来自卡片数据，标注来源（看板/卡片 + 取数时间，格式见「对话体验规范」数据出身行）
 - json 原始值为元时引用必须换算（见 cards.json notes）
 - 标记为"下钻/局部"的卡片禁止当全景使用
+- 带筛选卡片（cards.json `filtered=true`）的数据禁止当全局口径二次加工——只能作为已知形态问题的缓存引用；全局问题走未筛选（数据集级）卡片或 SQL 明细层
 - 超出看板覆盖范围的问题直接说明，禁止编造；并给出出路（见「对话体验规范」超范围问题给出路）
 - 维度合计必须与总计闭环（误差 >2% 时先自查取数再回答）
 - 维度取值必须命中 dimensions.json 的 values/valueAliases 或取数结果中的真实值；查无此值给候选，禁止编造成员值

@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.1.1"
+version: "4.2.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
@@ -119,7 +119,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId1> <pageId2> ... -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据。另外每张数据卡还带 **`filtered` 标记与页面 `dsUsage` 分级**（v4.2 取数加速层）：带筛选 = 卡片级（只作应答缓存，禁止二次加工回答全局问题），未筛选 = 数据集级（开放二次计算）——**生成 cards.json 时这两个字段同样必须带入**，它是交付助手取数路径分层与体检报告环境指标的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data

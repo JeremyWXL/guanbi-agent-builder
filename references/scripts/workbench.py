@@ -19,7 +19,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.1.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.2.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -559,6 +559,10 @@ function overviewPanel(){
         let notes = "";
         if(j.overdue) notes += `<div class="diag">${led("var(--warn)")}<div class="dt" style="color:var(--ink2)">距上次学习已 ${Math.floor(j.ageDays)} 天，超过 ${j.freshDays} 天复核阈值——即使看板未变，也建议复核口径是否仍然适用</div></div>`;
         if(j.upgradeAvailable) notes += `<div class="diag">${led("var(--acc)")}<div class="dt" style="color:var(--ink2)">运行脚本可升级：搭建版本 v${esc(j.builderVersion)||"3.0-"} → 当前 v${esc(j.builderCurrent)}，在对话中说「升级脚本」即可更新</div></div>`;
+        if(j.accel){ const a = j.accel;
+          let t = `取数加速层：${a.dataCards} 张数据卡共用 ${a.datasets} 个数据集（复用率 ${Math.round(a.reuseRate*100)}%）`;
+          t += a.filteredCards != null ? `；数据集级 ${a.datasetLevelCards} 张可二次计算 / 卡片级 ${a.filteredCards} 张带筛选只作应答缓存` : "；分级需重新学习补齐";
+          notes += `<div class="diag">${led("var(--ok)")}<div class="dt" style="color:var(--ink2)">${esc(t)}</div></div>`; }
         out.innerHTML += notes;
         const staleN = j.pages.filter(p=>p.stale||p.error).length;
         toast(staleN ? `体检完成：${staleN} 张看板有变化，建议重新学习` : "体检完成：全部看板未变化 ✓", !staleN);
@@ -1410,11 +1414,45 @@ def _diff_cards(learned, current):
     return {"added": added, "removed": removed, "renamed": renamed}
 
 
+def _accel_stats(doc):
+    """取数加速层环境指标（v4.2，体检报告用）：数据集复用率 + 卡片级/数据集级分级。
+    纯本地计算（不调接口）；cards 兼容 dict（交付包 cards.json）与 list（cards-raw.json）两种形态；
+    无 dsId 信息返回 None；老档案无 filtered 字段时分级记 None（重新学习即补）"""
+    ds_ids, filtered, total, has_flag = [], 0, 0, False
+    for k, v in (doc or {}).items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        cards = v.get("cards")
+        entries = list(cards.values()) if isinstance(cards, dict) else (cards or [])
+        for c in entries:
+            if not isinstance(c, dict) or c.get("type") in ("SELECTOR", "TEXT"):
+                continue
+            if "filtered" in c:
+                has_flag = True
+            ds = c.get("dsId")
+            if not ds:
+                continue
+            total += 1
+            ds_ids.append(ds)
+            if c.get("filtered"):
+                filtered += 1
+    if not total:
+        return None
+    cnt = {}
+    for d in ds_ids:
+        cnt[d] = cnt.get(d, 0) + 1
+    reuse = sum(n for n in cnt.values() if n > 1) / total
+    return {"dataCards": total, "datasets": len(cnt), "reuseRate": round(reuse, 3),
+            "filteredCards": filtered if has_flag else None,
+            "datasetLevelCards": (total - filtered) if has_flag else None}
+
+
 def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     """体检：mtime + 卡片结构指纹双信号对比，附复核阈值与 builder 版本升级提示。"""
     cj = os.path.join(workdir, "cards.json")
     with open(cj, encoding="utf-8") as f:
-        meta = (json.load(f).get("_meta") or {})
+        cards_doc = json.load(f)
+    meta = cards_doc.get("_meta") or {}
     learned_pages = meta.get("pages") or {}
 
     snapshots = {}
@@ -1476,6 +1514,7 @@ def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
         "builderVersion": pkg_ver,
         "builderCurrent": BUILDER_VERSION,
         "upgradeAvailable": bool(learned_pages) and _ver_tuple(pkg_ver) < _ver_tuple(BUILDER_VERSION),
+        "accel": _accel_stats(cards_doc),
     }
 
 
@@ -1715,6 +1754,16 @@ def main():
         if r.get("upgradeAvailable"):
             print(f"⬆️ 运行脚本可升级：搭建版本 v{r['builderVersion'] or '3.0-'} → 当前 v{r['builderCurrent']}，"
                   f"在对话中说「升级脚本」即可更新交付包里的运行脚本")
+        ac = r.get("accel")
+        if ac:
+            line = (f"🚀 取数加速层：{ac['dataCards']} 张数据卡共用 {ac['datasets']} 个数据集"
+                    f"（复用率 {ac['reuseRate']:.0%}——复用高 = ETL 成果与权限免费继承）")
+            if ac["filteredCards"] is not None:
+                line += (f"；数据集级 {ac['datasetLevelCards']} 张（可二次计算）"
+                         f"/ 卡片级 {ac['filteredCards']} 张（带筛选，只作应答缓存）")
+            else:
+                line += "；卡片级/数据集级分级需重新学习后补齐（旧档案无 filtered 字段）"
+            print(line)
         return
     if serve_mode:
         serve_single(workdir, fresh_days)

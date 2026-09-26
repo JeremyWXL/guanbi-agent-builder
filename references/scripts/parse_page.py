@@ -5,13 +5,16 @@
 --raw 不可用或结构不符时回退文本解析（兼容旧版 guancli），仍按 Card 块内联 **ID:** 解析。
 用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4]
 输出: <输出目录>/cards-raw.json
-  {看板名: {pgId, mtime, dsIds, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails, unitHints,
-                                        dims, measures}]},
+  {看板名: {pgId, mtime, dsIds, dsUsage, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails,
+                                        filtered, unitHints, dims, measures}]},
    "_meta": {builtAt, builderVersion, biBaseUrl, parser,
              pages: {pgId: {title, mtime, cardCount, cardHash, cards: [{cdId, name}]}},
              dsFormulas: {dsId: {dsName, virtualColumns}}}}
   pages[].cardHash/cards 是学习时点的卡片结构指纹：交付后体检对比 hash+mtime 双信号，
   能具体报出"新增/删除了哪些卡片"（workbench.py --check）。
+  卡片 filtered / 页面 dsUsage（v4.2 取数加速层）：数据卡带筛选（filterValue 非空）= 卡片级，
+  只作已知问题的应答缓存、禁止二次加工回答全局问题（粒度陷阱）；
+  未筛选 = 数据集级，开放给 agent 二次计算。生成 cards.json 时必须原样带入。
 公式收割（data agent 口径字典的原料）:
   - 每张数据卡的 measures: 字段名/别名/聚合方式/计算公式/高级计算(同比占比)/fdId
   - dims: 卡片的行维度（指标的当前粒度，判断"换维度是否安全"的依据）
@@ -24,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "4.1.1"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "4.2.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -137,6 +140,31 @@ def _card_filters(card, fd_names):
     return details
 
 
+def _is_filtered(filter_details, filters):
+    """数据卡是否带筛选（v4.2 取数加速层分级依据）：带筛选 = 卡片级（只作应答缓存，
+    禁止二次加工回答全局问题——粒度陷阱）；未筛选 = 数据集级（开放二次计算）"""
+    for f in filter_details or []:
+        if f.get("filterValue") not in (None, "", []):
+            return True
+    if not filter_details:
+        return bool(filters)  # 文本回退路径：filterDetails 缺失时用 filters 列表兜底
+    return False
+
+
+def _ds_usage(cards):
+    """页面数据集使用分级：{dsId: {cards, filteredCards}}——多卡共用且未筛选占比高的
+    数据集是取数加速层的主要受益者（ETL 成果 + 权限免费继承）"""
+    usage = {}
+    for c in cards:
+        if c.get("type") in ("SELECTOR", "TEXT") or not c.get("dsId"):
+            continue
+        u = usage.setdefault(c["dsId"], {"cards": 0, "filteredCards": 0})
+        u["cards"] += 1
+        if c.get("filtered"):
+            u["filteredCards"] += 1
+    return usage
+
+
 def fetch_ds_formulas(ds_ids, workers=4):
     """收割数据集计算字段（virtualColumns）公式。ds get --raw --brief 轻量且含 virtualColumns；
     单个失败不阻断整体（降级为只有卡片级公式）。"""
@@ -224,12 +252,15 @@ def parse_page_raw(page_id):
             card["defaultValueType"] = (content.get("defaultValue") or {}).get("valueType", "")
             card["multiSelect"] = bool(content.get("multiSelect"))
             card["selectorType"] = content.get("selectorType", "")
+        else:
+            card["filtered"] = _is_filtered(filter_details, filters)
         cards.append(card)
     return {
         "title": (data.get("name") or page_id).strip(),
         "pgId": page_id,
         "mtime": data.get("utime", ""),
         "dsIds": ds_ids,
+        "dsUsage": _ds_usage(cards),
         "cards": cards,
         "_rawCardCount": len(data.get("cards") or []),
     }
@@ -262,12 +293,13 @@ def parse_page_text(page_id):
             "dsId": "",
             "filters": [f.strip() for f in filters],
             "filterDetails": [],
+            "filtered": bool(filters),
             "unitHints": {},
             "dims": [],
             "measures": [],
         })
-    return {"title": title, "pgId": page_id, "mtime": mtime, "dsIds": [], "cards": cards,
-            "_parser": "text-fallback"}
+    return {"title": title, "pgId": page_id, "mtime": mtime, "dsIds": [], "dsUsage": {},
+            "cards": cards, "_parser": "text-fallback"}
 
 
 def parse_page(page_id):
@@ -333,9 +365,10 @@ def main():
         n_data = sum(1 for c in info['cards'] if c['type'] not in ('SELECTOR', 'TEXT'))
         n_pool = sum(1 for c in info['cards'] if c['inPool'])
         n_formula = sum(1 for c in info['cards'] for m in c.get('measures', []) if m.get('formula'))
+        n_filtered = sum(1 for c in info['cards'] if c.get('filtered'))
         print(f"  {info['title']}: {len(info['cards'])} 张卡片"
               f"（数据卡 {n_data}，筛选器/文本 {len(info['cards'])-n_data}，卡片池 {n_pool}，"
-              f"公式字段 {n_formula}）")
+              f"公式字段 {n_formula}，带筛选 {n_filtered}/数据集级 {n_data - n_filtered}）")
         result[info['title']] = info
     if empty:
         sys.exit(f"解析失败: {len(empty)} 个看板解析异常（{', '.join(empty)}）。"

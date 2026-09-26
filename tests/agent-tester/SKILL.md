@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.3.0"
+version: "1.4.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -28,7 +28,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-2 | 状态机 | `wizard_state.py init/set/confirm` | 状态流转正确；第 4、7 步 set skipped 被拒绝 |
 | L0-3 | 看板扫描 | `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword "<词>"` | 三种模式均返回结构化结果 |
 | L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心 |
-| L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType |
+| L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType；数据卡含 filtered 标记、页面含 dsUsage 分级（v4.2 取数加速层） |
 | L0-6 | 采样 | `sample_cards.py cards-raw.json card-data` | `_sample_index.json` 含列画像；`_meta` 键不崩溃 |
 | L0-7 | 数据校验 | `validate_cards.py card-data` | ❌/⚠️/ℹ️ 分级输出，退出码反映 ❌ |
 | L0-8 | 口径字典+种子 | `check_formulas.py <目录> --seed-metrics` | formulas.json 冲突清单 + metrics-seed.json |
@@ -38,8 +38,8 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-12 | 归因引擎 | `attribute.py add` / `mul` | 贡献率合计闭环 100%；数值解析容忍千分位/百分号/万/亿 |
 | L0-13 | SQL 执行器 | `run_sql.py <dsId> 'SELECT ...'` | 只读强制：INSERT/多语句被拦截；`ORDER BY DESC` 放行 |
 | L0-14 | 直达链接 | `make_link.py --list '<看板名>'` | 只列筛选栏内且有联动的筛选器；FIRST_PICK 页告警 |
-| L0-15 | 工作台 | `workbench.py <目录>` + `--agents` + `--check` | 静态页生成；总览页生成；体检报告具体增删卡 |
-| L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip |
+| L0-15 | 工作台 | `workbench.py <目录>` + `--agents` + `--check` | 静态页生成；总览页生成；体检报告具体增删卡 + 取数加速层环境指标（复用率/分级，v4.2） |
+| L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip；报告含取数路径缓存占比（v4.2） |
 | L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
 | L0-18 | 记忆系统 | `memory.py init/log/recall/correct/status/distilled/clear`（沙箱目录） | init 幂等不覆盖已有文件；log 兜底初始化并追加；recall 命中相似历史、纠错后旧问答标 ⚠️；correct 拒绝非法 type；status 达阈值报 suggestDistill；clear 无 --yes 拒绝、有 --yes 先备份再清空 |
 | L0-19 | 数据集直学 | `learn_dataset.py <dsId...> -o <目录>`（数据集直通模式） | datasets-raw.json 含字段清单/计算字段/列画像，`_meta.dsFormulas` 与 cards-raw 同构；check_formulas/check_dims 种子自动回退读它；全部失败 exit 2 哨兵 |

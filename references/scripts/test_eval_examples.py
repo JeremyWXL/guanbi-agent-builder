@@ -172,6 +172,20 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(doc["total"]["pass"], 1)
         self.assertEqual(doc["total"]["passRate"], 1.0)
 
+    def test_fetch_mix_stats(self):
+        # v4.2 取数路径统计：card=应答缓存，sql=现算；run_sql 不可用记 skip 不影响统计
+        self._setup_workdir()
+        write_json(self.dir, "examples.json", {"scenarios": {"问数": [
+            card_example(),
+            {"id": "q2", "question": "自定义切片", "fetch": {"type": "sql", "dsId": "d1", "sql": "SELECT 1"},
+             "expect": {"values": [1]}, "humanConfirmed": True},
+        ]}})
+        r = run_cli(self.dir)
+        self.assertIn("缓存占比 50%", r.stdout)
+        r = run_cli(self.dir, "--json")
+        doc = json.loads(r.stdout)
+        self.assertEqual(doc["fetchMix"], {"card": 1, "sql": 1, "cacheShare": 0.5})
+
 
 if __name__ == '__main__':
     unittest.main()

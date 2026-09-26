@@ -103,6 +103,38 @@ class TestCheckStaleness(unittest.TestCase):
         self.assertTrue(r["pages"][0]["error"])
         self.assertFalse(r["pages"][0]["stale"])
 
+    def test_accel_stats_included(self):
+        # v4.2 取数加速层环境指标：复用率 + 卡片级/数据集级分级（纯本地计算）
+        self._fixture({"pgA": {"title": "P", "mtime": "t0"}}, built_days_ago=5)
+        write_json(self.dir, "cards.json", {
+            "看板A": {"pgId": "pgA", "cards": {
+                "卡1": {"cdId": "c1", "type": "PIE", "dsId": "ds1", "filtered": False},
+                "卡2": {"cdId": "c2", "type": "BASIC_BAR", "dsId": "ds1", "filtered": True},
+                "卡3": {"cdId": "c3", "type": "PIVOT_TABLE", "dsId": "ds2", "filtered": False},
+                "筛1": {"cdId": "c4", "type": "SELECTOR", "dsId": "ds9"},
+            }},
+            "_meta": {"builtAt": "2026-09-01 10:00", "builderVersion": "4.2.0", "pages": {}}})
+        wb.page_snapshot = lambda pg: {"mtime": "t0", "cards": [], "error": False}
+        r = wb.check_staleness(self.dir)
+        ac = r["accel"]
+        self.assertEqual(ac["dataCards"], 3)
+        self.assertEqual(ac["datasets"], 2)
+        self.assertAlmostEqual(ac["reuseRate"], 0.667)
+        self.assertEqual(ac["filteredCards"], 1)
+        self.assertEqual(ac["datasetLevelCards"], 2)
+
+    def test_accel_stats_legacy_without_filtered(self):
+        # 旧档案无 filtered 字段：分级记 None（提示重新学习补齐），复用率照算
+        doc = {"看板A": {"cards": [{"cdId": "c1", "type": "PIE", "dsId": "ds1"},
+                                   {"cdId": "c2", "type": "PIE", "dsId": "ds1"}]},
+               "_meta": {}}
+        ac = wb._accel_stats(doc)
+        self.assertAlmostEqual(ac["reuseRate"], 1.0)
+        self.assertIsNone(ac["filteredCards"])
+
+    def test_accel_stats_none_without_dsid(self):
+        self.assertIsNone(wb._accel_stats({"看板A": {"cards": [{"cdId": "c1", "type": "PIE"}]}}))
+
 
 class TestCollectAndSave(unittest.TestCase):
     def setUp(self):

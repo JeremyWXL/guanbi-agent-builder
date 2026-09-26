@@ -194,6 +194,7 @@ def main():
 
     # 逐条评测
     results = {}  # scenario -> [item]
+    fetch_mix = {"card": 0, "sql": 0}  # v4.2 取数路径统计：card=应答缓存（成本近零），sql=现算
     for name, items in scenarios.items():
         if scenario_filter and name != scenario_filter:
             continue
@@ -204,6 +205,7 @@ def main():
             if not isinstance(ex, dict):
                 continue
             fetch_type = (ex.get('fetch') or {}).get('type', 'card')
+            fetch_mix["sql" if fetch_type == 'sql' else "card"] += 1
             if fetch_type == 'sql':
                 status, reasons, points = eval_sql(workdir, ex, script_dir)
             else:
@@ -237,6 +239,8 @@ def main():
 
     judged = total['pass'] + total['fail']
     pass_rate = (total['pass'] / judged) if judged else None
+    n_fetch = fetch_mix['card'] + fetch_mix['sql']
+    cache_share = (fetch_mix['card'] / n_fetch) if n_fetch else None
 
     if as_json:
         print(json.dumps({
@@ -244,6 +248,7 @@ def main():
             "scenarioFilter": scenario_filter,
             "scenarios": {n: {**per_scenario[n], "items": results[n]} for n in results},
             "total": {**total, "passRate": pass_rate},
+            "fetchMix": {**fetch_mix, "cacheShare": cache_share},
         }, ensure_ascii=False, indent=1))
     else:
         print("===== 示例回归评测报告 =====")
@@ -264,6 +269,9 @@ def main():
                     for p in r['answerPoints']:
                         print(f"         - {p}")
         print(f"\n总体: 通过 {total['pass']} / 失败 {total['fail']} / 跳过 {total['skip']} / 待人工确认 {total['pending']}")
+        if n_fetch:
+            print(f"取数路径: 卡片缓存 {fetch_mix['card']} 条 / SQL 直查 {fetch_mix['sql']} 条"
+                  f"（缓存占比 {cache_share:.0%}——缓存条目命中卡片形态，回归取数成本近零）")
         if total['fail']:
             print("结论: ❌ 存在数据层失败——新 agent 与旧 agent 表现不一致，需排查失败条目（可能看板已改版需重新学习）")
         elif total['pending']:
