@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-25（v4.0.0）
+> 最近更新：2026-09-26（v4.1.0）
 
 ## 当前状态快照
 
-- **版本**：v4.0.0（记忆系统：交付包 memory/ 用户资产区，升级永不覆盖），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（16 个脚本 + 8 个测试文件 103 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md；CI 在 .github/workflows/ci.yml
-- **脚本现状**：`list_pages.py` / `check_pages.py`（看板适检三档）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
+- **版本**：v4.1.0（看板质量前置闸：check_pages.py 适检三档之上加 agent-ready 评分——口径一致性/权威标注率/数据集复用率/粒度覆盖度，口径冲突进 🔴 红线、覆盖不足进 🔷 边界），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（16 个脚本 + 9 个测试文件 125 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）；CI 在 .github/workflows/ci.yml
+- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（断点状态机）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -19,6 +19,7 @@
 4. **数据红线**：合计不闭环/单位存疑的卡片必须修复或标记禁用；SQL 直查必须走 run_sql.py；SQL 与看板口径差异必须声明
 5. **诊断链方法论是核心差异化资产**：归因必须量化、动态下钻、建议绑定对象（开源世界无同类产品，保持领先）
 6. **skill 规范**：frontmatter description 只写触发场景（瘦）；版本史只记 CHANGELOG；why-over-MUST
+7. **看板是 agent 的持续参照物，不是一次性语料**：挖掘前先过质量闸（v4.1），挖掘后看板降级为漂移检测基准 + 呈现模板库（v4.3），挖掘时语义与结构性元数据都要留，只抽口径等于扔掉一半知识
 
 ## v3.0（质量护城河）——✅ 已完成（2026-09-25，v3.0.0）
 
@@ -53,6 +54,31 @@
 ## v3.9（工程质量补齐）——✅ 已完成（2026-09-25，v3.9.0）
 
 "算错就是事故"的脚本全部入回归：attribute.py（18 例：数值解析/加法闭环与方向约定/Shapley 闭环·对称·零起步）、eval_examples.py（17 例：货币符号/容差/退出码/交付包回退）、make_link.py（12 例：候选规则/FIRST_PICK 保守告警/链接生成与拒绝路径）、preflight.py（5 例）；preflight `--json` 修复为纯 JSON 输出（坑清单挂账项清零）；基线双写 .md+.json + `diff_baselines.py` 一键版本对比（agent-tester v1.1.0）。单测 24 → 82 例，CI discover 自动收编。workbench.py 模板外置项评估后放弃：单文件是交付硬约束，外置会给已交付包引入"模板缺失即打不开"的新故障面，收益只是观感。详见 CHANGELOG。
+
+## v4.1（看板质量前置闸）——P0+P1 ✅ 已完成（2026-09-26，v4.1.0）；P2 待做
+
+> 来源：2026-09-26 迭代方向讨论（推演原文见 [references/dashboard-knowledge-rationale.md](references/dashboard-knowledge-rationale.md) 第一节）。核心判断：质量差的看板不是"差一点的知识源"，而是**信噪比为负**的知识源——会把错误口径显性化进 agent，比冷启动更难修。因此口径治理是挖掘流水线的**前置工序**，不是可选项。
+
+- ~~P0 看板 agent-ready 评分~~ —— ✅ v4.1.0：口径一致性 40 + 权威标注率 25（metric by-dataset 查指标中心，--skip-governed 可省，查不到权重重分摊）+ 数据集复用率 20 + 粒度覆盖度 15；≥75 高 / 45–74 中 / <45 低；第 1 步适检报告与 selection.html 核对页同步展示。实机首跑抓出演示看板有毒口径（硬编码常量当"同比"、rand() 凑"客户数"）
+- ~~P1 口径冲突分级~~ —— ✅ v4.1.0：🔴 红线（口径混乱，有毒，必须先治理，有冲突评分封顶「中」）与 🔷 边界（覆盖不足，只压上限，只做能力边界标注）分开输出与处置
+- **P2 数据集冷启动路径**（待做，可作 v4.1.x）：无看板 / 看板全不合格时允许从数据集直挖，但交付能力必须标注为"数据探索型"（能答"数据里有什么"，不能答"业务上该看什么"），能力边界写进交付助手自我介绍
+
+## v4.2（卡片取数加速层）——规划中
+
+> 来源：同上讨论（推演原文第三节）。卡片对 agent 的价值定位：**物化视图 + 权限边界 + 应答缓存**，不是分析逻辑本身。它能吃掉日常查询负载的大部分取数成本，但对能力上限无贡献。
+
+- **P0 数据集级 / 卡片级分离**：parse_page.py 已收割筛选器字段，再进一步标注每个卡片数据集是否带筛选/裁剪——**数据集级**（未筛选）开放给 agent 二次计算，**卡片级**（带筛选）只允许作为已知问题的应答缓存被引用，禁止继续加工（粒度陷阱：带筛选数据集回答全局问题会产出隐蔽的口径错误）
+- **P1 高频问题应答缓存**：验收过的问答（examples.json 提拔机制）若命中卡片形态，直接读卡片结果/缓存取数，成本近零；eval_examples.py 增加"缓存命中率"统计
+- **P2 取数路径分层写进 sql-guide**：明细层（探索/下钻）→ 数据集级（粒度内重组，省 ETL 与权限重建）→ 卡片缓存（已知形态），三层的选择规则与降级条件
+- **P2 agent-ready 环境指标**：数据集复用率 + 粒度覆盖纳入体检报告，作为客户环境"值不值得建 agent"的预判依据（与 v4.1 P0 共用评分模型）
+
+## v4.3（看板角色迁移）——规划中
+
+> 来源：同上讨论（推演原文第二节）。知识抽象出来后看板不消失，角色迁移为：agent 的**训练语料 + 漂移检测基准 + 呈现模板库**。失去价值的只是"看板作为人与数据唯一界面"这一定位。
+
+- **P0 口径漂移检测**：结构指纹（v3.1.0）只管"结构变了没有"，扩展到"口径漂了没有"——agent 回答与看板读数定期对账（复用 --fresh-days 复核阈值），把看板当**回归测试集**用，漂移即告警进纠错闭环
+- **P1 呈现模板库**：挖掘时不止抽语义（口径/路径），还要保留**结构性元数据**——图表类型、布局、联动关系（parse_page.py 已部分收割），作为 agent 生成图表产出时的选型模板，写进交付包的产出侧资产
+- **P2 分析路径显性化**：从卡片联动/下钻配置中抽取"先看总量→再看结构→下钻异常"的分析路径，补 examples.json 目前只有问答对、没有多轮路径的缺口
 
 ## v5.0（跨 agent 组合）——远期设想
 

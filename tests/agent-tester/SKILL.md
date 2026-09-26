@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.2.0"
+version: "1.2.1"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -27,7 +27,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-1 | 前置检查 | `python3 references/scripts/preflight.py <沙箱目录>` | 5 项全 ✅；带目录时能打印断点摘要 |
 | L0-2 | 状态机 | `wizard_state.py init/set/confirm` | 状态流转正确；第 4、7 步 set skipped 被拒绝 |
 | L0-3 | 看板扫描 | `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword "<词>"` | 三种模式均返回结构化结果 |
-| L0-4 | 看板适检 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档，并发完成 |
+| L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心 |
 | L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType |
 | L0-6 | 采样 | `sample_cards.py cards-raw.json card-data` | `_sample_index.json` 含列画像；`_meta` 键不崩溃 |
 | L0-7 | 数据校验 | `validate_cards.py card-data` | ❌/⚠️/ℹ️ 分级输出，退出码反映 ❌ |

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-选看板核对页生成器：把第 1 步已勾选的看板清单 + 适检结论渲染成一页 HTML，
+选看板核对页生成器：把第 1 步已勾选的看板清单 + 适检结论 + agent-ready 评分渲染成一页 HTML，
 供用户在浏览器里核对（看板名可点击跳转 BI 看内容），核对后回到对话确认
 用法:
   python3 selection_page.py <工作目录> [--scope "业务范围说明"]
-输入: <工作目录>/page-check.json（check_pages.py -o 的产物，含每张看板的适检结论）
+输入: <工作目录>/page-check.json（check_pages.py -o 的产物，含每张看板的适检结论与评分）
 输出: <工作目录>/selection.html；stdout 打印 SELECTION_HTML=<绝对路径>
 注意: 本页只是核对辅助——用户的确认动作仍在对话中完成（确认点红线不破）
 """
@@ -13,6 +13,7 @@ from datetime import datetime
 
 VERDICT_LABEL = {"✅": "适合", "⚠️": "有风险", "⛔": "不可用"}
 VERDICT_CLASS = {"✅": "ok", "⚠️": "warn", "⛔": "bad"}
+GRADE_CLASS = {"高": "hi", "中": "mid", "低": "lo"}
 
 
 def bi_base_url():
@@ -40,10 +41,18 @@ def render(doc, scope, base_url):
                  f'rel="noopener">{name}&nbsp;↗</a>') if url else f'<span class="nm">{name}</span>'
         reasons = "".join(f'<li class="risk">{html.escape(r)}</li>' for r in p.get("reasons") or [])
         notes = "".join(f'<li class="plus">{html.escape(n)}</li>' for n in p.get("notes") or [])
-        detail = f"<ul>{reasons}{notes}</ul>" if reasons or notes else ""
+        ar = p.get("agentReady") or {}
+        score_html = ""
+        if ar:
+            g = ar.get("grade", "")
+            score_html = (f'<span class="score {GRADE_CLASS.get(g, "mid")}">'
+                          f'agent-ready {ar.get("score", "?")}/100 · {html.escape(g)}</span>')
+        red = "".join(f'<li class="line">{html.escape(x)}</li>' for x in ar.get("redLines") or [])
+        bnd = "".join(f'<li class="bnd">{html.escape(x)}</li>' for x in ar.get("boundaries") or [])
+        detail = f"<ul>{red}{reasons}{bnd}{notes}</ul>" if red or reasons or bnd or notes else ""
         cards.append(
             f'<div class="card {VERDICT_CLASS.get(v, "warn")}">'
-            f'<span class="badge">{v} {VERDICT_LABEL.get(v, "")}</span>{title}{detail}</div>')
+            f'<span class="badge">{v} {VERDICT_LABEL.get(v, "")}</span>{title}{score_html}{detail}</div>')
 
     scope_html = (f'<div class="scope"><h2>业务范围</h2><p>{html.escape(scope)}</p></div>'
                   if scope else "")
@@ -83,6 +92,13 @@ ul{{margin:8px 0 0;padding-left:18px}}
 li{{font-size:12.5px;line-height:1.7;color:var(--ink2)}}
 li.risk::marker{{color:var(--warn)}}
 li.plus::marker{{color:var(--ok)}}
+li.line::marker{{color:var(--bad)}}
+li.bnd::marker{{color:var(--acc)}}
+.score{{display:inline-block;font-size:11.5px;border-radius:5px;padding:1px 7px;
+  margin-left:9px;vertical-align:1px;border:1px solid}}
+.score.hi{{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}}
+.score.mid{{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}}
+.score.lo{{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,transparent)}}
 footer{{margin-top:26px;font-size:13px;line-height:1.9;color:var(--ink2);
   background:#fff;border:1px dashed var(--line);border-radius:10px;padding:14px 18px}}
 footer b{{color:var(--ink)}}
