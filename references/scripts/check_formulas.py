@@ -3,6 +3,8 @@
 指标公式分析器：把 parse_page.py 收割的公式变成问数 agent 的口径资产
 用法: python3 check_formulas.py <工作目录> [--seed-metrics]
                           # 读 cards-raw.json → 写 formulas.json + 控制台报告
+                          # cards-raw.json 缺失时回退 datasets-raw.json（数据集直通模式，
+                          # learn_dataset.py 的产物——口径来源只有数据集计算字段）
                           # --seed-metrics：额外写 metrics-seed.json（metrics.json 的起草种子，第 4 步逐条确认的素材）
 做的事:
   1. 汇总全部卡片/数据集的公式字段，按指标名归组
@@ -76,7 +78,11 @@ def main():
     workdir = argv[0] if argv else "."
     src = os.path.join(workdir, "cards-raw.json")
     if not os.path.exists(src):
-        sys.exit(f"找不到 {src}——先运行 parse_page.py")
+        alt = os.path.join(workdir, "datasets-raw.json")
+        if os.path.exists(alt):
+            src = alt  # 数据集直通模式：无卡片层，口径只来自数据集计算字段（_meta.dsFormulas 同构）
+        else:
+            sys.exit(f"找不到 {src}——先运行 parse_page.py（数据集直通模式则运行 learn_dataset.py）")
     raw = json.load(open(src, encoding="utf-8"))
     ds_formulas = (raw.get("_meta") or {}).get("dsFormulas") or {}
     # fdId → 数据集计算字段公式（卡片按 fdId 引用时补全）

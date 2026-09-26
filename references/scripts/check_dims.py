@@ -3,6 +3,8 @@
 维度档案校验器：dimensions.json（机器可读维度档案，第 4 步确认产物）的质量闸门
 用法: python3 check_dims.py <工作目录>              # 读 dimensions.json 校验
       python3 check_dims.py <工作目录> --seed-dims  # 从 cards-raw.json + 采样列画像 + metrics.json 生成 dimensions-seed.json
+                                                    # cards-raw.json 缺失时回退 datasets-raw.json（数据集直通模式：
+                                                    # 维度名来自数据集 DIM 字段，枚举值来自内嵌 sample.profile）
 校验项（❌ 错误未清零退出码 1，禁止进入第 5 步；⚠️ 警告不阻断但必须在确认点告知用户）:
   结构: name 必填且唯一；synonyms/values 必须是数组；valueAliases 必须是对象，且目标值必须已收录在 values 中
   同义词: 维度之间 name/synonyms 禁止撞车；与 metrics.json 指标的 name/synonyms 撞车同为 ❌
@@ -48,6 +50,33 @@ def card_dims(raw):
     return known
 
 
+def dataset_dims(raw):
+    """datasets-raw.json（数据集直通模式）中的全部维度名：数据集 DIM 字段。"""
+    known = set()
+    for k, v in (raw or {}).items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        for c in v.get("columns") or []:
+            if c.get("metaType") == "DIM" and c.get("name"):
+                known.add(c["name"])
+    return known
+
+
+def dataset_values(raw):
+    """datasets-raw.json 内嵌 sample.profile 的枚举值：列名 → [成员值...]"""
+    values = {}
+    for k, v in (raw or {}).items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        for col, p in ((v.get("sample") or {}).get("profile") or {}).items():
+            if isinstance(p, dict) and p.get("enum"):
+                values.setdefault(col, [])
+                for val in p["enum"]:
+                    if val not in values[col]:
+                        values[col].append(val)
+    return values
+
+
 def metric_words(doc):
     """metrics.json 的全部指标用词（name + synonyms）——维度叫法与之撞车即路由歧义。"""
     words = {}
@@ -64,14 +93,18 @@ def metric_words(doc):
 
 def seed(workdir):
     raw = load(workdir, "cards-raw.json")
+    draw = None
     if raw is None:
-        sys.exit(f"找不到 {workdir}/cards-raw.json——先跑第 2 步 parse_page.py 学习看板")
-    names = set(card_dims(raw))
+        draw = load(workdir, "datasets-raw.json")
+        if draw is None:
+            sys.exit(f"找不到 {workdir}/cards-raw.json——先跑第 2 步 parse_page.py 学习看板"
+                     f"（数据集直通模式则运行 learn_dataset.py）")
+    names = set(card_dims(raw)) if raw is not None else dataset_dims(draw)
     mdoc = load(workdir, "metrics.json") or load(workdir, "metrics-seed.json")
     for m in (mdoc or {}).get("metrics") or []:
         names.update(m.get("dims") or [])
     if not names:
-        sys.exit("cards-raw.json / metrics 里没有任何维度可收割——请先完成第 2 步资产学习")
+        sys.exit("cards-raw.json / datasets-raw.json / metrics 里没有任何维度可收割——请先完成第 2 步资产学习")
 
     # 成员值：从采样列画像收割枚举值（列名 == 维度名 且被判定为枚举列）
     values = {n: [] for n in names}
@@ -80,6 +113,12 @@ def seed(workdir):
         for col, p in (entry.get("profile") or {}).items():
             if col in values and isinstance(p, dict):
                 for v in p.get("enum") or []:
+                    if v not in values[col] and len(values[col]) < VALUE_CAP:
+                        values[col].append(v)
+    if draw is not None:
+        for col, vals in dataset_values(draw).items():
+            if col in values:
+                for v in vals:
                     if v not in values[col] and len(values[col]) < VALUE_CAP:
                         values[col].append(v)
 
@@ -95,7 +134,7 @@ def seed(workdir):
     dims = []
     for n in ordered:
         e = {"name": n, "field": n, "synonyms": [], "values": values[n],
-             "valueAliases": {}, "source": "card"}
+             "valueAliases": {}, "source": "card" if raw is not None else "dataset"}
         if similar[n]:
             e["similarTo"] = sorted(similar[n])
         dims.append(e)
@@ -207,14 +246,18 @@ def main():
                         and a not in aliased and b not in aliased:
                     warns.append(f"「{name}」的值「{a}」与「{b}」互为包含——若用户常混用，建议收进 valueAliases")
 
-    # ---- 卡片覆盖 ----
+    # ---- 卡片/数据集覆盖 ----
     raw = load(workdir, "cards-raw.json")
     if raw:
         known = card_dims(raw)
+    else:
+        draw = load(workdir, "datasets-raw.json")
+        known = dataset_dims(draw) if draw else None
+    if known:
         for d in dims:
             name = (d.get("name") or "").strip()
             if name and name not in known:
-                warns.append(f"维度「{name}」未在任何卡片/筛选器出现（SQL 独有维度可忽略）")
+                warns.append(f"维度「{name}」未在任何卡片/筛选器/数据集字段出现（SQL 独有维度可忽略）")
 
     # ---- 报告 ----
     print(f"\n维度档案校验（{workdir}/dimensions.json）")

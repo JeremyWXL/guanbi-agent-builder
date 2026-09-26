@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.2.1"
+version: "1.3.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导，再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -42,6 +42,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip |
 | L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
 | L0-18 | 记忆系统 | `memory.py init/log/recall/correct/status/distilled/clear`（沙箱目录） | init 幂等不覆盖已有文件；log 兜底初始化并追加；recall 命中相似历史、纠错后旧问答标 ⚠️；correct 拒绝非法 type；status 达阈值报 suggestDistill；clear 无 --yes 拒绝、有 --yes 先备份再清空 |
+| L0-19 | 数据集直学 | `learn_dataset.py <dsId...> -o <目录>`（数据集直通模式） | datasets-raw.json 含字段清单/计算字段/列画像，`_meta.dsFormulas` 与 cards-raw 同构；check_formulas/check_dims 种子自动回退读它；全部失败 exit 2 哨兵 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
