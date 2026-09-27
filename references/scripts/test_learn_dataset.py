@@ -30,6 +30,11 @@ ROWS = [{"年月": "2026-01-01", "大区": "华东", "销售额": "123.5"},
         {"年月": "2026-03-01", "大区": "华东", "销售额": "789.0"}]
 
 
+def write_json(workdir, name, doc):
+    with open(os.path.join(workdir, name), "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=1)
+
+
 def write_datasets_raw(workdir):
     entry = ld.build_entry("ds1", DS_PAYLOAD, ROWS, 200)
     entry.pop("_name", None)
@@ -92,7 +97,7 @@ class TestBuildEntry(unittest.TestCase):
 
 
 class TestDownstreamFallback(unittest.TestCase):
-    """check_formulas / check_dims 在 cards-raw.json 缺失时回退 datasets-raw.json"""
+    """check_formulas / check_dims 在 cards-raw.json 缺失时回退 datasets-raw.json，再回退 cards.json（增量模式）"""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -131,6 +136,58 @@ class TestDownstreamFallback(unittest.TestCase):
                            capture_output=True, text=True, timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("learn_dataset.py", r.stderr or r.stdout)
+
+    def test_check_formulas_fallback_cards_json(self):
+        """增量模式：只有交付 slim cards.json 时，口径字典从卡片 measures 生成"""
+        d = tempfile.mkdtemp()
+        write_json(d, "cards.json", {
+            "_meta": {"dsFormulas": {}},
+            "页一": {"title": "页一", "pgId": "p1",
+                     "dsUsage": {"ds1": {"cards": 1, "filteredCards": 0}},
+                     "cards": [{"name": "卡A", "cdId": "c1", "type": "TABLE", "dsId": "ds1",
+                                "filtered": False, "dims": ["大区"],
+                                "measures": [{"name": "销售额", "alias": "", "fdId": "f1",
+                                              "dsId": "", "aggrType": "SUM",
+                                              "formula": "sum([销售额])"}],
+                                "filters": [], "filterDetails": [], "unitHints": {}}]}})
+        r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "check_formulas.py"),
+                            d, "--seed-metrics"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(d, "formulas.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        names = [m["name"] for m in doc["metrics"]]
+        self.assertIn("销售额", names)
+        m = next(x for x in doc["metrics"] if x["name"] == "销售额")
+        self.assertEqual(m["sources"][0]["page"], "页一")
+        self.assertEqual(m["sources"][0]["card"], "卡A")
+
+    def test_check_dims_seed_fallback_cards_json(self):
+        """增量模式：只有交付 slim cards.json 时，维度种子从卡片 dims/filterDetails 生成"""
+        d = tempfile.mkdtemp()
+        write_json(d, "cards.json", {
+            "_meta": {"dsFormulas": {}},
+            "页一": {"title": "页一", "pgId": "p1",
+                     "dsUsage": {"ds1": {"cards": 1, "filteredCards": 0}},
+                     "cards": [{"name": "卡A", "cdId": "c1", "type": "TABLE", "dsId": "ds1",
+                                "filtered": False, "dims": ["大区"],
+                                "measures": [],
+                                "filters": ["月份"],
+                                "filterDetails": [{"field": "月份", "filterType": "eq", "filterValue": "2026-09"}],
+                                "unitHints": {}}]}})
+        r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "check_dims.py"),
+                            d, "--seed-dims"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(d, "dimensions-seed.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        names = {x["name"] for x in doc["dimensions"]}
+        self.assertEqual(names, {"大区", "月份"})
+
+    def test_check_formulas_missing_all_exits(self):
+        d = tempfile.mkdtemp()
+        r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "check_formulas.py"), d],
+                           capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("merge_cards.py", r.stderr or r.stdout)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,12 @@
 """
 维度档案校验器：dimensions.json（机器可读维度档案，第 4 步确认产物）的质量闸门
 用法: python3 check_dims.py <工作目录>              # 读 dimensions.json 校验
-      python3 check_dims.py <工作目录> --seed-dims  # 从 cards-raw.json + 采样列画像 + metrics.json 生成 dimensions-seed.json
-                                                    # cards-raw.json 缺失时回退 datasets-raw.json（数据集直通模式：
-                                                    # 维度名来自数据集 DIM 字段，枚举值来自内嵌 sample.profile）
+      python3 check_dims.py <工作目录> --seed-dims  # 从卡片档案 + 采样列画像 + metrics.json 生成 dimensions-seed.json
+                                                    # 回退链（与 check_formulas.py 同序）：cards-merged.json 优先
+                                                    # （增量学习模式 merge_cards.py 的产出，同目录共存时最新）→
+                                                    # cards-raw.json → datasets-raw.json（数据集直通模式：维度名来自
+                                                    # 数据集 DIM 字段，枚举值来自内嵌 sample.profile）→ cards.json
+                                                    # （交付 slim 档案回读，维度名来自卡片 dims/filterDetails，同构可用）
 校验项（❌ 错误未清零退出码 1，禁止进入第 5 步；⚠️ 警告不阻断但必须在确认点告知用户）:
   结构: name 必填且唯一；synonyms/values 必须是数组；valueAliases 必须是对象，且目标值必须已收录在 values 中
   同义词: 维度之间 name/synonyms 禁止撞车；与 metrics.json 指标的 name/synonyms 撞车同为 ❌
@@ -92,13 +95,17 @@ def metric_words(doc):
 
 
 def seed(workdir):
-    raw = load(workdir, "cards-raw.json")
+    raw = load(workdir, "cards-merged.json")
+    if raw is None:
+        raw = load(workdir, "cards-raw.json")
     draw = None
     if raw is None:
         draw = load(workdir, "datasets-raw.json")
         if draw is None:
-            sys.exit(f"找不到 {workdir}/cards-raw.json——先跑第 2 步 parse_page.py 学习看板"
-                     f"（数据集直通模式则运行 learn_dataset.py）")
+            raw = load(workdir, "cards.json")  # 交付 slim 档案回读（dims/filterDetails 同构可用）
+        if raw is None and draw is None:
+            sys.exit(f"找不到 {workdir}/cards-merged.json——增量模式先运行 merge_cards.py"
+                     f"（完整模式跑第 2 步 parse_page.py，数据集直通模式则运行 learn_dataset.py）")
     names = set(card_dims(raw)) if raw is not None else dataset_dims(draw)
     mdoc = load(workdir, "metrics.json") or load(workdir, "metrics-seed.json")
     for m in (mdoc or {}).get("metrics") or []:

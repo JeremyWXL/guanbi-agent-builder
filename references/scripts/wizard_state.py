@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-搭建向导状态机：显式记录八步流程进度，支持会话中断后续建
-状态文件: <工作目录>/wizard-state.json
+搭建向导状态机：显式记录八步流程进度，支持会话中断后续建；
+增量学习（incr 模式）复用 1/2/4/7/8 步语义，状态文件独立为 wizard-state-incr.json
+状态文件: <工作目录>/wizard-state.json（搭建）/ wizard-state-incr.json（增量）
 用法:
-  python3 wizard_state.py init <工作目录> [--name <agent名>] [--mode full|lite]
-  python3 wizard_state.py set <工作目录> --step <N> --status <status> [--note "..."] [--artifact <路径>]...
-  python3 wizard_state.py confirm <工作目录> --step <N> [--note "..."] [--artifact <路径>]...
-  python3 wizard_state.py show <工作目录> [--json]
-  python3 wizard_state.py next <工作目录>
+  python3 wizard_state.py init <工作目录> [--name <agent名>] [--mode full|lite|incr]
+  python3 wizard_state.py set <工作目录> [--state build|incr] --step <N> --status <status> [--note "..."] [--artifact <路径>]...
+  python3 wizard_state.py confirm <工作目录> [--state build|incr] --step <N> [--note "..."] [--artifact <路径>]...
+  python3 wizard_state.py show <工作目录> [--state build|incr] [--json]
+  python3 wizard_state.py next <工作目录> [--state build|incr]
 状态取值: pending / in_progress / confirming（已生成待用户确认）/ confirmed / skipped
 模式: full（完整八步，默认）/ lite（快速五步，合并执行时各步骤照常 confirm；
   断点续建与深化通道靠 mode 字段恢复行为；旧状态文件无 mode 按 full 处理）
+  / incr（增量学习：往已交付的 agent 加看板/改版重学/移除看板；
+  第 4、7 步命门在 incr 下同样禁止 skipped）
 约束: 第 3 步可选允许 skipped；第 4、7 步是质量命门，禁止 skipped（lite 同样适用）
 退出码: 0 成功 / 1 参数或状态文件错误 / 2 状态文件损坏 / 3 违反状态机约束
 """
@@ -18,10 +21,10 @@ import argparse, json, os, sys, tempfile
 from datetime import datetime, timezone
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.3.0"
+BUILDER_VERSION = "4.5.0"
 
-MODES = ("full", "lite")
-MODE_LABELS = {"full": "完整模式", "lite": "快速模式"}
+MODES = ("full", "lite", "incr")
+MODE_LABELS = {"full": "完整模式", "lite": "快速模式", "incr": "增量模式"}
 
 STEP_NAMES = {
     1: "选定数据范围",
@@ -32,6 +35,14 @@ STEP_NAMES = {
     6: "分析框架与输出模板",
     7: "测试验收",
     8: "固化交付",
+}
+# 增量学习（incr 模式）复用 1/2/4/7/8 步语义：选新看板/学习比对/口径裁决/验收回归/交付更新
+INCR_STEP_NAMES = {
+    1: "增量选看板",
+    2: "增量学习",
+    4: "增量口径裁决",
+    7: "增量验收",
+    8: "交付更新",
 }
 STATUSES = ("pending", "in_progress", "confirming", "confirmed", "skipped")
 STATUS_LABELS = {
@@ -52,6 +63,7 @@ STATUS_ICONS = {
 NON_SKIPPABLE = {4, 7}
 
 STATE_FILE = "wizard-state.json"
+STATE_FILE_INCR = "wizard-state-incr.json"
 
 
 def now_iso():
@@ -59,13 +71,20 @@ def now_iso():
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def state_path(workdir):
-    return os.path.join(workdir, STATE_FILE)
+def state_path(workdir, mode="build"):
+    """build → 搭建档案 wizard-state.json；incr → 增量会话 wizard-state-incr.json（独立文件，互不覆盖）"""
+    name = STATE_FILE_INCR if mode == "incr" else STATE_FILE
+    return os.path.join(workdir, name)
 
 
-def load_state(workdir):
+def step_names_for(mode):
+    """增量模式用增量步骤表，其余用八步表"""
+    return INCR_STEP_NAMES if mode == "incr" else STEP_NAMES
+
+
+def load_state(workdir, mode="build"):
     """读取状态文件。不存在返回 None；损坏抛 StateCorruptedError"""
-    path = state_path(workdir)
+    path = state_path(workdir, mode)
     if not os.path.exists(path):
         return None
     try:
@@ -82,9 +101,9 @@ class StateCorruptedError(Exception):
         super().__init__(str(cause))
 
 
-def save_state(workdir, state):
+def save_state(workdir, state, mode="build"):
     """原子化写入：先写临时文件再 rename"""
-    path = state_path(workdir)
+    path = state_path(workdir, mode)
     state["updatedAt"] = now_iso()
     fd, tmp = tempfile.mkstemp(dir=workdir, prefix=".wizard-state-", suffix=".tmp")
     try:
@@ -116,10 +135,11 @@ def die(msg, code=1):
 def cmd_init(args):
     workdir = args.workdir
     os.makedirs(workdir, exist_ok=True)
-    path = state_path(workdir)
+    incr = args.mode == "incr"
+    path = state_path(workdir, "incr" if incr else "build")
     if os.path.exists(path):
         try:
-            old = load_state(workdir)
+            old = load_state(workdir, "incr" if incr else "build")
         except StateCorruptedError as e:
             print(f"❌ 已存在状态文件但无法解析: {path}", file=sys.stderr)
             print(f"   解析错误: {e.cause}", file=sys.stderr)
@@ -137,27 +157,34 @@ def cmd_init(args):
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
         "currentStep": 1,
-        "steps": {str(n): {"status": "pending"} for n in STEP_NAMES},
+        "steps": {str(n): {"status": "pending"} for n in step_names_for(args.mode)},
     }
-    save_state(workdir, state)
+    save_state(workdir, state, "incr" if incr else "build")
     print(f"✅ 已初始化搭建状态: {path}")
-    if args.mode == "lite":
+    if incr:
+        print("   增量学习（五步）：从第 1 步【增量选看板】开始。")
+    elif args.mode == "lite":
         print("   快速模式（五步）：从第 1 步【选定数据范围】开始。")
     else:
         print("   从第 1 步【选定数据范围】开始。")
 
 
 def cmd_set(args, confirmed=False):
+    mode = args.state
     try:
-        state = load_state(args.workdir)
+        state = load_state(args.workdir, mode)
     except StateCorruptedError as e:
         corrupted_exit(e)
     if state is None:
-        die(f"未找到状态文件 {state_path(args.workdir)}，请先运行 init")
+        die(f"未找到状态文件 {state_path(args.workdir, mode)}，请先运行 init")
     step = str(args.step)
     status = "confirmed" if confirmed else args.status
+    names = step_names_for(mode)
+    if args.step not in names:
+        die(f"第 {args.step} 步在{MODE_LABELS.get(mode, '完整模式')}下不存在"
+            f"（可选：{', '.join(str(n) for n in sorted(names))}）")
     if status == "skipped" and args.step in NON_SKIPPABLE:
-        die(f"第 {args.step} 步【{STEP_NAMES[args.step]}】是质量命门，不允许跳过；"
+        die(f"第 {args.step} 步【{names[args.step]}】是质量命门，不允许跳过；"
             f"必须完成并确认后才能继续", code=3)
     entry = state["steps"].get(step, {})
     entry["status"] = status
@@ -172,28 +199,30 @@ def cmd_set(args, confirmed=False):
             arts.append(art)
     state["steps"][step] = entry
     state["currentStep"] = args.step
-    save_state(args.workdir, state)
+    save_state(args.workdir, state, mode)
     label = STATUS_LABELS[status]
     verb = "已确认" if confirmed else f"状态已更新为「{label}」"
-    print(f"✅ 第 {args.step} 步【{STEP_NAMES[args.step]}】{verb}")
+    print(f"✅ 第 {args.step} 步【{names[args.step]}】{verb}")
 
 
 def cmd_show(args):
+    mode = args.state
     try:
-        state = load_state(args.workdir)
+        state = load_state(args.workdir, mode)
     except StateCorruptedError as e:
         corrupted_exit(e)
     if state is None:
-        die(f"未找到状态文件 {state_path(args.workdir)}，请先运行 init")
+        die(f"未找到状态文件 {state_path(args.workdir, mode)}，请先运行 init")
     if args.json:
         print(json.dumps(state, ensure_ascii=False, indent=2))
         return
     name = state.get("agentName") or "（未命名）"
-    mode = MODE_LABELS.get(state.get("mode", "full"), "完整模式")
-    print(f"搭建进度 —— agent「{name}」（{mode}）")
+    smode = state.get("mode", "full")
+    mode_label = MODE_LABELS.get(smode, "完整模式")
+    print(f"搭建进度 —— agent「{name}」（{mode_label}）")
     print(f"创建于 {state.get('createdAt', '?')}，更新于 {state.get('updatedAt', '?')}"
           f"，当前第 {state.get('currentStep', '?')} 步\n")
-    for n, sname in STEP_NAMES.items():
+    for n, sname in step_names_for(smode).items():
         entry = state.get("steps", {}).get(str(n), {})
         status = entry.get("status", "pending")
         icon = STATUS_ICONS.get(status, "⬜")
@@ -208,31 +237,38 @@ def cmd_show(args):
 
 
 def cmd_next(args):
+    mode = args.state
     try:
-        state = load_state(args.workdir)
+        state = load_state(args.workdir, mode)
     except StateCorruptedError as e:
         corrupted_exit(e)
     if state is None:
-        die(f"未找到状态文件 {state_path(args.workdir)}，请先运行 init")
+        die(f"未找到状态文件 {state_path(args.workdir, mode)}，请先运行 init")
     steps = state.get("steps", {})
+    names = step_names_for(mode)
     nxt = None
-    for n in STEP_NAMES:
+    for n in names:
         if steps.get(str(n), {}).get("status", "pending") not in ("confirmed", "skipped"):
             nxt = n
             break
     name = state.get("agentName") or "（未命名）"
-    mode = state.get("mode", "full")
-    mode_label = MODE_LABELS.get(mode, "完整模式")
+    smode = state.get("mode", "full")
+    mode_label = MODE_LABELS.get(smode, "完整模式")
     if nxt is None:
+        if mode == "incr":
+            print(f"🎉 agent「{name}」本轮增量已交付（增量模式）。")
+            print("如需继续加看板或看板再改版，可再发起一轮增量学习（说「增量学习」）。")
+            return
         print(f"🎉 agent「{name}」八步流程全部完成，搭建已交付（{mode_label}）。")
-        if mode == "lite":
+        if smode == "lite":
             print("快速模式交付已完成。后续如需逐条打磨口径与维度、扩充验收题库，"
                   "可回完整版第 4 步深化——已有档案直接作底稿，无需重建。")
+        print("后续如需接入新看板或看板改版，可说「增量学习」——只学增量、不动已有口径与记忆。")
         return
     entry = steps.get(str(nxt), {})
     status = entry.get("status", "pending")
     label = STATUS_LABELS.get(status, status)
-    print(f"上次进行到第 {nxt} 步【{STEP_NAMES[nxt]}】（状态：{label}，{mode_label}）。")
+    print(f"上次进行到第 {nxt} 步【{names[nxt]}】（状态：{label}，{mode_label}）。")
     arts = entry.get("artifacts") or []
     if arts:
         print(f"产物: {', '.join(arts)}")
@@ -250,20 +286,23 @@ def cmd_next(args):
 def build_parser():
     p = argparse.ArgumentParser(
         prog="wizard_state.py",
-        description="搭建向导状态机：记录八步流程进度，支持会话中断后续建")
+        description="搭建向导状态机：记录八步流程进度，支持会话中断后续建；"
+                    "增量学习（--state incr）复用 1/2/4/7/8 步语义，状态文件独立")
     sub = p.add_subparsers(dest="command", required=True)
 
     pi = sub.add_parser("init", help="初始化状态文件")
     pi.add_argument("workdir", help="搭建工作目录")
     pi.add_argument("--name", default="", help="agent 名称")
     pi.add_argument("--mode", default="full", choices=MODES,
-                    help="搭建模式：full 完整八步（默认）/ lite 快速五步")
+                    help="搭建模式：full 完整八步（默认）/ lite 快速五步 / incr 增量学习")
     pi.set_defaults(func=cmd_init)
 
     ps = sub.add_parser("set", help="更新某一步的状态")
     ps.add_argument("workdir", help="搭建工作目录")
+    ps.add_argument("--state", default="build", choices=("build", "incr"),
+                    help="状态文件：build 搭建（默认）/ incr 增量会话")
     ps.add_argument("--step", type=int, required=True, choices=sorted(STEP_NAMES),
-                    help="步骤号（1-8）")
+                    help="步骤号（1-8；incr 模式仅 1/2/4/7/8 有效）")
     ps.add_argument("--status", required=True, choices=STATUSES, help="目标状态")
     ps.add_argument("--note", default=None, help="备注")
     ps.add_argument("--artifact", action="append", default=None,
@@ -272,8 +311,10 @@ def build_parser():
 
     pc = sub.add_parser("confirm", help="确认某一步（= set --status confirmed + confirmedAt）")
     pc.add_argument("workdir", help="搭建工作目录")
+    pc.add_argument("--state", default="build", choices=("build", "incr"),
+                    help="状态文件：build 搭建（默认）/ incr 增量会话")
     pc.add_argument("--step", type=int, required=True, choices=sorted(STEP_NAMES),
-                    help="步骤号（1-8）")
+                    help="步骤号（1-8；incr 模式仅 1/2/4/7/8 有效）")
     pc.add_argument("--note", default=None, help="备注")
     pc.add_argument("--artifact", action="append", default=None,
                     help="产物路径，可重复传入")
@@ -281,11 +322,15 @@ def build_parser():
 
     pw = sub.add_parser("show", help="人类可读的进度总览")
     pw.add_argument("workdir", help="搭建工作目录")
+    pw.add_argument("--state", default="build", choices=("build", "incr"),
+                    help="状态文件：build 搭建（默认）/ incr 增量会话")
     pw.add_argument("--json", action="store_true", help="输出原始 JSON")
     pw.set_defaults(func=cmd_show)
 
     pn = sub.add_parser("next", help="打印续建提示（下一步该做什么）")
     pn.add_argument("workdir", help="搭建工作目录")
+    pn.add_argument("--state", default="build", choices=("build", "incr"),
+                    help="状态文件：build 搭建（默认）/ incr 增量会话")
     pn.set_defaults(func=cmd_next)
 
     return p

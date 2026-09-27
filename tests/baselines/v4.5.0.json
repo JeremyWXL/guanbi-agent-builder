@@ -1,0 +1,38 @@
+{
+  "version": "4.5.0",
+  "date": "2026-09-27",
+  "testerVersion": "1.7.0",
+  "environment": "guancli 1.0.55 + default 环境（app.guandata.com，消费品行业演示域）",
+  "unitTests": 193,
+  "l0": {
+    "total": 22,
+    "passed": 22,
+    "note": "L0-21 scope.py 白名单提取；L0-22 run_sql 越界 dsId exit 3 且不调 guancli"
+  },
+  "l1": {
+    "status": "pass",
+    "track": "incr（复用 v4.4.0 结论，本次主线在范围守卫）",
+    "notes": "v4.4.0 L1-incr 五步结论保持；基线包 agent-v4.4.0-xiaoshou-yunying 直接复用"
+  },
+  "l2": {
+    "score": null,
+    "grade": null,
+    "note": "沿用 v3.7.0 基线结论；C7 越界取数考题已入 tester v1.7.0 考题集，对话层评分由 agent-tester 正式执行"
+  },
+  "scopeGuardE2E": {
+    "run_sql_out_of_scope": "pass（exit 3 白名单拦截，guancli 未调用）",
+    "run_sql_in_scope": "pass（覆盖内 dsId 正常返回）",
+    "sample_cards_scope_reject": "pass（混入覆盖外 cdId → exit 2 整批拒绝，0 采样文件）",
+    "scope_audit_detect": "pass（检出 1 条越界 page+ds，退出码 1；旧流水无字段计入无法判定不误报）",
+    "c7_basis": "pass（考题看板在 _meta.pages 覆盖范围外；已学看板 4 张可列举）"
+  },
+  "e2eFindings": [
+    "升级通道即生效：旧交付包复制新脚本后白名单从旧 cards.json 自动提取，dsUsage 一直在，旧档案无需重建",
+    "scope_audit 相对路径坑（已修）：agent_dir 改 abspath 按 cwd 解析",
+    "审计无法判定设计验证：旧流水无 --page/--ds 字段计入无法判定而非越界，不误报"
+  ],
+  "issues": [
+    {"severity": "P2", "title": "run_sql 裸中文表名需反引号（v4.4.0 遗留）", "status": "open"},
+    {"severity": "P2", "title": "新页 2 张卡片采样失败（v4.4.0 遗留，数据停更页常见）", "status": "tracking"}
+  ]
+}

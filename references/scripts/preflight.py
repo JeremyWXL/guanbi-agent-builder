@@ -4,7 +4,8 @@
 用法: python3 preflight.py [工作目录] [--json]
   --json 输出纯 JSON（人类可读行不混排，可直接管道解析）：{"ok": bool, "checks": [...]}
 检查项:
-  0. 断点续建检测（仅当传入工作目录时）：存在 wizard-state.json 则提示续建进度
+  0. 断点续建检测（仅当传入工作目录时）：存在 wizard-state.json 则提示续建进度；
+     存在 wizard-state-incr.json 则提示增量学习会话进度（搭建完成后可发起增量学习）
   1. guancli 可执行文件存在
   2. guancli 版本可读取（脚本对其输出格式有隐式依赖，版本异常时给出提醒）
   3. 认证状态有效（guancli auth status）
@@ -54,6 +55,7 @@ STEP_NAMES = {
     1: "选定数据范围", 2: "看板资产学习", 3: "业务认知补充", 4: "业务口径确认",
     5: "分析场景定义", 6: "分析框架与输出模板", 7: "测试验收", 8: "固化交付",
 }
+INCR_STEP_NAMES = {1: "增量选看板", 2: "增量学习", 4: "增量口径裁决", 7: "增量验收", 8: "交付更新"}
 STATUS_LABELS = {
     "pending": "未开始", "in_progress": "进行中", "confirming": "待用户确认",
     "confirmed": "已确认", "skipped": "已跳过",
@@ -87,6 +89,7 @@ def check_resume(workdir):
         detail = f"agent「{name}」八步流程已全部完成（{mode_label}），无需续建"
         if mode == "lite":
             detail += "；快速模式交付可回完整版第 4 步深化口径与维度档案，用户提起时按深化通道执行"
+        detail += "；如需接入新看板或看板已改版，可说「增量学习」——只学增量、不动已有口径与记忆"
         check("断点续建", True, False, detail)
         return
     updated = state.get("updatedAt", "")
@@ -103,6 +106,35 @@ def check_resume(workdir):
           f"【{STEP_NAMES[nxt]}】（状态：{status}{age}）。继续请说「继续搭建」")
 
 
+def check_incr_resume(workdir):
+    """增量学习会话检测（独立状态文件 wizard-state-incr.json，与搭建断点互不影响）"""
+    path = os.path.join(workdir, "wizard-state-incr.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            incr = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        check("断点续建", True, False,
+              f"增量状态文件损坏无法解析（{path}），原文件保留，请人工检查")
+        return
+    steps = incr.get("steps", {})
+    nxt = None
+    for n in INCR_STEP_NAMES:
+        if steps.get(str(n), {}).get("status", "pending") not in ("confirmed", "skipped"):
+            nxt = n
+            break
+    name = incr.get("agentName") or "未命名"
+    if nxt is None:
+        check("断点续建", True, False,
+              f"agent「{name}」本轮增量已交付；如需继续加看板或看板再改版，可再发起一轮增量学习")
+        return
+    status = STATUS_LABELS.get(steps.get(str(nxt), {}).get("status", "pending"), "")
+    check("断点续建", True, False,
+          f"检测到未完成的增量学习：agent「{name}」，进行到第 {nxt} 步"
+          f"【{INCR_STEP_NAMES[nxt]}】（状态：{status}）。继续请说「继续增量学习」")
+
+
 def main():
     global _JSON_MODE
     as_json = "--json" in sys.argv
@@ -112,6 +144,7 @@ def main():
     # 0. 断点续建检测（信息性，放在最前，不受后续硬失败影响）
     if positional:
         check_resume(positional[0])
+        check_incr_resume(positional[0])
 
     # 1. guancli 存在
     if not shutil.which("guancli"):

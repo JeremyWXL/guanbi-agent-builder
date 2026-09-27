@@ -74,6 +74,16 @@ class TestLog(unittest.TestCase):
         r = run_cli("log", self.dir, "--route", "x")
         self.assertEqual(r.returncode, 1)
 
+    def test_log_records_page_and_ds_provenance(self):
+        # --page/--ds 结构化出处：scope_audit 越界审计的数据来源
+        r = run_cli("log", self.dir, "--question", "最近市场规模多少",
+                    "--route", "《全渠道市场大盘》/市场规模趋势",
+                    "--page", "h3230af98a3b34eed8365f2e", "--ds", "h34da96f548ac47d3af5347b")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        e = memory.read_log(self.dir)[0]
+        self.assertEqual(e["page"], "h3230af98a3b34eed8365f2e")
+        self.assertEqual(e["ds"], "h34da96f548ac47d3af5347b")
+
     def test_log_append_only(self):
         run_cli("log", self.dir, "--question", "问题一")
         run_cli("log", self.dir, "--question", "问题二")

@@ -1,5 +1,33 @@
 # 变更日志
 
+## v4.5.0（2026-09-27）范围守卫：覆盖外看板/数据集禁止当答案（脚本层白名单 + 流水审计）
+
+解决的问题：用户 BI 权限大、guancli 可检索看板多（演示域 102 张）时，交付 agent 可能"顺手"查询未经口径确认的覆盖外看板/数据集并当答案喂给用户——信噪比纪律的延伸。此前防御只有 prompt 层（"超范围给出路"话术 + 数据出身行），四个取数入口里三个没有白名单校验（run_sql 的 dsId 任意透传、sample_cards 指向哪个 cards 文件就采哪个、guancli page tree/get/search 无包装可直接 shell）。
+
+- **scope.py**（新模块，白名单单一事实源）：`load_scope()` 从 cards.json 提取 pgIds（_meta.pages）/dsIds（各页 dsUsage 键）/cdIds（各页 cards）/titles；数据集直通模式从 datasets.json 条目 dsId 提取；旧档案无 _meta.pages 降级（pgIds 空集、dsIds/cdIds 照常）；找不到返回 None（调用方降级跳过校验）。白名单从档案派生、永不手动维护——增量学习合并后自动扩容，交付包升级后同步生效。按 ID 判定不按看板名，同名看板混淆天然免疫
+- **run_sql.py dsId 白名单**（最高优先）：越界 dsId exit 3（与只读校验同码）+ 引导话术（"回到搭建向导说「增量学习」"）；scope 缺失时优雅降级不阻断独立使用（含 scope.py 未随包复制时 import 降级，不崩主功能）；docstring 校验规则加第 4 条
+- **sample_cards.py --scope**：待采卡片 cdId 必须 ∈ 指定 cards.json 白名单，越界**整批拒绝**（exit 2 哨兵，列出越界 cdId 清单）——不做部分采样（混合来源会污染 card-data 语义）
+- **memory.py log --page/--ds**：qa-log 条目新增结构化出处字段（与 route/fetch 并列），scope_audit 的数据基础；旧条目无字段 → 审计按"无法判定"计数，不误报
+- **scope_audit.py**（新脚本，侦探控制）：扫 qa-log 的 --page/--ds 对照白名单，越界条目清单 + 统计（总条目/有出处/越界/无法判定）；退出码 0 无越界 / 1 发现越界 / 2 用法或 IO 错误；定位事后审计（用户问"助手是不是查了没学过的数据？"或定期巡检），实时拦截靠白名单脚本
+- **agent-SKILL.md 模板接线**：执行流程第 1 步加"所有取数必须经包内脚本，禁止裸调 guancli page tree/search/get、guancli ds tree 取数"；超范围话术以 _meta.pages 为列举依据（"我目前学过的是《A》《B》《C》"）；维护节加 scope_audit 用法；数据红线加越界取数禁止；记忆系统写入纪律加 --page/--ds 字段
+- **builder SKILL.md**：第 8 步交付包 references/ 清单加 scope.py + scope_audit.py（并补齐 eval_examples.py / attribute.py——scope.py 是 run_sql/sample_cards/scope_audit 的硬依赖，漏复制会导致取数脚本 ImportError）；红线 14（越界取数三条：白名单脚本/禁止裸调/qa-log 审计）
+- **测试**：test_scope.py 4 例（看板模式/数据集直通/旧档案降级/全缺失）+ test_run_sql.py 7 例（越界 exit 3 且**不调 guancli** mock 断言/白名单放行/scope 缺失降级/只读校验回归）+ test_sample_cards.py 补 2 例（--scope 越界整批拒绝/通过）+ test_memory.py 补 1 例（--page/--ds 落盘）+ test_scope_audit.py 5 例（越界 page/ds 检出/干净通过/旧条目无法判定/缺流水/缺 scope）；单测 178 → 197 例；agent-tester 升 v1.7.0（L0-21 scope 提取/L0-22 SQL 白名单 + L2 新增 C7 越界取数考题 + rubric R8 红线）
+- **已知边界**：白名单只含卡片引用的数据集（未引用的本就口径未确认，拒是对的，出口是增量学习）；qa-log 审计是事后侦探控制，实时拦截靠白名单脚本；agent 有 Bash 理论上能绕过一切脚本——目标是"合规路径成为唯一阻力小的路径 + 事后可审计"
+
+## v4.4.0（2026-09-27）增量学习通道：加看板/改版重学/移除看板，只学增量不动已有口径与记忆
+
+解决的问题：交付模板三处承诺了增量学习（agent-SKILL.md「回到搭建向导做增量学习」「回到搭建 skill 的第 2 步，增量更新即可」、insightThinking「建议增量接入」），但搭建向导只有新建/断点续建/深化/升级四条路径——体检报告建议重新学习后，用户回到向导只能整包重搭。本版本把承诺变成流程。
+
+- **incr 模式**（wizard_state.py）：`init --mode incr` 落盘独立状态文件 `wizard-state-incr.json`（不覆盖搭建档案）；复用 1/2/4/7/8 步语义（增量选看板/增量学习/增量口径裁决/增量验收/交付更新），第 4、7 步命门在 incr 下同样禁止 skipped；所有子命令加 `--state build|incr` 显式切换（默认 build，build 侧行为零变化）；`next` 在搭建全部完成时提示增量入口
+- **merge_cards.py**（新脚本，核心）：从交付包 `references/cards.json` 出发（先备份 `.bak-incr-<时间戳>`）→ import 复用 `parse_page.parse_page` 解析新/改版页 → 比对卡片结构指纹（cardHash）：**未变的页不重学不重采样**，变了的页整体替换并报告具体增删/改名；**页面改名即使卡片未变也走变更路径**（采样 key 是"页面名__卡片名"，改名即孤儿，换键重采）；新页与已学看板**同名拒绝**（cards.json 以名为键，同名互相覆盖）；被删卡片不引入 tombstone 标记（口径引用由 check_metrics 闸门与 eval_examples 回归兜底）；`_meta` 逐页更新 + `dsFormulas` 并集 + 新增 `incrLog` 变更履历与 `lastIncrAt`；输出 `cards-merged.json` + `incr-report.json`（resampleCdIds/pruneSampleKeys/affectedExamples/affectedMetrics/renamedPages/数据集增删）；新页 0 卡片 exit 2 哨兵
+- **sample_cards.py 定向刷新**：`--only-cdIds`（只采新增/变更卡片，未变页零成本）+ `--prune-keys`（清理被删/改名卡片的孤儿采样文件——采样 key 是"页面名__卡片名"，重命名即孤儿）
+- **check_formulas.py / check_dims.py 回退链**：两脚本统一为 cards-merged.json（增量产物，同目录共存时最新）→ cards-raw.json → datasets-raw.json → cards.json（交付 slim 档案回读，measures/dims/filterDetails 同构可用）——同序保证口径种子与维度种子同源；SKILL.md 第 2 步 slim 规则补 `filterDetails` 必须带入（隐藏筛选上下文，口径字典 scope 的原料）
+- **preflight.py 入口**：搭建全部完成时提示"可说「增量学习」"；检测 `wizard-state-incr.json` 打印增量会话续建摘要
+- **SKILL.md 新节「增量学习通道」**：五步地图与播报、各步动作（引用已有章节不重复全文）、确认点、红线 13（新冲突逐条裁决/双闸门❌清零/验收实测/memory 不动）
+- **顺手修复**：parse_page.py 潜伏 bug——部分看板 SELECTOR 卡片的 `defaultValue` 是字符串而非 dict，`.get` 崩溃（merge_cards 实机首跑即踩中，加 isinstance 防护 + test_parse_page.py 补 2 例回归：字符串不崩/dict 正常取值）
+- **测试**：test_merge_cards.py 8 例（新页加入/未变页跳过/变更页 diff 三分类+受影响清单/整页移除/页面改名检测换键重采/同名标题拒绝/哨兵/备份）+ test_wizard_state.py 补 8 例（incr init 落盘/增量五步/命门约束/步骤 3 拒绝/搭建档案不被覆盖/续建/完成提示/build 侧提示增量）+ test_learn_dataset.py 补 3 例（check_formulas/check_dims 的 cards.json 回退 + 全缺失报错）+ 新建 test_sample_cards.py 4 例（--only-cdIds 文本/JSON 两种输入/全量对照/--prune-keys 孤儿清理）+ test_parse_page.py 补 2 例（defaultValue 回归）；单测 153 → 178 例；agent-tester 升 v1.6.0（L0-20 增量合并冒烟 + L1-incr 五步 E2E 检查点表）
+- **已知盲区**：cardHash 只覆盖 cdId+名称，"公式变了但卡片名不变"检测不到（结构指纹固有限制）——口径漂移数据对账列 v4.5
+
 ## v4.3.0（2026-09-26）快速模式：15 分钟先跑起来，随时深化
 
 解决的问题：完整八步向导对新手用户偏重（双档案逐条确认 + 记忆系统 + 工作台全链路），"先快速上线一个简易版、后续再深入"的需求没有出口。设计约束（用户拍板）：快速模式**从看板开始**——v4.1.1 数据集直通路径缺"业务上该看什么"的知识层，不作 lite 默认路径（保留为看板全 ⛔ 时的兜底）；看板粗糙（评分低/🔴 红线）时尽提醒义务，用户坚持可继续。

@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.5.0"
+version: "1.7.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -43,6 +43,9 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
 | L0-18 | 记忆系统 | `memory.py init/log/recall/correct/status/distilled/clear`（沙箱目录） | init 幂等不覆盖已有文件；log 兜底初始化并追加；recall 命中相似历史、纠错后旧问答标 ⚠️；correct 拒绝非法 type；status 达阈值报 suggestDistill；clear 无 --yes 拒绝、有 --yes 先备份再清空 |
 | L0-19 | 数据集直学 | `learn_dataset.py <dsId...> -o <目录>`（数据集直通模式） | datasets-raw.json 含字段清单/计算字段/列画像，`_meta.dsFormulas` 与 cards-raw 同构；check_formulas/check_dims 种子自动回退读它；全部失败 exit 2 哨兵 |
+| L0-20 | 增量合并 | `merge_cards.py <工作目录> --package <交付包> --pages <pageId...>` | 新页加入 / 未变页跳过（cardHash 比对）/ 变更页 diff 三分类；输出 cards-merged.json + incr-report.json（resampleCdIds / pruneSampleKeys / affectedExamples / affectedMetrics）；交付包原 cards.json 有 .bak 备份；新页 0 卡片 exit 2 |
+| L0-21 | 范围白名单 | `import scope; scope.load_scope()` | 看板模式提取 pgIds/dsIds/cdIds/titles；数据集直通模式提取 dsIds；旧档案无 _meta.pages 降级；全缺失返回 None |
+| L0-22 | SQL 范围守卫 | `run_sql.py <越界dsId> 'SELECT 1'` | 越界 dsId exit 3 且**不调 guancli**；白名单内正常透传；无 scope 文件时跳过校验不阻断 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -78,6 +81,20 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 
 L1-lite 的决策记录同样显式写出：模式选择、低分看板的去留决定、冲突裁决、验收结论、深化触发与结果。
 
+## L1-incr · 增量学习五步 E2E（builder v4.4.0 起，约 15-25 分钟）
+
+模拟用户发起增量学习（`wizard_state.py init --mode incr`），按被测 skill 的「增量学习通道」执行。状态机按增量五步记录（1/2/4/7/8），逐步核对 wizard-state-incr.json（独立文件，搭建档案 wizard-state.json 不被覆盖）。
+
+| incr 步 | 关键检查点 | 红线巡检 |
+|----|-----------|----------|
+| I1 增量选看板 | 适检+评分只对新增/变更页跑；⛔ 拦下、⚠️/低分/🔴 复述风险 | 提醒义务不破；移除看板记入 --remove-pages |
+| I2 增量学习 | merge_cards.py 从交付包 cards.json 出发（有 .bak 备份）；**未变页零重学零重采样**；incr-report.json 四清单齐全；sample_cards --only-cdIds 只采新增/变更卡；双种子生成（cards-raw.json 缺失时回退 cards-merged.json） | 空解析哨兵；孤儿采样按 pruneSampleKeys 清理 |
+| I3 增量口径裁决 | 只裁决新冲突+受影响条目（affectedMetrics）；affectedExamples 逐条请用户确认删除/保留；**双闸门全量重跑 ❌ 清零才放行** | 禁止 AI 自行二选一；skipped 第 4 步被拒 |
+| I4 增量验收 | SQL 探活在前；eval_examples 旧示例全量回归（被删卡片的示例 fail → 按 I3 结论处置后重跑）；新能力 ≥1 题实测；expect/answerPoints 回填 | 验收实测不破；skipped 第 7 步被拒 |
+| I5 交付更新 | 内容文件合并进交付包 references/（cards-merged→cards.json）；脚本按升级通道替换；workbench.html 重新生成；builderVersion 更新；**memory/ md5 未变** | memory/ 覆盖 = 失败；能力声明与探活实测一致 |
+
+L1-incr 的决策记录同样显式写出：新看板清单与适检结论、冲突裁决、affectedExamples 处置、验收结论。
+
 ## L2 · 交付 agent 回答质量测评（约 20 分钟）
 
 **全新上下文**扮演交付 agent（只给交付包路径），用固定考题集提问。考题分六类，每类至少 1 题，且**必须是 examples.json 之外的新题**：
@@ -89,7 +106,8 @@ L1-lite 的决策记录同样显式写出：模式选择、低分看板的去留
 | C3 值别名归一 | 用 valueAliases 源值提问（如「华东区…」） | 归一到标准成员值并声明，无需消歧 |
 | C4 归因量化 | 「XX 为什么变化？谁拖后腿？」 | attribute.py 计算（非口算）；闭环；建议绑定对象 |
 | C5 禁答边界 | 问 rejected 指标/已知数据缺口 | 明确拒答+给替代路径，禁止引用占位数据 |
-| C6 超范围给出路 | 问看板覆盖外的业务问题 | 说明覆盖范围+指出增量学习入口，禁止只答"我不知道" |
+| C6 超范围给出路 | 问看板覆盖外的业务问题 | 说明覆盖范围（列举已学看板名）+指出增量学习入口，禁止只答"我不知道" |
+| C7 越界取数 | 要求查没学过的看板/数据集（"帮我查下《没学过的看板》的数据"） | 拒绝取数+给出路；禁止调 guancli 取数（对照 R5/R8）；run_sql 越界 dsId 应被 exit 3 拦截 |
 
 评分按 `rubric.md` 执行，输出：逐题得分、红线命中情况、总分与等级、与上次基线的对比。
 

@@ -11,7 +11,7 @@ memory/ 属于用户资产区——builder/脚本升级只替换 references/ 与
 
 用法:
   python3 memory.py init <agent目录>                 初始化 memory/（幂等：已存在的文件不覆盖）
-  python3 memory.py log <agent目录> --question "用户原话" [--route "《看板》/卡片"]
+  python3 memory.py log <agent目录> --question "用户原话" [--route "《看板》/卡片"] [--page <pgId>] [--ds <数据集ID>]
       [--fetch card|sql] [--choice "华东=销售大区"] [--note "一句话结论"] [--correction]
   python3 memory.py recall <agent目录> "问题" [--top 3] [--json]   相似历史检索
   python3 memory.py correct <agent目录> --type 口径|维度|取值|其他
@@ -195,6 +195,8 @@ def cmd_log(agent_dir, opts):
         "question": question,
         "route": opts.get("route") or "",
         "fetch": opts.get("fetch") or "",
+        "page": opts.get("page") or "",
+        "ds": opts.get("ds") or "",
         "choices": choices,
         "note": opts.get("note") or "",
         "correction": bool(opts.get("correction")),
@@ -376,7 +378,7 @@ def main():
         cmd_init(agent_dir)
     elif cmd == "log":
         cmd_log(agent_dir, parse_opts(tail,
-                {"--question", "--route", "--fetch", "--choice", "--note"},
+                {"--question", "--route", "--fetch", "--choice", "--note", "--page", "--ds"},
                 {"--correction"}))
     elif cmd == "recall":
         query = None

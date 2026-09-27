@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 卡片批量采样器：对 cards-raw.json 中的数据卡片逐一 preview 采样
-用法: python3 sample_cards.py <cards-raw.json> <输出目录> [--max-rows N]
+用法: python3 sample_cards.py <cards-raw.json> <输出目录> [--max-rows N] [--only-cdIds <文件>] [--prune-keys <文件>] [--scope <cards.json>]
+  --only-cdIds  增量学习用：只采样文件里列出的 cdId（每行一个或 JSON 列表），其余卡片跳过——
+                 未变的卡片沿用旧采样，不重复消耗取数
+  --prune-keys  增量学习用：删除输出目录里列出的采样文件（key 列表，不含 .json 后缀）——
+                 被删/改名卡片的旧采样文件是孤儿，防止陈旧数据被误当现状引用
+  --scope       范围守卫：待采卡片的 cdId 必须 ∈ 指定 cards.json 的白名单，越界整批拒绝（exit 2）
 输出:
   <输出目录>/<看板名>__<卡片名>.json（数据行，超过 --max-rows 截断并标注）
   <输出目录>/_sample_index.json（采样摘要 + 列画像 profiling）
@@ -13,6 +18,12 @@
 """
 import json, subprocess, sys, os, re
 from collections import Counter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import scope as scope_mod
+except ImportError:
+    scope_mod = None  # scope.py 未随包复制时降级：--scope 白名单校验不可用，采样主功能不受影响
 
 SKIP_TYPES = {'SELECTOR', 'TEXT', 'PROGRESS_BAR', 'PICTURE', 'LAYOUT'}
 DEFAULT_MAX_ROWS = 200
@@ -87,8 +98,56 @@ def main():
         i = args.index("--max-rows")
         max_rows = int(args[i + 1])
         args = args[:i] + args[i + 2:]
+    only_ids, prune_keys = None, []
+    scope_path = None
+    for flag, dest in (("--only-cdIds", "only"), ("--prune-keys", "prune"), ("--scope", "scope")):
+        if flag in args:
+            i = args.index(flag)
+            path = args[i + 1]
+            args = args[:i] + args[i + 2:]
+            if dest == "scope":
+                scope_path = path
+            else:
+                with open(path, encoding='utf-8') as f:
+                    content = f.read().strip()
+                try:
+                    values = json.loads(content)
+                except json.JSONDecodeError:
+                    values = [ln.strip() for ln in content.splitlines() if ln.strip()]
+                if dest == "only":
+                    only_ids = set(values)
+                else:
+                    prune_keys = list(values)
     cards_file, out_dir = args[0], args[1]
     os.makedirs(out_dir, exist_ok=True)
+    # 范围守卫：--scope 时所有待采卡片的 cdId 必须 ∈ 白名单，越界整批拒绝（exit 2 哨兵）
+    scope = None
+    if scope_path:
+        if scope_mod is not None:
+            scope = scope_mod.load_scope(candidates=[scope_path])
+        else:
+            sys.exit("❌ --scope 要求白名单校验，但 scope.py 缺失——请把 scope.py 复制进 references/ 后重试（exit 2）")
+    with open(cards_file, encoding='utf-8') as f:
+        pages = json.load(f)
+    if scope is not None:
+        out_of_scope = sorted({c["cdId"] for info in pages.values()
+                               if isinstance(info, dict)
+                               for c in (info.get("cards") or [])
+                               if isinstance(c, dict) and c.get("cdId") and c["cdId"] not in scope["cdIds"]})
+        if out_of_scope:
+            print(f"❌ 范围守卫：{len(out_of_scope)} 张卡片不在助手覆盖范围，整批拒绝采样", file=sys.stderr)
+            print(f"   越界 cdId: {', '.join(out_of_scope[:10])}" + ("…" if len(out_of_scope) > 10 else ""),
+                  file=sys.stderr)
+            print("   覆盖范围见 scope 来源 cards.json；如需接入新卡片，回到搭建向导说「增量学习」。",
+                  file=sys.stderr)
+            sys.exit(2)
+        print(f"✅ 范围守卫：全部卡片在覆盖范围内（{len(scope['cdIds'])} 个 cdId 白名单）")
+    # 孤儿采样清理：被删/改名卡片的旧 key（增量学习合并后调用）
+    for key in prune_keys:
+        path = os.path.join(out_dir, f"{key}.json")
+        if os.path.exists(path):
+            os.unlink(path)
+            print(f"  清理孤儿采样: {key}.json")
     with open(cards_file, encoding='utf-8') as f:
         pages = json.load(f)
     index = {}
@@ -98,6 +157,8 @@ def main():
         for card in info['cards']:
             if card['type'] in SKIP_TYPES:
                 continue
+            if only_ids is not None and card['cdId'] not in only_ids:
+                continue  # 增量模式：未变的卡片不重复采样
             key = f"{page_name}__{safe_name(card['name'])}"
             print(f"采样: {card['name']} ({card['cdId']}) ...", flush=True)
             data, err = preview(card['cdId'])

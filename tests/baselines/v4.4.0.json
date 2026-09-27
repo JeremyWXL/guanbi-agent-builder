@@ -1,0 +1,31 @@
+{
+  "version": "4.4.0",
+  "date": "2026-09-27",
+  "testerVersion": "1.6.0",
+  "environment": "guancli 1.0.55 + default 环境（app.guandata.com，消费品行业演示域）",
+  "unitTests": 174,
+  "l0": {
+    "total": 20,
+    "passed": 20,
+    "note": "L0-2 含 --mode incr 流转；L0-20 merge_cards.py 冒烟通过"
+  },
+  "l1": {
+    "status": "pass",
+    "track": "incr（增量学习五步）",
+    "notes": "I1✅(低分看板提醒义务+坚持继续) I2✅(新页58卡加入,旧3页零重学,定向采样58卡,双种子回退cards-merged) I3✅(双闸门首轮6❌真实拦截,裁决后零❌) I4✅(SQL探活通过,旧示例3/3,新能力Q4入库4/4) I5✅(交付包更新,memory/逐字节一致,包内回归4/4,体检零误报)"
+  },
+  "l2": {
+    "score": null,
+    "grade": null,
+    "note": "本次主线在增量搭建侧；交付包 L2 参照语料无变化，沿用 v3.7.0 基线结论"
+  },
+  "e2eFindings": [
+    "闸门增量语义精确：6 条新冲突全部 ❌ 拦截，5 条旧冲突因 metrics.json/rejected 已有落点零误报",
+    "定向刷新成本实量化：58 张新卡采样 vs 全量 177 张重采样；未变 119 卡零成本",
+    "parse_page.py 潜伏 bug 实机暴露并修复：SELECTOR 卡片 defaultValue 为字符串导致 .get 崩溃（isinstance 防护）"
+  ],
+  "issues": [
+    {"severity": "P2", "title": "新页 2 张卡片采样失败（数据停更页常见，已索引）——引用前需重新采样", "status": "tracking"},
+    {"severity": "P2", "title": "run_sql 裸中文表名需反引号（v4.3.0 遗留）", "status": "open"}
+  ]
+}

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""parse_page.py 的单测：v4.2 取数加速层分级（_is_filtered / _ds_usage）+ 结构指纹稳定性"""
+"""parse_page.py 的单测：v4.2 取数加速层分级（_is_filtered / _ds_usage）+ 结构指纹稳定性
++ v4.4 实机踩坑回归（SELECTOR 卡片 defaultValue 为字符串）"""
+import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import parse_page as pp
@@ -52,6 +55,29 @@ class TestStructureHash(unittest.TestCase):
         self.assertEqual(pp._structure_hash(a), pp._structure_hash(b))
         c = [{"cdId": "c1", "name": "甲"}]
         self.assertNotEqual(pp._structure_hash(a), pp._structure_hash(c))
+
+
+class TestSelectorDefaultValue(unittest.TestCase):
+    """v4.4 merge_cards 实机首跑踩坑：部分看板 SELECTOR 卡片的 content.defaultValue
+    是字符串而非 dict，`.get("valueType")` 直接崩溃——isinstance 防护的回归"""
+    def _parse(self, default_value):
+        raw = {"data": {"name": "页", "utime": "", "dsInfos": [],
+                        "meta": {"backlogLayout": [], "filterLayout": []},
+                        "cards": [{"cdId": "s1", "cdType": "SELECTOR", "name": "月份",
+                                   "content": {"chartType": "SELECTOR",
+                                               "source": {"field": {"name": "月份"}},
+                                               "defaultValue": default_value}}]}}
+        with mock.patch.object(pp, "run_guancli", return_value=(0, json.dumps(raw), "")):
+            return pp.parse_page_raw("pg1")
+
+    def test_string_default_value_no_crash(self):
+        info = self._parse("上月")
+        self.assertNotIn("error", info)
+        self.assertEqual(info["cards"][0]["defaultValueType"], "")
+
+    def test_dict_default_value_reads_value_type(self):
+        info = self._parse({"valueType": "DYNAMIC", "value": "本月"})
+        self.assertEqual(info["cards"][0]["defaultValueType"], "DYNAMIC")
 
 
 if __name__ == "__main__":

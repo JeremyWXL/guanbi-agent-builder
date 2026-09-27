@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "4.3.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "4.5.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -249,7 +249,8 @@ def parse_page_raw(page_id):
             # 筛选交互原料：直达链接选候选（筛选栏成员 + 有联动）与 FIRST_PICK 降级判断都靠这几个字段
             card["inFilterBar"] = c["cdId"] in filter_bar
             card["linkedCardCount"] = len(((c.get("settings") or {}).get("asFilter") or {}).get("targetCdIds") or [])
-            card["defaultValueType"] = (content.get("defaultValue") or {}).get("valueType", "")
+            default_value = content.get("defaultValue") or {}
+            card["defaultValueType"] = default_value.get("valueType", "") if isinstance(default_value, dict) else ""
             card["multiSelect"] = bool(content.get("multiSelect"))
             card["selectorType"] = content.get("selectorType", "")
         else:

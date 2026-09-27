@@ -2,10 +2,10 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.3.0"
+version: "4.5.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
-description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
+description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
 agent_created: true
 ---
 
@@ -48,7 +48,7 @@ python3 references/scripts/preflight.py [工作目录]
 
 一键检查 guancli 安装/版本、BI 认证、看板树与看板详情的 JSON 结构探针。未通过时按提示引导用户（通常是 `guancli auth login` 或 `guancli auth use <环境名>`）。全部通过后才进入第 1 步，不要向用户展示技术细节，只需说"已连接上您的 BI 系统"。
 
-**断点续建**：传入工作目录时 preflight 会先检测断点——若目录里有上次未完成搭建的 wizard-state.json，会打印续建摘要（上次进行到第几步、状态、更新于何时），此时按摘要从断点步骤继续，禁止从零重来。新搭建选定工作目录后立即初始化状态机：
+**断点续建**：传入工作目录时 preflight 会先检测断点——若目录里有上次未完成搭建的 wizard-state.json，会打印续建摘要（上次进行到第几步、状态、更新于何时），此时按摘要从断点步骤继续，禁止从零重来；若目录里有 wizard-state-incr.json（未完成的增量学习会话），会打印增量会话摘要（进行到第几步），此时按摘要从断点步骤继续。新搭建选定工作目录后立即初始化状态机：
 
 ```bash
 python3 references/scripts/wizard_state.py init <工作目录>
@@ -132,7 +132,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId1> <pageId2> ... -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据。另外每张数据卡还带 **`filtered` 标记与页面 `dsUsage` 分级**（v4.2 取数加速层）：带筛选 = 卡片级（只作应答缓存，禁止二次加工回答全局问题），未筛选 = 数据集级（开放二次计算）——**生成 cards.json 时这两个字段同样必须带入**，它是交付助手取数路径分层与体检报告环境指标的依据
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据。另外每张数据卡还带 **`filtered` 标记与页面 `dsUsage` 分级**（v4.2 取数加速层）：带筛选 = 卡片级（只作应答缓存，禁止二次加工回答全局问题），未筛选 = 数据集级（开放二次计算）——**生成 cards.json 时这两个字段同样必须带入**，它是交付助手取数路径分层与体检报告环境指标的依据。数据卡的 **`filterDetails`（隐藏筛选上下文，如"时间维度=月累计"）也必须带入**——它是口径字典 scope 的原料，且增量学习回读 cards.json 时没有 cards-raw.json 可用，缺了它口径候选会丢隐藏筛选上下文
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
@@ -307,9 +307,11 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
-       └── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
+       ├── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
+       ├── scope.py           # 范围守卫白名单提取（复制自本 skill；run_sql/sample_cards/scope_audit 共享）
+       └── scope_audit.py     # 越界取数审计（复制自本 skill；扫 qa-log 的 --page/--ds 对照白名单）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py 复制进产物包 references/
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py、eval_examples.py、attribute.py、scope.py、scope_audit.py 复制进产物包 references/（scope.py 是 run_sql/sample_cards/scope_audit 的硬依赖，漏复制会导致取数脚本报 ImportError）
 3. **初始化记忆区**（交付包的长期记忆，从空开始随使用沉淀）：
    ```bash
    python3 <交付包路径>/references/memory.py init <交付包路径>
@@ -367,6 +369,53 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
 
 memory/ 在快速模式交付时已初始化，深化零迁移成本；交付包本身结构不变，只更新档案内容。
 
+## 增量学习通道（incr 模式）
+
+已交付的 agent 后续要**加看板、看板改版重学、移除看板**时走本通道（约 10 分钟，只学增量，已有口径与记忆不动）。触发：用户说"加一张看板 / 看板改了 / 重新学习 / 移除某看板"，或体检建议重新学习后用户回到搭建向导。
+
+**入口**：`python3 references/scripts/wizard_state.py init <工作目录> --mode incr`——状态文件独立为 `wizard-state-incr.json`，不覆盖搭建档案；preflight 会同时检测搭建断点与增量会话断点。播报用五步地图："第 N 步/共 5 步（增量学习）"：I1 增量选看板 → I2 增量学习 → I3 增量口径裁决 → I4 增量验收 → I5 交付更新。
+
+### I1 增量选看板（= 第 1 步的勾选 + 适检 + 评分）
+
+- 新看板/改版看板的勾选、适检三档、agent-ready 评分与第 1 步完全一致（`list_pages.py` / `check_pages.py`，只对新增/变更页跑）
+- 移除看板：用户明确说"不要 XX 看板了"，记入 `merge_cards.py --remove-pages`
+- **确认点**：新看板清单 + 适检结论（⛔ 拦下并给替换建议；⚠️ / 评分「低」/ 🔴 红线复述风险，用户坚持可继续并登记）
+
+### I2 增量学习（合并 + 定向重采样）
+
+```bash
+python3 references/scripts/merge_cards.py <工作目录> --package <交付包路径> --pages <新看板ID...> [--remove-pages <pgId...>]
+python3 references/scripts/sample_cards.py <工作目录>/cards-merged.json <工作目录>/card-data --only-cdIds <incr-report.json 的 resampleCdIds> --prune-keys <incr-report.json 的 pruneSampleKeys>
+python3 references/scripts/validate_cards.py <工作目录>/card-data
+python3 references/scripts/check_formulas.py <工作目录> --seed-metrics   # cards-merged.json 优先（增量产物最新），缺失时回退 cards-raw.json
+python3 references/scripts/check_dims.py <工作目录> --seed-dims
+```
+
+- `merge_cards.py` 从交付包 `references/cards.json` 出发（先备份 `.bak-incr-<时间戳>`）：新页加入；旧页比对卡片结构指纹（cardHash）——**未变的页不重学不重采样**；变了的页整体替换并报告具体增删/改名；被删卡片不引入 tombstone 标记，其口径引用由闸门与回归兜底
+- `incr-report.json` 是后续步骤的施工图：`resampleCdIds`（需重采样的卡片）、`pruneSampleKeys`（孤儿采样文件——采样 key 是"页面名__卡片名"，重命名即孤儿）、`affectedExamples` / `affectedMetrics`（被删/改名卡片牵连的已验收示例与指标，I3/I4 请用户确认）、`datasets.lost`（消失的数据集，SQL 直查能力可能变化）
+- card-data 来源：老 workdir 的 card-data/ 存在则复用，不存在则从交付包 `references/card-data/` 复制起步
+- **确认点**：比对报告用业务语言讲给用户（"《XX》新增 2 张卡片、删除 1 张、改名 1 张；这些变化会影响 N 个已验收示例"），需要细看可启动校验工作台
+
+### I3 增量口径裁决（= 第 4 步精简版）
+
+- 只裁决**新冲突 + 受影响条目**（`incr-report.json` 的 `affectedMetrics` + `formulas.json` 里新出现的 conflicts）；共识组默认采纳
+- 被删/改名卡片牵连的已验收示例（`affectedExamples`）：逐条请用户确认删除或保留（✅ 删除 / ✏️ 保留）
+- **双闸门全量重跑**（`check_metrics.py` / `check_dims.py`）：旧档案已清零，新 ❌ 只来自新内容——❌ 未清零禁止进入下一步（第 4 步命门在 incr 下同样禁止 skipped）
+
+### I4 增量验收（= 第 7 步）
+
+1. **SQL 探活**：对要用的数据集跑轻量查询，失效则降级卡片间交叉验证（第 2 步旧结论会过期，v3.7.1 教训）
+2. **旧示例全量回归**：`python3 references/scripts/eval_examples.py <工作目录>`——被删卡片的示例会 fail / file 缺失，按 I3 的确认结论删除或修复后重跑
+3. **新能力补 1-2 题实测**：质量自检清单照常（数字有出处、合计闭环、归因走 attribute.py 禁止口算），验收通过回填 examples.json 并置 humanConfirmed
+4. 输出测试报告；**确认点**：用户验收（第 7 步命门在 incr 下同样禁止 skipped）
+
+### I5 交付更新（= 第 8 步升级通道 + 内容合并）
+
+- 内容文件从工作目录合并进交付包 `references/`：`cards-merged.json`→`cards.json`，及 I3/I4 已编辑的 metrics/dimensions/examples/learningResult/businessKnowledge/insightThinking
+- 脚本文件按升级通道替换；`workbench.py` 重新生成 workbench.html；`_meta.builderVersion` 更新
+- **memory/ 永不在覆盖范围**（红线）；交付包 SKILL.md 仅更新既有字段（数据源清单、典型问题），不整体覆盖
+- 交付话术：报本次增量（新增/删除/改版卡片数、新裁决口径数、回归通过率）
+
 ## 全程红线
 
 1. **禁止跳过确认点**：第 1、3（若补充认知）、4、5、7 步必须等用户明确确认才能继续（快速模式的确认点见 lite 分支：L1 清单核对、L3 冲突裁决、L4 场景确认、L5 验收）
@@ -384,3 +433,5 @@ memory/ 在快速模式交付时已初始化，深化零迁移成本；交付包
     - SQL 必须显式复写卡片的隐藏筛选条件（如 `时间维度='月累计'`）——漏掉就是数量级错误（实测差 259 倍）
 11. **归因算术禁止口算**：贡献额/贡献率/乘法因子拆解一律走 attribute.py，LLM 只负责解释脚本输出（LLM 口算贡献占比是"归因必须量化"最大的可靠性漏洞）
 12. **快速模式可裁确认深度，三条底线不破**：适检评分的提醒义务、口径冲突逐条裁决、验收实测（见 lite 分支「三条不破底线」）；第 4、7 步命门在 lite 下同样禁止 skipped
+13. **增量学习三条命门**（incr 模式）：新冲突逐条裁决、禁止 AI 二选一；双闸门 ❌ 清零才放行；验收实测（旧示例全量回归 + 新能力 ≥1 题）——第 4、7 步命门在 incr 下同样禁止 skipped；memory/ 永不在覆盖范围
+14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId）；禁止裸调 `guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
