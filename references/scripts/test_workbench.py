@@ -136,6 +136,55 @@ class TestCheckStaleness(unittest.TestCase):
         self.assertIsNone(wb._accel_stats({"看板A": {"cards": [{"cdId": "c1", "type": "PIE"}]}}))
 
 
+class TestDiagnostics(unittest.TestCase):
+    """issue #2：cards.json 结构自检 + 内容摘要"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.dir, ignore_errors=True))
+
+    def test_struct_warnings_clean(self):
+        doc = {"_meta": {"pages": {}}, "P": {"pgId": "pgA", "cards": {"卡A": {}}}}
+        self.assertEqual(wb.cards_struct_warnings(doc), [])
+
+    def test_struct_warnings_missing_meta_and_grouping(self):
+        # issue #2 的故障形态：手工改写成扁平结构且丢 _meta
+        warns = wb.cards_struct_warnings({"cdId-1": {"type": "TABLE"}})
+        self.assertTrue(any("_meta" in w for w in warns))
+        self.assertTrue(any("页面分组" in w for w in warns))
+
+    def test_struct_warnings_missing_meta_only(self):
+        warns = wb.cards_struct_warnings({"P": {"cards": {"卡A": {}}}})
+        self.assertEqual(len(warns), 1)
+        self.assertIn("_meta", warns[0])
+
+    def test_struct_warnings_legacy_pages_ok(self):
+        warns = wb.cards_struct_warnings({"_meta": {"pages": {"P": "pgA"}}, "pages": {"P": "pgA"}})
+        self.assertEqual(warns, [])
+
+    def test_struct_warnings_non_dict(self):
+        self.assertTrue(wb.cards_struct_warnings(["not", "a", "dict"]))
+
+    def test_content_summary_counts(self):
+        write_json(self.dir, "cards.json", {"_meta": {},
+                                            "P": {"pgId": "pgA", "cards": {"卡A": {}, "卡B": {}}},
+                                            "Q": {"pgId": "pgB", "cards": {"卡C": {}}}})
+        write_json(self.dir, "metrics.json", {"metrics": [{"name": "a"}, {"name": "b"}]})
+        write_json(self.dir, "dimensions.json", {"dimensions": [{"name": "d"}]})
+        s = wb.content_summary(self.dir)
+        self.assertEqual((s["pages"], s["cards"], s["metrics"], s["dims"]), (2, 3, 2, 1))
+
+    def test_content_summary_legacy_list_pages(self):
+        write_json(self.dir, "cards.json",
+                   {"_meta": {}, "pages": [{"name": "P", "cards": [{"cdId": "c1"}]}]})
+        s = wb.content_summary(self.dir)
+        self.assertEqual((s["pages"], s["cards"]), (1, 1))
+
+    def test_content_summary_missing_files_zero(self):
+        s = wb.content_summary(self.dir)
+        self.assertEqual((s["pages"], s["cards"], s["metrics"], s["dims"]), (0, 0, 0, 0))
+
+
 class TestCollectAndSave(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

@@ -1,5 +1,23 @@
 # 变更日志
 
+## v4.6.1（2026-09-28）workbench 诊断强化：cards.json 结构自检 + 内容摘要（issue #2 落地）
+
+- **cards.json 结构自检**（workbench.py `cards_struct_warnings()`）：生成 / `--check` / `--serve` 启动三处统一经 `_print_diagnostics()` 输出——缺 `_meta`（看板名无法跳转 BI、结构指纹/体检失效）或缺页面分组结构（资产表将渲染为空）时给明确 warning，不再静默产出"空资产"工作台；兼容旧版 pages dict/list schema，非 dict 档案也有提示
+- **内容摘要行**（`content_summary()` / `summary_line()`）：`📦 内容摘要：资产 N 页 M 卡 / 指标 X / 维度 Y`，生成与体检时打印，一眼确认业务数据是否被正确注入（排查时不再需要 grep 单行 HTML——`grep -c` 对单行文件按行计数恒为 1 的陷阱见 issue #2）
+- **测试**：test_workbench.py 新增 TestDiagnostics 8 例（干净通过/缺 _meta+缺分组/仅缺 _meta/旧 schema 放行/非 dict/摘要计数/旧 list schema 计数/缺文件全零）；单测 211 → 219 例
+- **版本**：4.6.0 → 4.6.1
+
+## v4.6.0（2026-09-28）问题反馈通道：用户遇 bug 一键反馈到 GitHub / SkillHub，只带环境信息不带业务数据
+
+解决的问题：用户（业务用户，非技术）使用过程中遇到 bug 或不符合预期的情况时没有任何反馈出口——开发者不知道真实使用中的问题，用户只能放弃或忍受。本版本建立双向通道：引导 agent 发现异常信号后，经用户同意一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区。
+
+- **feedback.py**（新脚本，双通道发送器）：`feedback.py <工作目录> --title "..." --description "..." [--channel github|skillhub|both] [--dry-run]`。自动附加环境上下文（builder 版本——自动适配仓库布局与交付包布局两种 SKILL.md 位置、wizard-state 搭建/增量进度、平台、guancli 有无），**只收集环境信息，绝不读卡片/采样等业务文件**；GitHub 通道 `gh issue create --repo JeremyWXL/guanbi-agent-builder`（前置检查 gh 存在与登录态）；SkillHub 通道 `skillhub comment post guanbi-agent-builder --content`（≤500 字硬校验，超限退出 2 要求精简）；`--dry-run` 打印两个通道的标题/正文供用户预览，零发送；退出码 0 成功 / 2 组合失败 / 3 发送失败
+- **builder SKILL.md 新节「问题反馈通道」**：触发时机（任何异常信号——先帮用户解决问题，再提反馈）、同意话术（强调"不会带您的业务数据"）、通道选择（默认 GitHub；SkillHub 平台用户/想公开评论 `--channel skillhub`）、反馈后回执致谢；红线 15（同意后才发/正文禁止业务数据/失败不静默跳过）
+- **交付接线**：第 8 步交付包 references/ 清单加 feedback.py（交付后的 agent 同样能把问题反馈回仓库）；agent-SKILL.md 模板维护节加「问题反馈」条目（用法、dry-run、双通道、隐私红线）——交付助手不再只有"忍着"一个选项
+- **版本一致性**：4.5.0 → 4.6.0（SKILL.md frontmatter / kimi.plugin.json / wizard_state / workbench / parse_page / learn_dataset 五处 BUILDER_VERSION）
+- **测试**：新建 test_feedback.py 14 例（仓库/交付包两种布局的版本提取、wizard-state 上下文收集与缺失降级、issue 正文含环境信息、SkillHub 500 字上限放行/拒绝、dry-run 零发送断言、gh 缺失/未登录失败路径 mock、send 成功断言 repo 参数、main 退出码 2/3 路径）；单测 197 → 211 例；agent-tester 本轮未动（反馈通道属引导层行为，现有 L2 考题框架未覆盖，列入后续）
+- **已知边界**：SkillHub 评论 500 字上限是平台硬约束，超长只能精简（issue 通道无此限制，重要反馈优先 GitHub）；反馈通道依赖用户环境的 gh/skillhub CLI 登录态，未登录时按脚本提示引导；业务数据防护靠 prompt 红线 + 脚本只读环境信息双保险，agent 绕过脚本直发理论上无法完全阻止（与范围守卫同一信任模型）
+
 ## v4.5.0（2026-09-27）范围守卫：覆盖外看板/数据集禁止当答案（脚本层白名单 + 流水审计）
 
 解决的问题：用户 BI 权限大、guancli 可检索看板多（演示域 102 张）时，交付 agent 可能"顺手"查询未经口径确认的覆盖外看板/数据集并当答案喂给用户——信噪比纪律的延伸。此前防御只有 prompt 层（"超范围给出路"话术 + 数据出身行），四个取数入口里三个没有白名单校验（run_sql 的 dsId 任意透传、sample_cards 指向哪个 cards 文件就采哪个、guancli page tree/get/search 无包装可直接 shell）。

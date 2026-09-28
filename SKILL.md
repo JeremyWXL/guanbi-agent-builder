@@ -2,10 +2,10 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.5.0"
+version: "4.6.1"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
-description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。
+description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
 agent_created: true
 ---
 
@@ -72,6 +72,24 @@ open <WORKBENCH_URL>   # macOS 直接打开浏览器
 - 用户改完点页面上的"✓ 完成 · 关闭工作台"，或在对话里说"改完了"——AI 终止服务进程，**重新校验受影响内容**（口径改动需复述新口径请用户确认），再继续流程
 - 适用确认点：第 2 步（资产目录）、第 4 步（业务口径，强烈推荐）、第 6 步（分析框架）
 - 只读场景（如交付后查看）：`python3 workbench.py <目录>` 生成静态 workbench.html（references 目录时自动写到交付包根目录），双击即可打开，无需服务
+
+## 问题反馈通道（遇到 bug / 不符合预期时）
+
+用户在使用过程中报出任何异常信号——"报错了""结果不对""和看板对不上""这不是我要的""怎么又问一遍"——**先帮用户解决问题**；处理完后（或用户主动要求反馈时），主动提供反馈通道：
+
+> "这个问题我记下了。要不要我顺手把情况反馈给这个工具的开发者？您用一两句话描述一下现象就行，工具的版本和进行到哪一步我会自动附上，**不会带您的业务数据**。"
+
+- **征得用户明确同意后才发送**；用户 declined 就到此为止，不再追问
+- 请用户用业务语言描述现象（原话入正文，AI 不润色不扩写事实），AI 补一句发生场景（第几步、刚做了什么操作）
+- 发送（工作目录传当前搭建工作目录；`--dry-run` 可先打印预览给用户过目）：
+  ```bash
+  python3 references/scripts/feedback.py <工作目录> --title "<一句话问题>" --description "<现象 + 发生场景>"
+  ```
+  - 默认 GitHub 通道（创建 issue 到 JeremyWXL/guanbi-agent-builder）
+  - 用户在 SkillHub 平台使用/想公开评论时 `--channel skillhub`（正文 ≤500 字，超了脚本会退出 2，精简描述即可）；两个渠道都要 `--channel both`
+- 发送成功把 issue 链接/评论结果回给用户并致谢："已反馈给开发者（链接），感谢您的反馈，这会帮助工具改进"
+- 发送失败（gh 未登录、CLI 缺失等）按脚本报错引导处理，**不静默跳过**——用户答应了反馈就要兑现
+- **隐私红线**：正文只有版本号、搭建进度、平台信息和用户亲口描述的现象；**禁止夹带看板数值、采样数据、卡片明细**；反馈后不跟踪、不追问用户后续
 
 ## 八步向导
 
@@ -309,9 +327,10 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        ├── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
        ├── scope.py           # 范围守卫白名单提取（复制自本 skill；run_sql/sample_cards/scope_audit 共享）
-       └── scope_audit.py     # 越界取数审计（复制自本 skill；扫 qa-log 的 --page/--ds 对照白名单）
+       ├── scope_audit.py     # 越界取数审计（复制自本 skill；扫 qa-log 的 --page/--ds 对照白名单）
+       └── feedback.py        # 问题反馈通道（复制自本 skill；用户遇 bug 经同意发 GitHub issue / SkillHub 评论）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py、eval_examples.py、attribute.py、scope.py、scope_audit.py 复制进产物包 references/（scope.py 是 run_sql/sample_cards/scope_audit 的硬依赖，漏复制会导致取数脚本报 ImportError）
+2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py、eval_examples.py、attribute.py、scope.py、scope_audit.py、feedback.py 复制进产物包 references/（scope.py 是 run_sql/sample_cards/scope_audit 的硬依赖，漏复制会导致取数脚本报 ImportError）
 3. **初始化记忆区**（交付包的长期记忆，从空开始随使用沉淀）：
    ```bash
    python3 <交付包路径>/references/memory.py init <交付包路径>
@@ -435,3 +454,4 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 12. **快速模式可裁确认深度，三条底线不破**：适检评分的提醒义务、口径冲突逐条裁决、验收实测（见 lite 分支「三条不破底线」）；第 4、7 步命门在 lite 下同样禁止 skipped
 13. **增量学习三条命门**（incr 模式）：新冲突逐条裁决、禁止 AI 二选一；双闸门 ❌ 清零才放行；验收实测（旧示例全量回归 + 新能力 ≥1 题）——第 4、7 步命门在 incr 下同样禁止 skipped；memory/ 永不在覆盖范围
 14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId）；禁止裸调 `guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
+15. **问题反馈三条**：未经用户明确同意不发送反馈；反馈正文禁止含业务数据（只有版本/进度/平台与用户亲口描述的现象）；发送失败按脚本引导处理、不静默跳过（通道与话术见「问题反馈通道」节）

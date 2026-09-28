@@ -153,3 +153,8 @@ guancli auth status   # 确认认证有效
 - 随时查看资产/口径/分析思路/记忆：双击交付包根目录的 workbench.html，或 `python3 references/workbench.py references` 重新生成；多个 agent 的总览页：`python3 references/workbench.py --agents`
 - 用户在工作台改完口径后：复述改动涉及的新口径请用户确认，再投入使用
 - 月度数据刷新：数据随 BI 看板自动更新，无需维护
+- **问题反馈**：用户遇到 bug 或不符合预期的情况（"答错了""报错了""和看板对不上"），先帮用户解决问题；解决后或用户主动要求时，征得同意可反馈给本工具开发者：
+  ```bash
+  python3 references/feedback.py . --title "<一句话问题>" --description "<用户描述的现象，禁止含业务数据>"
+  ```
+  默认发 GitHub issue（JeremyWXL/guanbi-agent-builder）；用户从 SkillHub 平台使用/想公开评论时加 `--channel skillhub`（≤500 字）；`--dry-run` 先打印预览。脚本自动附 builder 版本与环境信息，**正文只含用户亲口描述的现象，禁止夹带看板数值、采样数据**。发送成功把链接回给用户致谢；失败按报错引导，不静默跳过

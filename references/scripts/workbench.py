@@ -11,6 +11,8 @@
   python3 workbench.py --agents [<skills目录>] --serve   # 总览 + 逐个体检按钮
 识别文件: cards.json（资产表格，含 _meta 学习时点/结构指纹/builderVersion）、learningResult.md、
           businessKnowledge.md、insightThinking.md；<目录>/../SKILL.md 存在时读取 agent 名称/描述/触发词
+诊断（issue #2）：生成/--check/serve 启动时打印内容摘要（资产 N 页 M 卡 / 指标 X / 维度 Y），
+          cards.json 缺 _meta 或页面分组结构时给明确 warning（不再静默产出"空资产"工作台）
 外观: 跟随系统亮/暗色；URL 加 ?dark 可强制暗色
 """
 import json, os, re, subprocess, sys, time
@@ -19,7 +21,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.5.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.6.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -1447,6 +1449,81 @@ def _accel_stats(doc):
             "datasetLevelCards": (total - filtered) if has_flag else None}
 
 
+def cards_struct_warnings(cards_doc):
+    """cards.json 结构自检（issue #2）：缺 _meta / 缺页面分组结构时给明确 warning，
+    避免手工改写档案后静默产出"空资产"工作台。返回 warning 列表（无问题返回 []）。"""
+    if not isinstance(cards_doc, dict):
+        return ["cards.json 不是 JSON 对象，资产表将渲染为空"]
+    warns = []
+    if not cards_doc.get("_meta"):
+        warns.append("cards.json 缺 _meta：看板名无法跳转 BI，结构指纹/体检失效")
+    grouped = any(isinstance(v, dict) and isinstance(v.get("cards"), dict)
+                  for k, v in cards_doc.items() if k != "_meta")
+    legacy = isinstance(cards_doc.get("pages"), (dict, list))
+    if not grouped and not legacy:
+        warns.append("cards.json 缺页面分组结构（{页面名: {cards: {...}}}），资产表将渲染为空")
+    return warns
+
+
+def content_summary(workdir):
+    """业务数据量摘要（issue #2）：资产页/卡数 + 指标/维度条数。纯本地统计，一眼确认注入是否成功。"""
+    pages = cards = 0
+    cj = os.path.join(workdir, "cards.json")
+    if os.path.exists(cj):
+        try:
+            with open(cj, encoding="utf-8") as f:
+                doc = json.load(f)
+            for k, v in doc.items():
+                if k == "_meta":
+                    continue
+                if isinstance(v, dict) and isinstance(v.get("cards"), dict):
+                    pages += 1
+                    cards += len(v["cards"])
+                elif k == "pages" and isinstance(v, dict):
+                    pages += len(v)
+                elif k == "pages" and isinstance(v, list):
+                    pages += len(v)
+                    cards += sum(len(p.get("cards") or []) for p in v if isinstance(p, dict))
+                elif k == "cards" and isinstance(v, dict):
+                    cards += len(v)  # 旧版平铺 schema
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def _count(fn, key):
+        fp = os.path.join(workdir, fn)
+        if not os.path.exists(fp):
+            return 0
+        try:
+            with open(fp, encoding="utf-8") as f:
+                return len(json.load(f).get(key) or [])
+        except (json.JSONDecodeError, OSError):
+            return 0
+
+    return {"pages": pages, "cards": cards,
+            "metrics": _count("metrics.json", "metrics"),
+            "dims": _count("dimensions.json", "dimensions")}
+
+
+def summary_line(workdir):
+    s = content_summary(workdir)
+    return f"📦 内容摘要：资产 {s['pages']} 页 {s['cards']} 卡 / 指标 {s['metrics']} / 维度 {s['dims']}"
+
+
+def _print_diagnostics(workdir):
+    """启动/生成时打印内容摘要 + cards.json 结构自检 warning（issue #2）。"""
+    print(summary_line(workdir))
+    cj = os.path.join(workdir, "cards.json")
+    if not os.path.exists(cj):
+        return
+    try:
+        with open(cj, encoding="utf-8") as f:
+            warns = cards_struct_warnings(json.load(f))
+    except (json.JSONDecodeError, OSError):
+        warns = ["cards.json 解析失败，资产表将渲染为空"]
+    for w in warns:
+        print(f"⚠️  {w}")
+
+
 def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     """体检：mtime + 卡片结构指纹双信号对比，附复核阈值与 builder 版本升级提示。"""
     cj = os.path.join(workdir, "cards.json")
@@ -1670,6 +1747,7 @@ def make_save_file(workdir):
 
 
 def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
+    _print_diagnostics(workdir)
     H = make_handler(lambda: render(PAGE, collect(workdir), True),
                      on_check=lambda _a: check_staleness(workdir, fresh_days),
                      on_save=make_save_file(workdir))
@@ -1682,6 +1760,7 @@ def serve_single(workdir, fresh_days=FRESH_DAYS_DEFAULT):
 
 
 def serve_fleet(skills_dir, fresh_days=FRESH_DAYS_DEFAULT):
+    _print_diagnostics(skills_dir)
     def check(agent_name):
         ref = os.path.join(skills_dir, agent_name or "", "references")
         if not agent_name or not os.path.isdir(ref):
@@ -1739,6 +1818,7 @@ def main():
     if check_mode:
         r = check_staleness(workdir, fresh_days)
         print(f"资产体检（{r['checkedAt']}）· 复核阈值 {r['freshDays']} 天")
+        _print_diagnostics(workdir)
         for p in r["pages"]:
             if p["error"]:
                 print(f"  ❌ {p['title']}：看板不存在或无权访问")
@@ -1775,6 +1855,7 @@ def main():
         with open(out, "w", encoding="utf-8") as f:
             f.write(render(PAGE, collect(workdir), False))
         print(f"已生成: {out}")
+        _print_diagnostics(workdir)
 
 
 if __name__ == "__main__":
