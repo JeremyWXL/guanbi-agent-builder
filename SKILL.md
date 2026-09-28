@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.6.1"
+version: "4.7.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -233,7 +233,11 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    python3 references/scripts/check_metrics.py <工作目录>
    ```
    结构/同义词撞车/冲突未裁决（❌ 未清零禁止进入第 5 步）+ 公式一致性/候选未收编/维度未见（⚠️ 需在确认点告知用户）。businessKnowledge.md 仍是人读台账，metrics.json 是机器可读孪生，两者同步维护
-7. **固化机器可读维度档案 `dimensions.json`**（模板：`references/templates/dimensions.json`）：以第 2 步 `dimensions-seed.json` 为底稿，同样异议驱动——默认采纳组成稿，重点与用户拍板三件事：① **维度叫法**（synonyms：用户口头怎么叫，"大区""区域"归到哪个标准维度）② **易混维度分工**（similarTo：名称相近的维度各管什么，"区域"默认指哪个）③ **值别名归一**（valueAliases：用户混用的相似取值，"华东区"→"华东"）；成员值 values 来自采样枚举，缺的从取数结果补，禁止编造。写完后必须过质量闸门：
+7. **固化机器可读维度档案 `dimensions.json`**（模板：`references/templates/dimensions.json`）：以第 2 步 `dimensions-seed.json` 为底稿，同样异议驱动——默认采纳组成稿，重点与用户拍板三件事：① **维度叫法**（synonyms：用户口头怎么叫，"大区""区域"归到哪个标准维度）② **易混维度分工**（similarTo：名称相近的维度各管什么，"区域"默认指哪个）③ **值别名归一**（valueAliases：用户混用的相似取值，"华东区"→"华东"）；成员值 values 来自采样枚举——**先用脚本机械回填，禁止手工誊写**（手工誊写 = 漏值/错值，实机教训：画像里枚举齐全但成稿 values 全空）：
+   ```bash
+   python3 references/scripts/fill_dim_values.py <工作目录>   # 只补空 values，已确认值不动，自动备份
+   ```
+   画像无枚举的维度缺的从取数结果补，禁止编造。写完后必须过质量闸门：
    ```bash
    python3 references/scripts/check_dims.py <工作目录>
    ```
@@ -287,14 +291,26 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    - 归因类回答的贡献额/贡献率必须来自 attribute.py 计算输出，禁止口算
 3. **SQL 直查测试（若启用）**：第 2 步探查过 SQL 能力不代表此时仍可用——测试前先探活（对每个要用的数据集跑一条 `SELECT COUNT(*)` 级轻量查询）：数据集失效（报错/返回 0 行且与卡片矛盾）时，降级为**卡片间交叉验证**（同指标两张卡互核、维度合计≈总计），并在交付时把 SQL 直查标注为"当前不可用"，禁止按第 2 步旧结论宣称可用。探活通过则用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
 4. 输出测试报告：每个场景的通过/失败及证据
-5. **验收通过的问答汇入 examples.json**：把实测期望值写入 `expect.values`、结论要点写入 `answerPoints`，用户验收通过后置 `humanConfirmed: true`——这是交付后的回归基准库。此后看板改版重新学习，用 `python3 references/scripts/eval_examples.py <工作目录>` 一键回归（数据层自动核验期望数值/关键词，结论要点逐条打印人工核对，按场景统计通过率），回答"新 agent 和旧 agent 一样准吗"
+5. **验收通过的问答汇入 examples.json（机械回填，禁止手填数字）**：
+   ```bash
+   python3 references/scripts/eval_examples.py <工作目录> --suggest        # 看各题取数源里的显著数值（回填候选）
+   python3 references/scripts/eval_examples.py <工作目录> --record Q1 --values "41990, 3.64" [--keywords "净收入,实际"]
+   python3 references/scripts/eval_examples.py <工作目录> --confirm Q1     # 用户验收通过后置 humanConfirmed（或 --confirm-all）
+   ```
+   `--record` 把期望值先对取数源校验才落盘（容差内找不到即拒绝——**幻觉数字进不了回归基准**），并自动重置该题 humanConfirmed；结论要点写入 `answerPoints`。**confirm 第 7 步时状态机会校验 examples.json 全部 humanConfirmed 且 expect 非空，口头申报不算数**。这是交付后的回归基准库。此后看板改版重新学习，用 `python3 references/scripts/eval_examples.py <工作目录>` 一键回归（数据层自动核验期望数值/关键词，结论要点逐条打印人工核对，按场景统计通过率），回答"新 agent 和旧 agent 一样准吗"
 
 **确认点**：用户验收："这些回答的数据和您的看板对得上吗？分析结论符合您的业务认知吗？"不通过则定位到对应步骤（数据问题回第 2 步、口径问题回第 4 步、框架问题回第 6 步）修复后重测。
 
 ### 第 8 步：固化交付
 
 **AI 动作**：
-1. 在 `~/.workbuddy/skills/agent-<场景名>/` 生成产物 skill 包（模板：`references/templates/agent-SKILL.md`）：
+1. 准备 agent manifest（`<工作目录>/agent-manifest.json`——第 8 步唯一需要手写判断的文件）：必填 `slug`（agent-<场景名> 的标识）/ `scenario`（业务场景名）/ `keywords`（触发关键词）；可选 `sqlAvailable`（第 7 步探活结论，false 时 SKILL.md 标注"SQL 直查当前不可用"）、`lite`、`buildNote`（口径裁决摘要，如"10 条冲突已逐条裁决"）、`extraRedLines`（业务特定红线，如"3.5 预算口径达成率失真，用百分点偏差"）。看板清单/典型问题/日期由脚本从学习产物自动带入，不用手写
+2. **一键机械组装 + 交付总闸门**（第 8 步唯一入口，禁止手工拼装/裁剪交付包）：
+   ```bash
+   python3 references/scripts/build_package.py <工作目录> --package ~/.workbuddy/skills/agent-<场景名> [--force]
+   ```
+   脚本顺序执行：前置校验（产物齐全 + examples.json 全部 humanConfirmed——**验收未回填禁止交付**）→ `fill_dim_values.py` 机械回填 → 双闸门 → 组装（**cards.json 由 cards-raw.json 整体复制派生**——_meta/filtered/dsUsage/filterDetails/筛选器交互字段天然完整；实机教训：手工裁剪 cards.json 会让 run_sql 白名单全拦截、make_link 无筛选器可用、sample_cards 整批拒绝，三功能连锁瘫痪）→ SKILL.md 由 `render_agent_skill.py` 模板渲染（缺节/凭记忆写错 CLI 从结构上不可能）→ memory init（幂等，已有记忆永不覆盖）→ workbench.html → **`check_package.py` 三层体检**（结构/内容/功能冒烟：scope 白名单非空、`run_sql.py --check-scope` 双向断言、make_link 找得到筛选器、eval 回归通过、memory status 正常）——❌ 未清零 exit 1，包保留供排查。体检凭证落盘 `<工作目录>/package-check.json`，`wizard_state.py confirm --step 8` 校验它（result=pass 且包存在），无凭证不能 confirm
+3. 交付包结构（build_package 产出，完整版/快速模式同构；模板：`references/templates/agent-SKILL.md`）：
    ```
    agent-<场景名>/
    ├── SKILL.md           # 触发词 + 场景路由 + 使用说明（含记忆系统纪律）
@@ -328,17 +344,13 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
        ├── scope.py           # 范围守卫白名单提取（复制自本 skill；run_sql/sample_cards/scope_audit 共享）
        ├── scope_audit.py     # 越界取数审计（复制自本 skill；扫 qa-log 的 --page/--ds 对照白名单）
-       └── feedback.py        # 问题反馈通道（复制自本 skill；用户遇 bug 经同意发 GitHub issue / SkillHub 评论）
+       ├── feedback.py        # 问题反馈通道（复制自本 skill；用户遇 bug 经同意发 GitHub issue / SkillHub 评论）
+       ├── check_package.py   # 交付包体检（复制自本 skill；结构/内容/功能冒烟三层自检，维护期可重跑）
+       └── fill_dim_values.py # 维度成员值回填（复制自本 skill；从采样画像机械补空 values）
    ```
-2. 交付前生成只读工作台：`python3 references/scripts/workbench.py <工作目录>`，把 workbench.html 放入产物包根目录；workbench.py、run_sql.py、sample_cards.py、make_link.py、memory.py、check_metrics.py、check_dims.py、eval_examples.py、attribute.py、scope.py、scope_audit.py、feedback.py 复制进产物包 references/（scope.py 是 run_sql/sample_cards/scope_audit 的硬依赖，漏复制会导致取数脚本报 ImportError）
-3. **初始化记忆区**（交付包的长期记忆，从空开始随使用沉淀）：
-   ```bash
-   python3 <交付包路径>/references/memory.py init <交付包路径>
-   ```
-   init 幂等——已存在的 memory 文件永不覆盖（用户资产区，重跑/升级都安全）
-4. SQL 直查能力标注**以第 7 步探活实测为准**：可用才在助手 SKILL.md 中标注"SQL 直查触发条件"；第 7 步探活失效的，明确标注"SQL 直查当前不可用"及恢复后的启用条件。两种情况都在 references 中保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
-5. **数据集直通模式的交付差异**：无 cards.json / card-data/ / make_link.py（没有看板也就没有直达链接）；数据集资产落 `references/datasets.json`（datasets-raw.json 的用户确认版，`_meta.builderVersion` 支撑升级通道，结构指纹体检不适用）；agent-SKILL.md 用模板中的**「数据探索型」变体**——自我介绍必须明示能力边界（能答"数据里有什么"，答不了"业务上该看什么"），取数流程以 run_sql + datasets.json 路由为主
-5. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
+4. SQL 直查能力标注**以第 7 步探活实测为准**：写进 manifest 的 `sqlAvailable`——可用才在助手 SKILL.md 中标注"SQL 直查触发条件"；探活失效的渲染为"SQL 直查当前不可用"及恢复条件。两种情况 references 都保留 sql-guide.md、run_sql.py 与 formulas.json（口径字典是 SQL 内联公式的来源）
+5. **数据集直通模式的交付差异**（build_package 自动处理）：无 cards.json / card-data/ / make_link.py（没有看板也就没有直达链接）；数据集资产落 `references/datasets.json`（datasets-raw.json 整体复制派生，`_meta.builderVersion` 支撑升级通道，结构指纹体检不适用）；agent-SKILL.md 由 manifest `mode: "dataset"` 渲染出模板中的**「数据探索型」变体**——自我介绍必须明示能力边界（能答"数据里有什么"，答不了"业务上该看什么"），取数流程以 run_sql + datasets.json 路由为主
+6. 告诉用户："您的分析助手已就绪。以后直接对它提问即可，比如：…（列 3 个第 5 步确认的典型问题）。另外交付包里有一张 workbench.html，双击就能随时查看助手掌握的资产、口径和分析思路；想修改口径或资产时说一声，我会打开可编辑的工作台。"
 
 **升级通道（用户说「升级脚本」时执行）**：只替换交付包 `references/` 下的脚本、重新生成 workbench.html、更新 cards.json `_meta.builderVersion`——**`memory/` 目录永不在覆盖范围**（画像/问答流水/纠错台账是用户资产）；`SKILL.md` 模板有结构性新增（如记忆系统节）时，把新增节追加进交付包 SKILL.md 而不是整体覆盖（保留搭建时的场景化内容）。
 
@@ -432,6 +444,7 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 
 - 内容文件从工作目录合并进交付包 `references/`：`cards-merged.json`→`cards.json`，及 I3/I4 已编辑的 metrics/dimensions/examples/learningResult/businessKnowledge/insightThinking
 - 脚本文件按升级通道替换；`workbench.py` 重新生成 workbench.html；`_meta.builderVersion` 更新
+- **合并完成后必跑交付总闸门**：`python3 references/scripts/check_package.py <交付包路径>`——❌ 清零才算交付更新完成；通过后在工作目录落盘 package-check.json（`confirm --step 8` 的凭证）
 - **memory/ 永不在覆盖范围**（红线）；交付包 SKILL.md 仅更新既有字段（数据源清单、典型问题），不整体覆盖
 - 交付话术：报本次增量（新增/删除/改版卡片数、新裁决口径数、回归通过率）
 
@@ -445,7 +458,7 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 6. **数据校验不过不往下走**：合计不闭环、单位存疑的卡片必须修复或标记禁用
 7. **SQL 直查必须走只读执行器**：一律用 `run_sql.py`，禁止直接调用 `guancli ds execute-sql`（脚本层强制只读单条 SELECT，prompt 约束之外加一道硬保险）
 8. **失败回退**：测试不通过时明确指出回哪一步修什么，不要从头重来
-9. **每步落盘 + 状态机**：每步产物立即写入工作目录，并用 wizard_state.py 同步 wizard-state.json（断点续建的唯一依据）；会话中断后按 preflight 断点检测的续建摘要继续，禁止靠猜进度
+9. **每步落盘 + 状态机**：每步产物立即写入工作目录，并用 wizard_state.py 同步 wizard-state.json（断点续建的唯一依据）；会话中断后按 preflight 断点检测的续建摘要继续，禁止靠猜进度。confirm 第 7 步需 examples.json 验收回填、第 8 步需 package-check.json 体检通过——状态机验产物，不看口头申报
 10. **SQL 直查公式纪律（实测踩坑）**：
     - 禁止 `AVG(明细比率)`——换维度后结果错得不多、最难察觉（实测 105% vs 103.6%）；比率型指标必须内联公式"分子分母分别求和再相除"
     - 禁止按名引用数据集计算字段（SQL 引擎只认物理列，直接报 UNRESOLVED_COLUMN）——必须内联展开公式原文
@@ -455,3 +468,4 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 13. **增量学习三条命门**（incr 模式）：新冲突逐条裁决、禁止 AI 二选一；双闸门 ❌ 清零才放行；验收实测（旧示例全量回归 + 新能力 ≥1 题）——第 4、7 步命门在 incr 下同样禁止 skipped；memory/ 永不在覆盖范围
 14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId）；禁止裸调 `guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
 15. **问题反馈三条**：未经用户明确同意不发送反馈；反馈正文禁止含业务数据（只有版本/进度/平台与用户亲口描述的现象）；发送失败按脚本引导处理、不静默跳过（通道与话术见「问题反馈通道」节）
+16. **交付三条**（v4.7 工程化，实机 review 教训）：交付包必须经 `build_package.py` 机械组装 + `check_package.py` 体检通过——禁止手工拼装、禁止裁剪 cards.json（裁剪 = run_sql/make_link/sample_cards 连锁瘫痪）；交付助手 SKILL.md 必须 `render_agent_skill.py` 模板渲染，禁止自由撰写（自由撰写 = 缺节 + CLI 凭记忆写错）；examples.json 验收回填必须走 `eval_examples.py --record/--confirm`——过不了取数源校验的数字进不了基准

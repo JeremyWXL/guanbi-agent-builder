@@ -1,5 +1,23 @@
 # 变更日志
 
+## v4.7.0（2026-09-28）交付工程化：机械组装 + 交付总闸门——低配模型也搭不出"瘫痪包"
+
+解决的问题：用低配模型（DeepSeek v4 flash 级）实机搭建 agent-yecai-finance 后人工 review 发现——内容质量合格，但工程完整性有一处关键缺陷连锁瘫痪三个功能：cards.json 被模型"精简"重构成「名字→摘要」字典（cdId/measures/filtered/dsUsage/filterDetails/筛选器交互字段全丢），导致 run_sql 白名单 dsIds 空集全拦截（SQL 直查 100% 不可用）、make_link 报"可用筛选器：（无）"、sample_cards --scope 整批拒绝；此外验收实测未回填（examples.json 全 humanConfirmed=false）、交付 SKILL.md 自由撰写缺「执行流程」「维护」节且 memory.py 命令凭记忆写错（照做必报"用法错误"）、17 个维度 values 全空（采样画像里枚举其实齐全，手工转写丢失）、「达成率」裁决用[预算数]而「收入达成率」仍用[35预算数]的同族口径矛盾。共性根因：**链条中仍靠 prompt 约束模型自觉的环节（手工转写/组装/回填），正是低配模型最容易偷工减料的地方**。本版本把剩余软约束全部下沉为脚本硬控制——LLM 只产出需要判断力的语义内容，一切结构性产物要么脚本生成、要么脚本验收。
+
+- **check_package.py**（新脚本，交付总闸门）：三层校验——L1 结构（文件齐全性/脚本漂移对比当前 builder，旧版包降级 ⚠️）/ L2 内容（cards.json 富结构 schema：字符串条目与「名字→摘要」字典形态均 ❌ 并报出后果；双闸门子进程复跑；examples 每场景 ≥1 题、全 humanConfirmed、expect 非空、fetch 文件存在；SKILL.md 必需章节与占位符残留；md 档案长度与占位符）/ L3 功能冒烟（scope 白名单 dsIds/cdIds/pgIds 非空；`run_sql.py --check-scope` 双向断言——白名单内放行 exit 0、白名单外拦截 exit 3；make_link --list 找得到筛选器；eval_examples 回归无数据层失败；memory status 正常）。模式自动识别（cards.json 看板 / datasets.json 直通）；退出码 0/1/2，--json 输出。**实机验证：对 review 出的瘫痪包跑一遍，12 个 ❌ 精确复现人工 review 结论**
+- **build_package.py**（新脚本，第 8 步唯一入口）：前置校验（产物齐全 + examples 全 humanConfirmed——验收未回填禁止交付）→ fill_dim_values 机械回填 → 双闸门 → 组装（**cards.json 由 cards-raw.json 整体复制派生**，脚本/卡数据/内容文件按清单复制，SKILL.md 由 render_agent_skill 渲染，memory init 幂等）→ workbench.html → check_package 总闸门 → 落盘 package-check.json。--force 重建只换 references/ 与 SKILL.md，memory/ 永不覆盖。模型无法破坏它从不经手的东西（correct by construction）
+- **render_agent_skill.py**（新脚本）+ agent-manifest.json：SKILL.md 从"LLM 自由撰写"改为"模板 + manifest 机械渲染"——模型只提供判断性槽位（slug/scenario/keywords/sqlAvailable/lite/buildNote/extraRedLines），看板清单与典型问题从学习产物自动带入；直通模式保留数据探索型变体节、sqlAvailable=false 渲染"SQL 直查当前不可用"；渲染后占位符清零/必需章节/模式一致性三重校验。**test_template_cli.py**（新测试）：模板引用的脚本必须存在、模板命令行的每个 --flag 必须在脚本源码中存在（文档写出不存在的参数即失败）、关键命令必填参数齐全（memory.py log 缺 --question 这类"照做必报错"的漂移被拦）、模板占位符不超出已知集合——CLI 用法单一事实源是脚本源码
+- **eval_examples.py --suggest/--record/--confirm**（验收回填机械化）：--suggest 打印取数源显著数值（Top 12，千分位格式化）；--record 把期望值**先对取数源校验才落盘**（千分位/%/万/亿 多解释匹配，存源中真实值；找不到即 exit 2 拒绝——幻觉数字进不了回归基准），关键词同样校验，回填自动重置 humanConfirmed；--confirm/--confirm-all 置 humanConfirmed（expect 为空的题拒绝确认）
+- **wizard_state.py confirm 产物校验**：confirm 第 7 步需 examples.json 全场景 humanConfirmed 且 expect 非空，confirm 第 8 步需 package-check.json result=pass 且包存在（违反 exit 3）——状态机从"记状态"升级为"验产物"，质量命门不看口头申报
+- **fill_dim_values.py**（新脚本）：从 card-data/_sample_index.json 列画像（+ datasets-raw 内嵌 profile）把枚举值机械补进维度档案空 values——只补空值维度（已确认值不动）、列名精确匹配才采信、自动 .bak 备份；工作目录与交付包 references/ 同构可用。**check_dims.py 升级**：高频维度（被筛选器引用或 ≥3 个指标使用）values 为空且画像有枚举可补 → ⚠️ 升 ❌（有机械来源还留空 = 转写丢失）；画像无枚举的高频维度保持 ⚠️（数据现实，不阻断）
+- **check_metrics.py 同族分母启发式**：名称互为包含的指标（「达成率」⊂「收入达成率」）公式引用不同预算字段时 ⚠️——裁决了 A 漏了同族的 B 是实机出现过的口径矛盾；启发式只 ⚠️ 不 ❌（分工合法的亮给用户写明即可）
+- **run_sql.py --check-scope**：白名单 dry 校验（只验不查，供 check_package 冒烟与体检复用）；越界 exit 3 且不调 guancli，scope 缺失降级 exit 0
+- **顺手修复**：memory.py read_corrections 容忍裸数组形态的 corrections.json（check_package 冒烟实抓的崩溃——冒烟层价值的首个自证）；eval_examples 显著数值展示不再科学计数法
+- **builder SKILL.md 接线**：第 4 步 dimensions 闸门前加 fill_dim_values；第 7 步验收回填改写为 --suggest/--record/--confirm；第 8 步改写为 build_package 唯一入口 + 交付树补 check_package.py/fill_dim_values.py；I5 增量交付加 check_package 闸门；红线 9 补状态机验产物、新增红线 16（交付三条）
+- **版本一致性**：4.6.1 → 4.7.0（SKILL.md frontmatter / kimi.plugin.json / wizard_state / workbench / parse_page / learn_dataset 六处）
+- **测试**：新建 test_check_package.py 14 例（合法看板/直通包通过 + 字典形态/字符串形态/缺 dsUsage/验收未回填/expect 空/broken 回归/缺节/占位符/缺 memory/缺脚本逐项拦截）+ test_build_package.py 6 例（端到端组装 cards.json 字节一致零裁剪/未验收拒交付/闸门拦截/--force 语义/重建保 memory/缺 manifest）+ test_render_agent_skill.py 7 例 + test_template_cli.py 4 例 + test_fill_dim_values.py 5 例 + test_check_metrics.py 4 例（新文件）+ test_check_dims.py 补 4 例（高频维度升降级）+ test_eval_examples.py 补 9 例（record/confirm/suggest）+ test_wizard_state.py 补 6 例（confirm 7/8 产物门）+ test_run_sql.py 补 3 例（--check-scope）；单测 218 → 281 例全绿
+- **已知边界**：build_package 覆盖新建交付（含 lite/full/直通），incr 增量交付仍走 merge_cards 合并流但 I5 已接 check_package 闸门；同族分母启发式对"3.5/3.75 预算版本并存"的档案会报 ⚠️（属合法分工，确认点写明即可）；check_package 的 eval 冒烟对 sql 型 fetch 依赖环境 guancli 可用（不可用记 fail 提示，卡片型不受影响）
+
 ## v4.6.1（2026-09-28）workbench 诊断强化：cards.json 结构自检 + 内容摘要（issue #2 落地）
 
 - **cards.json 结构自检**（workbench.py `cards_struct_warnings()`）：生成 / `--check` / `--serve` 启动三处统一经 `_print_diagnostics()` 输出——缺 `_meta`（看板名无法跳转 BI、结构指纹/体检失效）或缺页面分组结构（资产表将渲染为空）时给明确 warning，不再静默产出"空资产"工作台；兼容旧版 pages dict/list schema，非 dict 档案也有提示

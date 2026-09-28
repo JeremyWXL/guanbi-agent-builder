@@ -15,7 +15,9 @@
   取值: 同一成员值出现在多个维度 → ⚠️ 列出"值 → 维度"映射（交付助手命中时必须选项式消歧）
         同维度内两个值归一化后相同或互为包含 → ⚠️ 建议收编进 valueAliases（"华东区"→"华东"）
   覆盖: metrics.json 的 dims 未在 dimensions.json 收编 → ⚠️；档案维度未在任何卡片/筛选器出现 → ⚠️；
-        维度未收录成员值（values 为空）→ ⚠️（取值匹配将无候选可给）
+        维度未收录成员值（values 为空）→ ⚠️（取值匹配将无候选可给）；
+        高频维度（被筛选器引用或 ≥3 个指标使用）values 为空且采样画像有枚举可补 → ❌
+        （有机械来源还留空 = 转写丢失，运行 fill_dim_values.py 回填即可清零）
 参照: metrics.json 缺失时跳过跨档案撞车与 dims 覆盖校验；cards-raw.json 缺失时跳过卡片覆盖校验；
       card-data/_sample_index.json 缺失时种子不带枚举值
 """
@@ -23,6 +25,52 @@ import json, os, sys, unicodedata
 
 VALUE_CAP = 60        # 单维度种子最多收录成员值个数
 SIM_MIN_LEN = 2       # 参与"互为包含"相似判定的较短值最小长度（防单字误报）
+HOT_METRIC_USE = 3    # 被 ≥N 个指标引用的维度算高频维度（空 values 升级 ❌ 的门槛之一）
+
+
+def traffic_dims(workdir):
+    """高频维度：被页面筛选器引用（filters/filterDetails 字段）或被 ≥HOT_METRIC_USE 个指标使用。
+    这些维度是用户最常切片/筛选的——values 为空对取值消歧的伤害最大。"""
+    hot = set()
+    raw = (load(workdir, "cards-merged.json") or load(workdir, "cards-raw.json")
+           or load(workdir, "cards.json"))
+    for k, v in (raw or {}).items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        for c in v.get("cards") or []:
+            if not isinstance(c, dict):
+                continue
+            for f in c.get("filters") or []:
+                if f:
+                    hot.add(f)
+            for fd in c.get("filterDetails") or []:
+                if isinstance(fd, dict) and fd.get("field"):
+                    hot.add(fd["field"])
+    use = {}
+    mdoc = load(workdir, "metrics.json")
+    for m in (mdoc or {}).get("metrics") or []:
+        for dd in m.get("dims") or []:
+            use[dd] = use.get(dd, 0) + 1
+    hot.update(d for d, n in use.items() if n >= HOT_METRIC_USE)
+    return hot
+
+
+def fillable_cols(workdir):
+    """采样画像里有枚举值的列名集合——这些维度的空 values 有机械回填来源（fill_dim_values.py）"""
+    cols = set()
+    idx = load(workdir, os.path.join("card-data", "_sample_index.json")) or {}
+    for entry in idx.values():
+        for col, p in ((entry or {}).get("profile") or {}).items():
+            if isinstance(p, dict) and p.get("enum"):
+                cols.add(col)
+    draw = load(workdir, "datasets-raw.json") or {}
+    for k, v in draw.items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        for col, p in ((v.get("sample") or {}).get("profile") or {}).items():
+            if isinstance(p, dict) and p.get("enum"):
+                cols.add(col)
+    return cols
 
 
 def norm(s):
@@ -176,6 +224,8 @@ def main():
         sys.exit("dimensions.json 结构错误：顶层 dimensions 必须是数组")
 
     # ---- 结构校验 ----
+    hot_dims = traffic_dims(workdir)
+    fillable = fillable_cols(workdir)
     seen = {}
     for i, d in enumerate(dims):
         tag = f"dimensions[{i}]「{(d or {}).get('name', '?')}」"
@@ -200,7 +250,12 @@ def main():
                 elif values and target not in values:
                     errors.append(f"「{name}」的值别名「{alias}」指向「{target}」，但 values 未收录该值——先补进 values")
         if not d.get("values"):
-            warns.append(f"「{name}」未收录成员值（values 为空）——取值匹配将无候选可给，建议从采样枚举或取数结果补充")
+            if name in hot_dims and (name in fillable or (d.get("field") or "") in fillable):
+                errors.append(f"「{name}」是高频维度（筛选器引用或 ≥{HOT_METRIC_USE} 个指标使用），"
+                              "values 为空但采样画像有枚举可补——运行 fill_dim_values.py 机械回填"
+                              "（禁止手工誊写；有机械来源还留空 = 转写丢失）")
+            else:
+                warns.append(f"「{name}」未收录成员值（values 为空）——取值匹配将无候选可给，建议从采样枚举或取数结果补充")
 
     # ---- 同义词撞车（维度之间 + 与指标档案）----
     owners = {name: name for name in seen}  # 词 → 占用维度

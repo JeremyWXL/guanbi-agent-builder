@@ -46,6 +46,9 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-20 | 增量合并 | `merge_cards.py <工作目录> --package <交付包> --pages <pageId...>` | 新页加入 / 未变页跳过（cardHash 比对）/ 变更页 diff 三分类；输出 cards-merged.json + incr-report.json（resampleCdIds / pruneSampleKeys / affectedExamples / affectedMetrics）；交付包原 cards.json 有 .bak 备份；新页 0 卡片 exit 2 |
 | L0-21 | 范围白名单 | `import scope; scope.load_scope()` | 看板模式提取 pgIds/dsIds/cdIds/titles；数据集直通模式提取 dsIds；旧档案无 _meta.pages 降级；全缺失返回 None |
 | L0-22 | SQL 范围守卫 | `run_sql.py <越界dsId> 'SELECT 1'` | 越界 dsId exit 3 且**不调 guancli**；白名单内正常透传；无 scope 文件时跳过校验不阻断 |
+| L0-23 | 交付组装与体检 | `build_package.py <工作目录> --package <交付包>` + `check_package.py <交付包>` | 端到端组装后 cards.json 与 cards-raw.json 字节一致（零裁剪）；examples 未全 humanConfirmed 拒交付（exit 2）；check_package 三层（结构/内容/功能冒烟）对瘫痪包精确报 ❌；--force 重建不动 memory/ |
+| L0-24 | 验收回填 | `eval_examples.py <目录> --suggest/--record/--confirm` | --record 的期望值必须在取数源容差内命中（幻觉数字 exit 2 拒填）；回填自动重置 humanConfirmed；expect 空的题 --confirm 拒绝 |
+| L0-25 | 交付状态机产物门 | `wizard_state.py confirm --step 7/8` | 无 examples.json 验收回填 confirm 7 exit 3；无 package-check.json（或 result=fail）confirm 8 exit 3；凭证齐全放行 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 

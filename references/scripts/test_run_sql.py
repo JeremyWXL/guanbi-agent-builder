@@ -59,6 +59,36 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(code, 0)
         m_run.assert_called_once()
 
+    def run_check_scope(self, ds_id, scope_obj=None):
+        argv = sys.argv
+        sys.argv = ["run_sql.py", "--check-scope", ds_id]
+        with mock.patch.object(run_sql.subprocess, "run") as m_run, \
+             mock.patch.object(run_sql.scope_mod, "load_scope", return_value=scope_obj):
+            try:
+                run_sql.main()
+            except SystemExit as e:
+                sys.argv = argv
+                return e.code, m_run
+            sys.argv = argv
+            return 0, m_run
+
+    def test_check_scope_in_scope_exit0_no_guancli(self):
+        scope_obj = scope.load_scope(candidates=[os.path.join(self.dir, "cards.json")])
+        code, m_run = self.run_check_scope("ds1", scope_obj=scope_obj)
+        self.assertEqual(code, 0)
+        m_run.assert_not_called()  # dry 模式不调 guancli
+
+    def test_check_scope_out_of_scope_exit3(self):
+        scope_obj = scope.load_scope(candidates=[os.path.join(self.dir, "cards.json")])
+        code, m_run = self.run_check_scope("ds_evil", scope_obj=scope_obj)
+        self.assertEqual(code, 3)
+        m_run.assert_not_called()
+
+    def test_check_scope_missing_scope_degrades_exit0(self):
+        code, m_run = self.run_check_scope("ds_whatever", scope_obj=None)
+        self.assertEqual(code, 0)
+        m_run.assert_not_called()
+
 
 class ReadOnlyValidationTest(unittest.TestCase):
     def test_select_ok(self):

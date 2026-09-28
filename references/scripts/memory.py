@@ -140,7 +140,10 @@ def read_corrections(agent_dir):
         return []
     try:
         with open(p["corrections"], encoding="utf-8") as f:
-            return (json.load(f).get("corrections") or [])
+            doc = json.load(f)
+        if isinstance(doc, list):  # 容忍裸数组形态（手改文件常见）
+            return doc
+        return (doc.get("corrections") or []) if isinstance(doc, dict) else []
     except (json.JSONDecodeError, OSError):
         return []
 

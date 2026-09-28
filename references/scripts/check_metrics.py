@@ -10,11 +10,14 @@
           safety 分类与 formulas.json 不一致时 ⚠️
   覆盖: formulas.json 的共识指标未收编（既不在 metrics 也不在 rejected）时 ⚠️ 列出，防漏确认
   维度: dims 未在任何卡片出现时 ⚠️（SQL 独有维度可忽略）
+  同族分母: 名称互为包含的指标族（如「达成率」⊂「收入达成率」）公式引用的预算字段不一致时 ⚠️
+          （启发式——裁决了 A 却漏了同族的 B 是实测出现过的口径矛盾；若是分工请在台账写明）
 参照: formulas.json 缺失时只做结构+同义词校验；cards-raw.json 缺失时跳过维度校验
 """
 import json, re, sys, os
 
 SAFETY_KNOWN = {"FREE", "DISTINCT", "AVG", "NONADDITIVE", "ROW_LOGIC", "TIME_MACRO"}
+BUDGET_FIELD_RE = re.compile(r"\[([^\]]*预算[^\]]*)\]")
 
 
 def normalize(formula):
@@ -114,6 +117,34 @@ def main():
                          f"{'、'.join(uncovered[:10])}{'…' if len(uncovered) > 10 else ''}")
     else:
         warns.append("formulas.json 缺失：跳过冲突裁决/一致性/覆盖校验（第 2 步先跑 check_formulas.py）")
+
+    # ---- 指标族分母一致性（启发式 ⚠️）----
+    # 名称互为包含的指标（如「达成率」⊂「收入达成率」）若引用不同的预算字段，
+    # 多半是裁决了一个漏了同族的另一个——实机 review 案例：达成率裁决用[预算数]，
+    # 收入达成率仍用[35预算数]，agent 会给出自相矛盾的达成率
+    bf = {}
+    for m in metrics:
+        name = (m.get("name") or "").strip()
+        f = (m.get("formula") or "").strip()
+        if name and f:
+            fields = set(BUDGET_FIELD_RE.findall(f))
+            if fields:
+                bf[name] = fields
+    by_len = sorted(bf, key=len)
+    family_hits = []
+    for i, short in enumerate(by_len):
+        ns = short.replace(" ", "")
+        if len(ns) < 2:
+            continue
+        for long in by_len[i + 1:]:
+            if ns in long.replace(" ", "") and bf[short] != bf[long]:
+                family_hits.append((short, long))
+    for short, long in family_hits[:8]:
+        warns.append(f"疑似同族指标分母不一致：「{long}」用 [{'、'.join(sorted(bf[long]))}]，"
+                     f"「{short}」用 [{'、'.join(sorted(bf[short]))}]——"
+                     "若是分工请在 businessKnowledge 写明，若是遗漏请统一口径")
+    if len(family_hits) > 8:
+        warns.append(f"…另有 {len(family_hits) - 8} 组同族指标分母不一致")
 
     # ---- 维度校验 ----
     raw = load(workdir, "cards-raw.json")

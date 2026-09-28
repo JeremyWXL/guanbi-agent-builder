@@ -119,6 +119,44 @@ class TestValidate(unittest.TestCase):
         self.assertIsNone(code, out)
         self.assertIn("未在 dimensions.json 收编", out)
 
+    def test_hot_dim_empty_values_with_fillable_source_is_error(self):
+        """高频维度（≥3 指标使用）+ 画像有枚举可补 + values 空 → ❌（转写丢失，机械回填即可清零）"""
+        write_json(self.dir, "metrics.json", {"metrics": [
+            {"name": f"指标{i}", "formula": "sum([x])", "dims": ["渠道"]} for i in range(3)]})
+        write_json(self.dir, "card-data/_sample_index.json",
+                   {"看板A__c1": {"profile": {"渠道": {"enum": ["淘系", "京东"]}}}})
+        code, out = self.run_main({"dimensions": [dim("渠道", values=[])]})
+        self.assertEqual(code, 1)
+        self.assertIn("fill_dim_values.py", out)
+
+    def test_hot_dim_empty_values_without_source_stays_warning(self):
+        """高频维度但画像无枚举 → 仍是 ⚠️（数据现实，机械回填无解，确认点告知即可）"""
+        write_json(self.dir, "metrics.json", {"metrics": [
+            {"name": f"指标{i}", "formula": "sum([x])", "dims": ["渠道"]} for i in range(3)]})
+        code, out = self.run_main({"dimensions": [dim("渠道", values=[])]})
+        self.assertIsNone(code, out)
+        self.assertIn("未收录成员值", out)
+
+    def test_cold_dim_empty_values_with_source_stays_warning(self):
+        """低频维度即使画像可补也只是 ⚠️（不阻断，避免闸门过敏）"""
+        write_json(self.dir, "card-data/_sample_index.json",
+                   {"看板A__c1": {"profile": {"渠道": {"enum": ["淘系"]}}}})
+        code, out = self.run_main({"dimensions": [dim("渠道", values=[])]})
+        self.assertIsNone(code, out)
+        self.assertIn("未收录成员值", out)
+
+    def test_selector_field_dim_counts_as_hot(self):
+        """被页面筛选器引用的维度 = 高频维度"""
+        write_json(self.dir, "cards-raw.json", {
+            "_meta": {},
+            "看板A": {"cards": [{"name": "sel", "cdType": "SELECTOR", "dims": [],
+                                 "filterDetails": [{"field": "月份"}]}]}})
+        write_json(self.dir, "card-data/_sample_index.json",
+                   {"看板A__c1": {"profile": {"月份": {"enum": ["2026-06"]}}}})
+        code, out = self.run_main({"dimensions": [dim("月份", values=[])]})
+        self.assertEqual(code, 1)
+        self.assertIn("高频维度", out)
+
 
 class TestSeed(unittest.TestCase):
     def setUp(self):

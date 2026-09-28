@@ -6,6 +6,14 @@
   python3 eval_examples.py <工作目录>                  # 全量回归
   python3 eval_examples.py <工作目录> --scenario 问数   # 只跑某场景
   python3 eval_examples.py <工作目录> --json           # 结构化 JSON 输出
+  python3 eval_examples.py <工作目录> --suggest [题目ID]        # 打印取数源里的显著数值（回填候选）
+  python3 eval_examples.py <工作目录> --record <题目ID> --values "41990, 3.64" [--keywords "净收入,实际"]
+                                                          # 第 7 步验收回填：数值必须能在取数源中找到
+                                                          # （容差内匹配，找不到即拒绝——幻觉数字进不了基准），
+                                                          # 回填后该题 humanConfirmed 重置为 false
+  python3 eval_examples.py <工作目录> --confirm <题目ID> | --confirm-all
+                                                          # 用户验收通过后置 humanConfirmed=true
+                                                          #（wizard_state confirm --step 7 的硬性依据）
 判定逻辑:
   1. 数据层自动核验（脚本可判）:
      - fetch.type=card: 读 card-data 采样文件，检查 expect.values 每个数值
@@ -149,8 +157,240 @@ MISSING_HINT = (
 )
 
 
+# ---------- 第 7 步验收回填工具（--suggest / --record / --confirm） ----------
+
+def load_examples(workdir):
+    """定位并解析 examples.json（工作目录根优先，回退交付包 references/）。返回 (路径, base_dir, doc)"""
+    ex_path = os.path.join(workdir, 'examples.json')
+    if not os.path.isfile(ex_path):
+        alt = os.path.join(workdir, 'references', 'examples.json')
+        if os.path.isfile(alt):
+            ex_path = alt
+    if not os.path.isfile(ex_path):
+        print(f"❌ {MISSING_HINT}", file=sys.stderr)
+        sys.exit(2)
+    try:
+        with open(ex_path, encoding='utf-8') as f:
+            doc = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        print(f"❌ examples.json 格式错误，无法解析: {e}", file=sys.stderr)
+        sys.exit(2)
+    if not isinstance(doc.get('scenarios'), dict):
+        print("❌ examples.json 缺少 scenarios 对象，格式错误", file=sys.stderr)
+        sys.exit(2)
+    return ex_path, os.path.dirname(ex_path), doc
+
+
+def find_item(doc, qid):
+    """按 id 找题目。返回 (item, 场景名)；找不到 exit 2 并列出可用 id"""
+    for sname, items in doc['scenarios'].items():
+        for it in items or []:
+            if isinstance(it, dict) and it.get('id') == qid:
+                return it, sname
+    avail = [it.get('id') for items in doc['scenarios'].values()
+             for it in (items or []) if isinstance(it, dict)]
+    print(f"❌ 找不到题目「{qid}」；已有题目: {'、'.join(avail) or '（空）'}", file=sys.stderr)
+    sys.exit(2)
+
+
+def source_text_and_candidates(workdir, base_dir, ex, script_dir):
+    """取数源的文本与数值候选（--record 的防幻觉校验基准）。返回 (ok, text, candidates, err)"""
+    fetch = ex.get('fetch') or {}
+    if fetch.get('type', 'card') == 'sql':
+        sql, ds_id = fetch.get('sql'), fetch.get('dsId')
+        if not sql or not ds_id:
+            return False, "", [], "fetch.sql / fetch.dsId 缺失"
+        run_sql = find_run_sql(workdir, script_dir)
+        if not run_sql:
+            return False, "", [], "run_sql.py 不可用，无法校验 SQL 取数源"
+        try:
+            r = subprocess.run([sys.executable, run_sql, str(ds_id), sql, '-f', 'json'],
+                               capture_output=True, text=True, timeout=SQL_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return False, "", [], f"run_sql.py 执行失败（{e}）"
+        if r.returncode != 0:
+            return False, "", [], f"run_sql.py 返回非 0: {(r.stderr or r.stdout)[:200]}"
+        text = r.stdout
+        candidates = []
+        for tok in NUM_TOKEN.findall(text):
+            candidates.extend(num_candidates(tok))
+        return True, text, candidates, ""
+    rel = fetch.get('file')
+    if not rel:
+        return False, "", [], "fetch.file 缺失"
+    path = os.path.join(base_dir, rel)
+    if not os.path.isfile(path):
+        return False, "", [], f"采样文件缺失: {rel}"
+    try:
+        with open(path, encoding='utf-8') as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        return False, "", [], f"采样文件无法解析: {rel}（{e}）"
+    text = json.dumps(payload, ensure_ascii=False)
+    candidates = []
+    collect_candidates(payload, candidates)
+    return True, text, candidates, ""
+
+
+def match_source_value(tok, candidates, tol):
+    """输入数值文本 → 取数源中的真实值（千分位/%/万/亿 任一解释在容差内命中即返回源值；未命中 None）"""
+    for ic in num_candidates(tok):
+        for sc in candidates:
+            if abs(sc - ic) <= tol * max(abs(ic), 1e-9):
+                return sc
+    return None
+
+
+def save_examples(ex_path, doc):
+    from datetime import date
+    doc['updatedAt'] = date.today().isoformat()
+    with open(ex_path, 'w', encoding='utf-8') as f:
+        json.dump(doc, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+
+
+def fmt_num(c):
+    """显著数值展示：整数带千分位，小数保留有效位（不用科学计数法）"""
+    if c == int(c) and abs(c) < 1e15:
+        return f"{int(c):,}"
+    return f"{c:,.6g}"
+
+
+def cmd_suggest(workdir, qid, script_dir):
+    """打印取数源里的显著数值（按绝对值降序 Top 12），辅助挑选 --record 的期望值"""
+    _, base_dir, doc = load_examples(workdir)
+    items = []
+    for sname, rows in doc['scenarios'].items():
+        for it in rows or []:
+            if isinstance(it, dict) and (qid is None or it.get('id') == qid):
+                items.append((sname, it))
+    if qid and not items:
+        find_item(doc, qid)  # 走到这必然 exit 2
+    for sname, it in items:
+        ok, _, candidates, err = source_text_and_candidates(workdir, base_dir, it, script_dir)
+        print(f"【{sname}】{it.get('id')} 「{it.get('question', '')}」")
+        if not ok:
+            print(f"   ⚠️ 取数源不可用: {err}")
+            continue
+        uniq = sorted({round(c, 6) for c in candidates}, key=abs, reverse=True)[:12]
+        print(f"   显著数值: {'、'.join(fmt_num(c) for c in uniq) or '（无）'}")
+        print(f"   回填命令: --record {it.get('id')} --values \"<从上面挑验收过的数值>\" [--keywords \"关键词1,关键词2\"]")
+
+
+def cmd_record(workdir, qid, values_str, keywords_str, tol_override, script_dir):
+    """验收回填：期望值必须在取数源中真实存在（容差内），否则拒绝——幻觉数字进不了回归基准"""
+    ex_path, base_dir, doc = load_examples(workdir)
+    item, sname = find_item(doc, qid)
+    ok, text, candidates, err = source_text_and_candidates(workdir, base_dir, item, script_dir)
+    if not ok:
+        print(f"❌ 无法校验取数源: {err}", file=sys.stderr)
+        sys.exit(2)
+    tol = tol_override if tol_override is not None \
+        else (item.get('expect') or {}).get('tolerance', DEFAULT_TOLERANCE)
+    tokens = [t.strip() for t in NUM_TOKEN.findall(values_str or "") if t.strip()]
+    if not tokens:
+        print(f"❌ --values 未解析到数值: {values_str!r}", file=sys.stderr)
+        sys.exit(2)
+    matched, missed = [], []
+    for tok in tokens:
+        sc = match_source_value(tok, candidates, tol)
+        if sc is None:
+            missed.append(tok)
+        elif sc not in matched:
+            matched.append(sc)
+    if missed:
+        sample = '、'.join(fmt_num(c) for c in sorted({round(c, 6) for c in candidates},
+                                                     key=abs, reverse=True)[:10]) or '（无）'
+        print(f"❌ 以下数值在取数源中找不到（容差 {tol:.0%}），拒绝回填: {'、'.join(missed)}\n"
+              f"   取数源中的显著数值: {sample}\n"
+              f"   ——期望值必须来自真实取数结果，禁止把记忆/推算的数字写进验收基准",
+              file=sys.stderr)
+        sys.exit(2)
+    keywords = None
+    if keywords_str is not None:
+        keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
+        absent = [k for k in keywords if k not in text]
+        if absent:
+            print(f"❌ 关键词未在取数源文本中出现，拒绝回填: {'、'.join(absent)}", file=sys.stderr)
+            sys.exit(2)
+    expect = item.setdefault('expect', {})
+    expect['values'] = matched
+    if tol_override is not None:
+        expect['tolerance'] = tol_override
+    if keywords is not None:
+        expect['keywords'] = keywords
+    was = bool(item.get('humanConfirmed'))
+    item['humanConfirmed'] = False  # 新期望需重新验收
+    save_examples(ex_path, doc)
+    print(f"✅ 已回填【{sname}】{qid}: values={matched}"
+          + (f"，keywords={keywords}" if keywords is not None else ""))
+    if was:
+        print("   该题原已验收，期望值变更后 humanConfirmed 已重置——请用户重新验收")
+    print(f"   用户验收通过后执行: --confirm {qid}")
+
+
+def cmd_confirm(workdir, qid):
+    """用户验收通过后置 humanConfirmed=true；expect 为空的题拒绝确认（无数据断言的基准形同虚设）"""
+    ex_path, _, doc = load_examples(workdir)
+    targets = []
+    if qid is None:  # --confirm-all
+        for rows in doc['scenarios'].values():
+            targets.extend(it for it in (rows or []) if isinstance(it, dict))
+    else:
+        targets.append(find_item(doc, qid)[0])
+    for it in targets:
+        expect = it.get('expect') or {}
+        if not expect.get('values') and not expect.get('keywords'):
+            print(f"❌ {it.get('id', '?')} 的 expect.values/keywords 均空——先 --record 回填数据层断言，再确认",
+                  file=sys.stderr)
+            sys.exit(2)
+    for it in targets:
+        it['humanConfirmed'] = True
+    save_examples(ex_path, doc)
+    print(f"✅ 已确认 {len(targets)} 题（humanConfirmed=true）——验收基准可用于交付与回归")
+
+
 def main():
     args = sys.argv[1:]
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # ---- 验收回填模式（--suggest / --record / --confirm）----
+    if any(f in args for f in ('--record', '--confirm', '--confirm-all', '--suggest')):
+        if not args or args[0].startswith('--'):
+            sys.exit("用法: python3 eval_examples.py <工作目录> --record <题目ID> --values \"...\" "
+                     "[--keywords \"...\"] [--tolerance 0.02] | --confirm <题目ID> | --confirm-all | --suggest [题目ID]")
+        workdir = os.path.abspath(args[0])
+        rest = args[1:]
+        def opt_value(flag):
+            if flag in rest:
+                i = rest.index(flag)
+                if i + 1 < len(rest):
+                    return rest[i + 1]
+                sys.exit(f"{flag} 需要跟一个值")
+            return None
+        if '--suggest' in rest:
+            i = rest.index('--suggest')
+            qid = rest[i + 1] if i + 1 < len(rest) and not rest[i + 1].startswith('--') else None
+            cmd_suggest(workdir, qid, script_dir)
+            return
+        if '--confirm-all' in rest:
+            cmd_confirm(workdir, None)
+            return
+        if '--confirm' in rest:
+            cmd_confirm(workdir, opt_value('--confirm'))
+            return
+        tol = None
+        tol_str = opt_value('--tolerance')
+        if tol_str is not None:
+            try:
+                tol = float(tol_str)
+            except ValueError:
+                sys.exit(f"--tolerance 必须是数字: {tol_str!r}")
+        cmd_record(workdir, opt_value('--record'), opt_value('--values'),
+                   opt_value('--keywords'), tol, script_dir)
+        return
+
+    # ---- 回归评测模式 ----
     as_json = '--json' in args
     if as_json:
         args.remove('--json')

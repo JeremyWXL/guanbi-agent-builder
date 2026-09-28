@@ -166,5 +166,56 @@ class WizardStateIncrTest(unittest.TestCase):
         self.assertIn("增量学习", r.stdout)
 
 
+class WizardStateConfirmGateTest(unittest.TestCase):
+    """confirm 第 7/8 步的产物校验：质量命门看产物不看口头申报"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        run("init", self.dir)
+
+    def write_examples(self, confirmed=True):
+        doc = {"scenarios": {"问数": [{
+            "id": "Q1", "question": "q",
+            "fetch": {"type": "card", "file": "card-data/x.json"},
+            "expect": {"values": [1]}, "humanConfirmed": confirmed}]}}
+        with open(os.path.join(self.dir, "examples.json"), "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False)
+
+    def test_confirm_step7_requires_examples(self):
+        r = run("confirm", self.dir, "--step", "7")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("examples.json", r.stderr)
+
+    def test_confirm_step7_rejects_unconfirmed(self):
+        """验收未回填（实机 review 故障类）→ confirm 第 7 步被拦"""
+        self.write_examples(confirmed=False)
+        r = run("confirm", self.dir, "--step", "7")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("未验收确认", r.stderr)
+
+    def test_confirm_step7_passes_with_evidence(self):
+        self.write_examples(confirmed=True)
+        r = run("confirm", self.dir, "--step", "7")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_confirm_step8_requires_package_check(self):
+        r = run("confirm", self.dir, "--step", "8")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("build_package", r.stderr)
+
+    def test_confirm_step8_rejects_failed_check(self):
+        with open(os.path.join(self.dir, "package-check.json"), "w", encoding="utf-8") as f:
+            json.dump({"package": self.dir, "result": "fail", "errors": ["x"]}, f)
+        r = run("confirm", self.dir, "--step", "8")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("未通过", r.stderr)
+
+    def test_confirm_step8_passes_with_passed_check(self):
+        with open(os.path.join(self.dir, "package-check.json"), "w", encoding="utf-8") as f:
+            json.dump({"package": self.dir, "result": "pass", "errors": []}, f)
+        r = run("confirm", self.dir, "--step", "8")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

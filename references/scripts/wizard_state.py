@@ -14,14 +14,17 @@
   断点续建与深化通道靠 mode 字段恢复行为；旧状态文件无 mode 按 full 处理）
   / incr（增量学习：往已交付的 agent 加看板/改版重学/移除看板；
   第 4、7 步命门在 incr 下同样禁止 skipped）
-约束: 第 3 步可选允许 skipped；第 4、7 步是质量命门，禁止 skipped（lite 同样适用）
+约束: 第 3 步可选允许 skipped；第 4、7 步是质量命门，禁止 skipped（lite 同样适用）；
+  confirm 第 7 步需 examples.json 验收基准全部回填确认（--record/--confirm 的证据），
+  confirm 第 8 步需 package-check.json 体检通过（build_package.py 的产出）——
+  状态机从"记状态"升级为"验产物"，质量命门不看口头申报看产物
 退出码: 0 成功 / 1 参数或状态文件错误 / 2 状态文件损坏 / 3 违反状态机约束
 """
 import argparse, json, os, sys, tempfile
 from datetime import datetime, timezone
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.6.1"
+BUILDER_VERSION = "4.7.0"
 
 MODES = ("full", "lite", "incr")
 MODE_LABELS = {"full": "完整模式", "lite": "快速模式", "incr": "增量模式"}
@@ -132,6 +135,51 @@ def die(msg, code=1):
     sys.exit(code)
 
 
+def load_json_quiet(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        return None
+
+
+def gate_confirm_artifacts(workdir, step):
+    """confirm 第 7/8 步的产物校验（质量命门看产物不看口头申报）。返回错误信息或 None"""
+    if step == 7:
+        ex = load_json_quiet(os.path.join(workdir, "examples.json"))
+        scenarios = (ex or {}).get("scenarios")
+        if not isinstance(scenarios, dict) or not scenarios:
+            return ("第 7 步【测试验收】确认需要 examples.json 验收基准——每场景至少 1 题实测；"
+                    "用 eval_examples.py --suggest 看取数源数值、--record 回填、--confirm 确认")
+        bad = []
+        for sname, items in scenarios.items():
+            if not items:
+                bad.append(f"场景「{sname}」无示例题")
+                continue
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if not it.get("humanConfirmed"):
+                    bad.append(f"{it.get('id', '?')} 未验收确认")
+                expect = it.get("expect") or {}
+                if not expect.get("values") and not expect.get("keywords"):
+                    bad.append(f"{it.get('id', '?')} expect 为空")
+        if bad:
+            return ("第 7 步验收实测证据不足：" + "；".join(bad[:6])
+                    + "——eval_examples.py --record/--confirm 回填后再确认")
+    elif step == 8:
+        rec = load_json_quiet(os.path.join(workdir, "package-check.json"))
+        if rec is None:
+            return ("第 8 步【固化交付】确认需要 package-check.json——先运行 build_package.py "
+                    "机械组装交付包并通过 check_package 体检（禁止手工拼装交付包）")
+        if rec.get("result") != "pass":
+            return (f"交付包体检未通过（{len(rec.get('errors') or [])} 个 ❌）——"
+                    "按 package-check.json 的 errors 修复后重跑 build_package.py")
+        if not os.path.isdir(rec.get("package") or ""):
+            return f"package-check.json 记录的交付包不存在: {rec.get('package')}"
+    return None
+
+
 def cmd_init(args):
     workdir = args.workdir
     os.makedirs(workdir, exist_ok=True)
@@ -186,6 +234,10 @@ def cmd_set(args, confirmed=False):
     if status == "skipped" and args.step in NON_SKIPPABLE:
         die(f"第 {args.step} 步【{names[args.step]}】是质量命门，不允许跳过；"
             f"必须完成并确认后才能继续", code=3)
+    if confirmed:
+        gate = gate_confirm_artifacts(args.workdir, args.step)
+        if gate:
+            die(gate, code=3)
     entry = state["steps"].get(step, {})
     entry["status"] = status
     if confirmed:

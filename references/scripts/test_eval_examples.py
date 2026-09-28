@@ -187,5 +187,87 @@ class TestMainFlow(unittest.TestCase):
         self.assertEqual(doc["fetchMix"], {"card": 1, "sql": 1, "cacheShare": 0.5})
 
 
+class TestRecordConfirm(unittest.TestCase):
+    """第 7 步验收回填工具：--suggest / --record / --confirm。
+    核心防线：期望值必须在取数源中真实存在，幻觉数字进不了回归基准。"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        write_json(self.dir, "card-data/看板A__卡1.json",
+                   {"columns": ["渠道", "净收入", "达成率"],
+                    "rows": [["团购", 41990, 0.35]]})
+
+    def write_examples(self, **item_kw):
+        item = {"id": "q1", "question": "团购净收入多少",
+                "fetch": {"type": "card", "file": "card-data/看板A__卡1.json"},
+                "expect": {"values": [], "keywords": []}, "humanConfirmed": False}
+        item.update(item_kw)
+        write_json(self.dir, "examples.json", {"scenarios": {"问数": [item]}})
+
+    def read_item(self):
+        with open(os.path.join(self.dir, "examples.json"), encoding="utf-8") as f:
+            return json.load(f)["scenarios"]["问数"][0]
+
+    def test_record_matches_thousand_separator(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--record", "q1", "--values", "41,990", "--keywords", "团购")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        it = self.read_item()
+        self.assertEqual(it["expect"]["values"], [41990])
+        self.assertEqual(it["expect"]["keywords"], ["团购"])
+        self.assertFalse(it["humanConfirmed"])  # 回填后仍需用户验收
+
+    def test_record_percent_interpretation_stores_source_value(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--record", "q1", "--values", "35%")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read_item()["expect"]["values"], [0.35])  # 存取数源里的真实值
+
+    def test_record_rejects_hallucinated_value(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--record", "q1", "--values", "99999999")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("拒绝回填", r.stderr)
+        self.assertEqual(self.read_item()["expect"]["values"], [])  # 未写入
+
+    def test_record_rejects_absent_keyword(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--record", "q1", "--values", "41990", "--keywords", "京东")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("关键词", r.stderr)
+
+    def test_record_resets_previous_confirmation(self):
+        self.write_examples(humanConfirmed=True)
+        r = run_cli(self.dir, "--record", "q1", "--values", "41990")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(self.read_item()["humanConfirmed"])
+        self.assertIn("重置", r.stdout)
+
+    def test_confirm_sets_human_confirmed(self):
+        self.write_examples(expect={"values": [41990], "keywords": []})
+        r = run_cli(self.dir, "--confirm", "q1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.read_item()["humanConfirmed"])
+
+    def test_confirm_rejects_empty_expect(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--confirm", "q1")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--record", r.stderr)
+
+    def test_confirm_all(self):
+        self.write_examples(expect={"values": [41990]})
+        r = run_cli(self.dir, "--confirm-all")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.read_item()["humanConfirmed"])
+
+    def test_suggest_prints_salient_values(self):
+        self.write_examples()
+        r = run_cli(self.dir, "--suggest")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("41,990", r.stdout)
+        self.assertIn("--record q1", r.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

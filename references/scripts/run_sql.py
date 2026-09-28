@@ -7,6 +7,8 @@ prompt 红线靠自觉，本脚本提供脚本层强制：只允许单条 SELECT
 用法:
   python3 run_sql.py <数据集ID> '<SQL>'            # 表格输出（默认）
   python3 run_sql.py <数据集ID> '<SQL>' -f json    # 透传 guancli 输出格式
+  python3 run_sql.py --check-scope <数据集ID>      # 只验白名单不执行 SQL（体检/冒烟用）：
+                                                   # 在覆盖范围内 exit 0，越界 exit 3，scope 缺失降级 exit 0
 校验规则（违反即 exit 3，不执行）:
   1. 去除注释与字符串字面量后，必须以 SELECT 或 WITH 开头
   2. 禁止多语句（; 后还有内容）
@@ -53,8 +55,28 @@ def validate(sql):
     return None
 
 
+def scope_check(ds_id):
+    """白名单 dry 校验：在覆盖范围内返回 None；越界返回错误信息；scope 缺失返回 None（降级）"""
+    scope = scope_mod.load_scope() if scope_mod is not None else None
+    if scope is not None and ds_id not in scope["dsIds"]:
+        return (f"数据集 {ds_id} 不在本助手覆盖范围（脚本层白名单拦截）\n"
+                "覆盖范围见 references/cards.json 的 dsUsage；如需接入新数据，回到搭建向导说「增量学习」。")
+    return None
+
+
 def main():
     args = sys.argv[1:]
+    # --check-scope <数据集ID>：只验白名单不调 guancli（check_package 功能冒烟用）
+    if "--check-scope" in args:
+        i = args.index("--check-scope")
+        if i + 1 >= len(args):
+            sys.exit("用法: python3 run_sql.py --check-scope <数据集ID>")
+        err = scope_check(args[i + 1])
+        if err:
+            print(f"❌ {err}", file=sys.stderr)
+            sys.exit(3)
+        print(f"✅ 数据集 {args[i + 1]} 在覆盖范围内（或 scope 缺失降级放行）")
+        sys.exit(0)
     fmt = "table"
     if "-f" in args:
         i = args.index("-f")
@@ -64,11 +86,9 @@ def main():
         sys.exit("用法: python3 run_sql.py <数据集ID> '<SQL>' [-f table|json|csv]")
     ds_id, sql = args[0], args[1]
     # 范围守卫：覆盖外的数据集禁止当答案（信噪比纪律的脚本层强制）
-    scope = scope_mod.load_scope() if scope_mod is not None else None
-    if scope is not None and ds_id not in scope["dsIds"]:
-        print(f"❌ 数据集 {ds_id} 不在本助手覆盖范围（脚本层白名单拦截）", file=sys.stderr)
-        print("覆盖范围见 references/cards.json 的 dsUsage；如需接入新数据，回到搭建向导说「增量学习」。",
-              file=sys.stderr)
+    err = scope_check(ds_id)
+    if err:
+        print(f"❌ {err}", file=sys.stderr)
         sys.exit(3)
     err = validate(sql)
     if err:

@@ -11,7 +11,10 @@
     "expect.values：期望在取数结果中出现的数值；tolerance 为相对容差，缺省 0.02（2%）",
     "expect.keywords：期望在取数结果文本中出现的关键词（可省略）",
     "answerPoints：结论要点，脚本无法自动判，评测时逐条打印为人工核对清单",
-    "humanConfirmed：人工核对结论通过后置为 true；false 的条目在报告中计入「待人工确认」"
+    "humanConfirmed：人工核对结论通过后置为 true；false 的条目在报告中计入「待人工确认」",
+    "第 7 步回填走脚本（禁止手填数字）：eval_examples.py <目录> --suggest 看取数源显著数值 →",
+    "  --record <题目ID> --values \"...\" [--keywords \"...\"]（期望值过不了取数源校验会被拒绝）→",
+    "  用户验收后 --confirm <题目ID>（或 --confirm-all）；wizard_state confirm --step 7 校验全部 humanConfirmed"
   ],
   "scenarios": {
     "问数": [
