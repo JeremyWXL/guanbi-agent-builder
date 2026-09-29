@@ -8,7 +8,7 @@ SCRIPT = os.path.join(HERE, "build_package.py")
 
 CARDS_RAW = {
     "_meta": {
-        "builderVersion": "4.7.0", "biBaseUrl": "https://bi.example.com",
+        "builderVersion": "4.7.1", "biBaseUrl": "https://bi.example.com",
         "dsFormulas": {"ds1": []},
         "pages": {"p1": {"title": "页一", "mtime": "x", "cardCount": 2, "cardHash": "h",
                          "cards": [{"cdId": "c1", "name": "卡A"}, {"cdId": "s1", "name": "展示渠道"}]}},
@@ -142,6 +142,26 @@ class BuildPackageTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         with open(os.path.join(self.pkg, "memory", "qa-log.jsonl"), encoding="utf-8") as f:
             self.assertEqual(f.read(), marker)
+
+    def test_rebuild_with_force_cleans_stale_references(self):
+        """--force 重建前清空受控区：旧模式文件（datasets.json）、已删除卡片的旧采样、
+        过期 references/ 文件一律不残留（copytree 合并语义曾是残留源）"""
+        make_workdir(self.workdir)
+        r = self.build()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        # 模拟前一次交付的残留：数据集直通模式的旧档案 / 被删卡片的旧采样 / 过期说明文件
+        write_json(self.pkg, "references/datasets.json", {"_meta": {}, "旧数据集": {"dsId": "d9"}})
+        write_json(self.pkg, "references/card-data/页一__被删卡__c9.json", SAMPLE)
+        write_text(self.pkg, "references/obsolete-note.md", "x")
+        r = self.build("--force")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        refs = os.path.join(self.pkg, "references")
+        self.assertFalse(os.path.exists(os.path.join(refs, "datasets.json")))
+        self.assertFalse(os.path.exists(os.path.join(refs, "card-data", "页一__被删卡__c9.json")))
+        self.assertFalse(os.path.exists(os.path.join(refs, "obsolete-note.md")))
+        # 现行资产仍在
+        self.assertTrue(os.path.isfile(os.path.join(refs, "cards.json")))
+        self.assertTrue(os.path.isfile(os.path.join(refs, "card-data", "页一__卡A.json")))
 
     def test_missing_manifest_rejected(self):
         make_workdir(self.workdir)

@@ -8,10 +8,12 @@
                  被删/改名卡片的旧采样文件是孤儿，防止陈旧数据被误当现状引用
   --scope       范围守卫：待采卡片的 cdId 必须 ∈ 指定 cards.json 的白名单，越界整批拒绝（exit 2）
 输出:
-  <输出目录>/<看板名>__<卡片名>.json（数据行，超过 --max-rows 截断并标注）
+  <输出目录>/<看板名>__<卡片名>__<cdId>.json（数据行，超过 --max-rows 截断并标注）
   <输出目录>/_sample_index.json（采样摘要 + 列画像 profiling）
 说明:
   - 自动跳过 "_meta" 等非看板键
+  - 文件名以 cdId 结尾：卡片名经非法字符归一化/截断后可能碰撞（如「收入/本月」与「收入:本月」），
+    cdId 保证唯一；同一 key 仍重复出现（同 cdId 被列两次）即整批拒绝（exit 2），禁止静默覆盖
   - 默认最多落盘 200 行/卡（防止大卡片撑爆上下文）；原始行数记入 _sample_index.json
   - profiling：每列推断类型（number/text/date）、数值列给 min/max、
     低基数文本列给枚举值（防取值幻觉，供筛选器取值参考）
@@ -150,7 +152,9 @@ def main():
             print(f"  清理孤儿采样: {key}.json")
     with open(cards_file, encoding='utf-8') as f:
         pages = json.load(f)
-    index = {}
+    # 先展开待采清单并校验文件键唯一：key 含 cdId，重复 = 同一卡片被列两次——
+    # 冲突即整批拒绝（exit 2），禁止部分采样后才发现覆盖
+    tasks, seen_keys = [], {}
     for page_name, info in pages.items():
         if page_name.startswith('_') or not isinstance(info, dict) or 'cards' not in info:
             continue  # 跳过 _meta 等元数据键
@@ -159,32 +163,40 @@ def main():
                 continue
             if only_ids is not None and card['cdId'] not in only_ids:
                 continue  # 增量模式：未变的卡片不重复采样
-            key = f"{page_name}__{safe_name(card['name'])}"
-            print(f"采样: {card['name']} ({card['cdId']}) ...", flush=True)
-            data, err = preview(card['cdId'])
-            if err:
-                index[key] = {"cdId": card["cdId"], "type": card["type"], "error": err}
-                print(f"  失败: {err[:80]}")
-                continue
-            rows = data if isinstance(data, list) else []
-            total_rows = len(rows)
-            truncated = total_rows > max_rows
-            if truncated:
-                rows = rows[:max_rows]
-            payload = {"_truncated": True, "_totalRows": total_rows, "rows": rows} if truncated else rows
-            with open(os.path.join(out_dir, f"{key}.json"), 'w', encoding='utf-8') as f:
-                json.dump(payload, f, ensure_ascii=False, indent=1)
-            cols = list(rows[0].keys()) if rows else []
-            index[key] = {
-                "cdId": card["cdId"], "type": card["type"],
-                "rows": total_rows, "sampledRows": len(rows), "truncated": truncated,
-                "cols": len(cols), "columns": cols[:20],
-                "inPool": card.get("inPool", False),
-                "dsId": card.get("dsId", ""),
-                "filters": card.get("filters", []),
-                "profile": profile(rows),
-            }
-            print(f"  -> {total_rows} 行 x {len(cols)} 列" + (f"（截断采样 {max_rows} 行）" if truncated else ""))
+            key = f"{page_name}__{safe_name(card['name'])}__{card['cdId']}"
+            if key in seen_keys:
+                print(f"❌ 采样文件键冲突: {key}（同一 cdId 出现多次）——整批拒绝，请检查输入的 cards 清单",
+                      file=sys.stderr)
+                sys.exit(2)
+            seen_keys[key] = card['cdId']
+            tasks.append((key, card))
+    index = {}
+    for key, card in tasks:
+        print(f"采样: {card['name']} ({card['cdId']}) ...", flush=True)
+        data, err = preview(card['cdId'])
+        if err:
+            index[key] = {"cdId": card["cdId"], "type": card["type"], "error": err}
+            print(f"  失败: {err[:80]}")
+            continue
+        rows = data if isinstance(data, list) else []
+        total_rows = len(rows)
+        truncated = total_rows > max_rows
+        if truncated:
+            rows = rows[:max_rows]
+        payload = {"_truncated": True, "_totalRows": total_rows, "rows": rows} if truncated else rows
+        with open(os.path.join(out_dir, f"{key}.json"), 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        cols = list(rows[0].keys()) if rows else []
+        index[key] = {
+            "cdId": card["cdId"], "type": card["type"],
+            "rows": total_rows, "sampledRows": len(rows), "truncated": truncated,
+            "cols": len(cols), "columns": cols[:20],
+            "inPool": card.get("inPool", False),
+            "dsId": card.get("dsId", ""),
+            "filters": card.get("filters", []),
+            "profile": profile(rows),
+        }
+        print(f"  -> {total_rows} 行 x {len(cols)} 列" + (f"（截断采样 {max_rows} 行）" if truncated else ""))
     with open(os.path.join(out_dir, '_sample_index.json'), 'w', encoding='utf-8') as f:
         json.dump(index, f, ensure_ascii=False, indent=1)
     ok = sum(1 for v in index.values() if 'error' not in v)

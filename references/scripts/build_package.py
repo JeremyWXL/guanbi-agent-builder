@@ -8,7 +8,8 @@ run_sql 白名单全拦截 / make_link 无筛选器可用 / sample_cards 整批�
   python3 build_package.py <工作目录> --package <交付包路径> [--manifest <路径>] [--force]
   --manifest 缺省取 <工作目录>/agent-manifest.json（字段见 render_agent_skill.py docstring；
     dashboards / typicalQuestions / mode / datasetCount / date 缺省时从学习产物自动带入）
-  --force    允许写入已存在的交付包目录（memory/ 永不覆盖——init 幂等，重跑/重建都安全）
+  --force    允许写入已存在的交付包目录；重建前清空受控区（references/ 与生成的 workbench.html，
+             防止旧采样/旧模式文件残留），memory/ 永不覆盖——init 幂等，重跑/重建都安全
 动作（全机械，顺序固定）:
   1. 前置校验（exit 2）: cards-raw.json（或 datasets-raw.json）/ metrics.json / dimensions.json /
      learningResult.md / businessKnowledge.md / insightThinking.md / examples.json 齐全；
@@ -29,7 +30,7 @@ import json, os, shutil, subprocess, sys, tempfile
 from datetime import date, datetime
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.7.0"
+BUILDER_VERSION = "4.7.1"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 复制进交付包 references/ 的脚本（维护期自检/取数/回归全靠它们；check_package 的
@@ -173,6 +174,14 @@ def main():
     if os.path.isdir(package) and os.listdir(package) and not force:
         die(f"交付包目录已存在且非空: {package}——确认要覆盖请加 --force（memory/ 永不覆盖）")
     refs = os.path.join(package, "references")
+    # --force 重建前先清空受控区：copytree(dirs_exist_ok=True) 是合并语义，旧 references/ 文件
+    # 与已删除卡片的旧采样会残留（看板↔数据集模式切换时旧 cards.json 残留会让体检误判模式）；
+    # memory/ 是用户资产永不触碰，SKILL.md 随后整体重渲染
+    if os.path.isdir(refs):
+        shutil.rmtree(refs)
+    old_workbench = os.path.join(package, "workbench.html")
+    if os.path.isfile(old_workbench):
+        os.unlink(old_workbench)
     os.makedirs(refs, exist_ok=True)
     if mode == "dashboard":
         shutil.copy(os.path.join(workdir, "cards-raw.json"), os.path.join(refs, "cards.json"))

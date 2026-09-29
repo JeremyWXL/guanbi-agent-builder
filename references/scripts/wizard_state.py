@@ -24,7 +24,7 @@ import argparse, json, os, sys, tempfile
 from datetime import datetime, timezone
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.7.0"
+BUILDER_VERSION = "4.7.1"
 
 MODES = ("full", "lite", "incr")
 MODE_LABELS = {"full": "完整模式", "lite": "快速模式", "incr": "增量模式"}

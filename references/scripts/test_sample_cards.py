@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""sample_cards.py 单测：--only-cdIds 定向采样与 --prune-keys 孤儿清理（增量学习用）"""
+"""sample_cards.py 单测：--only-cdIds 定向采样与 --prune-keys 孤儿清理（增量学习用）、
+采样文件键带 cdId 防碰撞（非法字符归一化/截断后同名不再互相覆盖）、同键重复整批拒绝"""
 import json, os, sys, tempfile, unittest
 from unittest import mock
 
@@ -48,20 +49,20 @@ class OnlyCdIdsTest(unittest.TestCase):
         with open(ids, "w", encoding="utf-8") as f:
             f.write("c1\nc3\n")
         index = self.run_sample(["--only-cdIds", ids])
-        self.assertEqual(set(index.keys()), {"页一__卡A", "页一__卡C"})
-        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A.json")))
-        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡B.json")))
+        self.assertEqual(set(index.keys()), {"页一__卡A__c1", "页一__卡C__c3"})
+        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡B__c2.json")))
 
     def test_only_cdids_accepts_json_list(self):
         ids = os.path.join(self.dir, "ids.json")
         write_json(self.dir, "ids.json", ["c2"])
         index = self.run_sample(["--only-cdIds", ids])
-        self.assertEqual(set(index.keys()), {"页一__卡B"})
+        self.assertEqual(set(index.keys()), {"页一__卡B__c2"})
 
     def test_without_only_cdids_samples_all(self):
         index = self.run_sample([])
         # SELECTOR 被 SKIP_TYPES 跳过，其余 3 张数据卡全采
-        self.assertEqual(set(index.keys()), {"页一__卡A", "页一__卡B", "页一__卡C"})
+        self.assertEqual(set(index.keys()), {"页一__卡A__c1", "页一__卡B__c2", "页一__卡C__c3"})
 
 
 class PruneKeysTest(unittest.TestCase):
@@ -70,14 +71,14 @@ class PruneKeysTest(unittest.TestCase):
         write_json(self.dir, "cards.json", make_cards_doc())
         self.out = os.path.join(self.dir, "card-data")
         os.makedirs(self.out)
-        # 预置三个采样文件：两个现行 + 一个孤儿（被删卡片的旧 key）
-        for key in ("页一__卡A", "页一__卡B", "页一__被删卡"):
+        # 预置采样文件：两个现行（新格式）+ 一个新格式孤儿 + 一个旧格式孤儿（升级前遗留命名）
+        for key in ("页一__卡A__c1", "页一__卡B__c2", "页一__被删卡__c9", "页一__旧格式卡"):
             write_json(self.out, f"{key}.json", ROWS)
 
     def test_prune_keys_deletes_orphans(self):
         keys = os.path.join(self.dir, "prune.txt")
         with open(keys, "w", encoding="utf-8") as f:
-            f.write("页一__被删卡\n")
+            f.write("页一__被删卡__c9\n页一__旧格式卡\n")
         argv = sys.argv
         sys.argv = ["sample_cards.py", os.path.join(self.dir, "cards.json"), self.out,
                     "--prune-keys", keys]
@@ -87,12 +88,70 @@ class PruneKeysTest(unittest.TestCase):
                 sample_cards.main()
             finally:
                 sys.argv = argv
-        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__被删卡.json")))
-        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__被删卡__c9.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__旧格式卡.json")))
+        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))
         # 现行卡片照常采样，index 只含数据卡
         with open(os.path.join(self.out, "_sample_index.json"), encoding="utf-8") as f:
             index = json.load(f)
-        self.assertEqual(set(index.keys()), {"页一__卡A", "页一__卡B", "页一__卡C"})
+        self.assertEqual(set(index.keys()), {"页一__卡A__c1", "页一__卡B__c2", "页一__卡C__c3"})
+
+
+class KeyCollisionTest(unittest.TestCase):
+    """采样文件键 = 页面名__卡片名__cdId：非法字符归一化/截断后同名的不同卡片不再互相覆盖；
+    同一 key 仍重复出现（同 cdId 被列两次）即整批拒绝（exit 2），禁止静默覆盖"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.out = os.path.join(self.dir, "card-data")
+
+    def run_sample(self, doc):
+        cards_file = os.path.join(self.dir, "cards.json")
+        write_json(self.dir, "cards.json", doc)
+        argv = sys.argv
+        sys.argv = ["sample_cards.py", cards_file, self.out]
+        with mock.patch.object(sample_cards, "preview", side_effect=lambda cd: (dict(ROWS), None)), \
+             mock.patch("builtins.print"):
+            try:
+                sample_cards.main()
+            except SystemExit as e:
+                return e.code
+            finally:
+                sys.argv = argv
+        return 0
+
+    def test_normalized_name_collision_both_sampled(self):
+        # 「收入/本月」与「收入:本月」safe_name 后都是「收入_本月」——cdId 后缀保住两份采样
+        doc = {"页一": {"cards": [
+            {"name": "收入/本月", "cdId": "c1", "type": "TABLE", "dims": [], "measures": []},
+            {"name": "收入:本月", "cdId": "c2", "type": "TABLE", "dims": [], "measures": []}]}}
+        code = self.run_sample(doc)
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__收入_本月__c1.json")))
+        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__收入_本月__c2.json")))
+
+    def test_truncated_name_collision_both_sampled(self):
+        # 前 60 字符相同的长名称：safe_name 截断后同名，cdId 后缀区分
+        prefix = "超长卡片名称" * 10
+        doc = {"页一": {"cards": [
+            {"name": prefix + "甲", "cdId": "c1", "type": "TABLE", "dims": [], "measures": []},
+            {"name": prefix + "乙", "cdId": "c2", "type": "TABLE", "dims": [], "measures": []}]}}
+        code = self.run_sample(doc)
+        self.assertEqual(code, 0)
+        with open(os.path.join(self.out, "_sample_index.json"), encoding="utf-8") as f:
+            index = json.load(f)
+        self.assertEqual(len(index), 2)
+        self.assertEqual({v["cdId"] for v in index.values()}, {"c1", "c2"})
+
+    def test_duplicate_key_rejects_batch(self):
+        # 同页重复列出同一张卡（同 cdId）→ 同 key 重复，整批拒绝（exit 2），禁止静默覆盖
+        card = {"name": "卡A", "cdId": "c1", "type": "TABLE", "dims": [], "measures": []}
+        doc = {"页一": {"title": "页一", "cards": [card, dict(card)]}}
+        code = self.run_sample(doc)
+        self.assertEqual(code, 2)
+        # 冲突在采样前的预检拦截：无部分采样、无 index 落盘
+        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "_sample_index.json")))
 
 
 class ScopeTest(unittest.TestCase):
@@ -129,7 +188,7 @@ class ScopeTest(unittest.TestCase):
         code = self.run_sample(os.path.join(self.dir, "mixed.json"),
                                ["--scope", os.path.join(self.dir, "scope-cards.json")])
         self.assertEqual(code, 2)
-        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡A.json")))  # 整批拒绝，无部分采样
+        self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))  # 整批拒绝，无部分采样
 
     def test_scope_pass_for_in_scope_cards(self):
         write_json(self.dir, "in-scope.json", {"页一": {"cards": [
@@ -137,7 +196,7 @@ class ScopeTest(unittest.TestCase):
         code = self.run_sample(os.path.join(self.dir, "in-scope.json"),
                                ["--scope", os.path.join(self.dir, "scope-cards.json")])
         self.assertEqual(code, 0)
-        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A.json")))
+        self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))
 
 
 if __name__ == "__main__":

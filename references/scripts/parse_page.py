@@ -3,13 +3,14 @@
 看板结构解析器：guancli page get --raw（JSON 主解析）→ 卡片清单
 主路径解析原始 JSON，名称/ID/类型天然配对，不受文本格式变动影响；
 --raw 不可用或结构不符时回退文本解析（兼容旧版 guancli），仍按 Card 块内联 **ID:** 解析。
-用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4]
+用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4] [--allow-partial]
 输出: <输出目录>/cards-raw.json
   {看板名: {pgId, mtime, dsIds, dsUsage, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails,
                                         filtered, unitHints, dims, measures}]},
    "_meta": {builtAt, builderVersion, biBaseUrl, parser,
              pages: {pgId: {title, mtime, cardCount, cardHash, cards: [{cdId, name}]}},
-             dsFormulas: {dsId: {dsName, virtualColumns}}}}
+             dsFormulas: {dsId: {dsName, virtualColumns}},
+             failedPages: [pgId]（仅 --allow-partial 且有失败时存在）}}
   pages[].cardHash/cards 是学习时点的卡片结构指纹：交付后体检对比 hash+mtime 双信号，
   能具体报出"新增/删除了哪些卡片"（workbench.py --check）。
   卡片 filtered / 页面 dsUsage（v4.2 取数加速层）：数据卡带筛选（filterValue 非空）= 卡片级，
@@ -20,14 +21,17 @@
   - dims: 卡片的行维度（指标的当前粒度，判断"换维度是否安全"的依据）
   - _meta.dsFormulas: 各数据集的计算字段（virtualColumns）公式原文，
     供卡片按 fdId 引用数据集计算字段时补全；--skip-ds-formulas 可关闭
-哨兵: 任何看板解析出 0 张卡片即整体报错退出（exit 2），禁止静默产出空资产。
+哨兵: 任何看板解析出 0 张卡片即整体报错退出（exit 2），禁止静默产出空资产；
+  不同 pgId 的看板同名时标题键会互相覆盖——exit 2 要求消歧，禁止静默丢看板；
+  批量解析默认要求全部成功，部分失败即 exit 2 且不写产物（避免产出"看似成功"的残缺资产）；
+  确需容忍时加 --allow-partial，失败 pgId 记入 _meta.failedPages（机器可读）。
 """
 import json, re, subprocess, sys, os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "4.7.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "4.7.1"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -315,6 +319,7 @@ def main():
     args = sys.argv[1:]
     out = '.'
     skip_ds = '--skip-ds-formulas' in args
+    allow_partial = '--allow-partial' in args
     workers = 4
     page_ids = []
     i = 0
@@ -322,7 +327,7 @@ def main():
         if args[i] == '-o':
             out = args[i + 1]
             i += 2
-        elif args[i] == '--skip-ds-formulas':
+        elif args[i] in ('--skip-ds-formulas', '--allow-partial'):
             i += 1
         elif args[i] == '--workers':
             workers = int(args[i + 1])
@@ -331,7 +336,7 @@ def main():
             page_ids.append(args[i])
             i += 1
     if not page_ids:
-        sys.exit("用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4]")
+        sys.exit("用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4] [--allow-partial]")
     os.makedirs(out, exist_ok=True)
 
     # 并发解析各看板（保持用户勾选顺序输出）
@@ -344,7 +349,7 @@ def main():
             parsed[pid] = fut.result()
 
     result = {}
-    failed, empty = [], []
+    failed, empty, conflicts = [], [], []
     parsers = set()
     for pid in page_ids:
         info = parsed[pid]
@@ -370,7 +375,22 @@ def main():
         print(f"  {info['title']}: {len(info['cards'])} 张卡片"
               f"（数据卡 {n_data}，筛选器/文本 {len(info['cards'])-n_data}，卡片池 {n_pool}，"
               f"公式字段 {n_formula}，带筛选 {n_filtered}/数据集级 {n_data - n_filtered}）")
+        if info['title'] in result:
+            # 看板标题是 cards-raw.json 的键：不同 pgId 同名会静默覆盖（后者顶掉前者）
+            conflicts.append((info['title'], result[info['title']]['pgId'], pid))
+            continue
         result[info['title']] = info
+    if conflicts:
+        lines = [f"《{t}》: {a} 与 {b}" for t, a, b in conflicts]
+        print(f"❌ {len(conflicts)} 组同名看板冲突: " + "；".join(lines) +
+              "——cards-raw.json 以看板标题为键，同名会互相覆盖；请只保留一个或先在 BI 中改名消歧",
+              file=sys.stderr)
+        sys.exit(2)
+    if failed and not allow_partial:
+        print(f"❌ {len(failed)} 个看板获取失败: {', '.join(failed)}——"
+              f"默认禁止部分成功交付（产物会残缺却看似成功）；重试，或确认容忍后加 --allow-partial",
+              file=sys.stderr)
+        sys.exit(2)
     if empty:
         sys.exit(f"解析失败: {len(empty)} 个看板解析异常（{', '.join(empty)}）。"
                  f"请检查 guancli 版本兼容性后再试")
@@ -397,12 +417,14 @@ def main():
                   for k, v in result.items() if isinstance(v, dict) and "pgId" in v},
         "dsFormulas": ds_formulas,
     }
+    if failed:  # --allow-partial：失败清单机器可读，交付前可据此判断资产是否残缺
+        result["_meta"]["failedPages"] = failed
     out_file = os.path.join(out, 'cards-raw.json')
     with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=1)
     print(f"\n已写入 {out_file}")
     if failed:
-        print(f"⚠️ {len(failed)} 个看板获取失败已跳过: {', '.join(failed)}")
+        print(f"⚠️ {len(failed)} 个看板获取失败已跳过（--allow-partial，见 _meta.failedPages）: {', '.join(failed)}")
 
 
 if __name__ == '__main__':

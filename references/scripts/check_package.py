@@ -18,7 +18,7 @@
 import importlib.util, json, os, re, subprocess, sys
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.7.0"
+BUILDER_VERSION = "4.7.1"
 
 # 复制进交付包的脚本清单（(文件名, 看板模式必需, 直通模式必需, 引入版本)）
 SCRIPT_LIST = [
@@ -80,6 +80,21 @@ def load_module(path, name):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def safe_join(base_dir, rel):
+    """fetch.file 目录边界校验（与 eval_examples.py 同一口径）：拒绝绝对路径与
+    ../ / 符号链接逃逸，realpath 后必须仍落在 base_dir 内，否则返回 None。"""
+    if not rel or os.path.isabs(rel):
+        return None
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base, rel))
+    try:
+        if os.path.commonpath([base, target]) != base:
+            return None
+    except ValueError:
+        return None
+    return target
 
 
 class PackageCheck:
@@ -275,6 +290,8 @@ class PackageCheck:
                     rel = fetch.get("file")
                     if not rel:
                         self.err(f"{tag} fetch.file 缺失")
+                    elif safe_join(self.refs, rel) is None:
+                        self.err(f"{tag} fetch.file 路径越界（拒绝绝对路径/../ 逃逸）: {rel}")
                     elif not os.path.isfile(os.path.join(self.refs, rel)):
                         self.err(f"{tag} 引用的采样文件不存在: {rel}——交付即带 broken 回归基准")
 

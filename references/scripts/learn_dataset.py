@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
 """
 数据集直学器（数据集冷启动路径）：没有合适看板时，第 2 步资产学习的替代动作
-用法: python3 learn_dataset.py <dsId> [dsId2 ...] -o <工作目录> [--workers 4] [--max-rows 200]
+用法: python3 learn_dataset.py <dsId> [dsId2 ...] -o <工作目录> [--workers 4] [--max-rows 200] [--allow-partial]
 输出: <工作目录>/datasets-raw.json
   {数据集名: {dsId, mtime, rowCount,
               columns: [{name, fdId, metaType, fdType, aggrType?, calcType?, formula?}],
               sample: {rows, sampledRows, truncated, profile}},
    "_meta": {builtAt, builderVersion, biBaseUrl, mode: "dataset",
-             dsFormulas: {dsId: {dsName, virtualColumns}}}}
+             dsFormulas: {dsId: {dsName, virtualColumns}},
+             failedDatasets: [dsId]（仅 --allow-partial 且有失败时存在）}}
   _meta.dsFormulas 与 cards-raw.json 同构——check_formulas.py 回退读它时无需特判；
   sample.profile 列画像与 sample_cards.py 同构（枚举值是 check_dims.py 种子的成员值来源）
 产物定位（与看板路径的诚实差异）:
   有：字段清单 / 数据集计算字段口径 / 列画像枚举值 → metrics/dimensions 档案与 SQL 直查照走
   没有：卡片、筛选器、看板语义（分析路径与问题空间）→ 交付的是"数据探索型"助手，
        能答"数据里有什么"，答不了"业务上该看什么"（能力边界必须写进交付助手自我介绍）
-哨兵: 全部数据集获取失败 → exit 2（禁止静默产出空资产）；单个失败跳过并警告
+哨兵: 全部数据集获取失败 → exit 2（禁止静默产出空资产）；
+  不同 dsId 的数据集同名时名称键会互相覆盖（档案与 _meta.dsFormulas 不一致）——exit 2 要求消歧；
+  批量学习默认要求全部成功，部分失败即 exit 2 且不写产物；
+  确需容忍时加 --allow-partial，失败 dsId 记入 _meta.failedDatasets（机器可读）。
 """
 import json, re, subprocess, sys, os
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-BUILDER_VERSION = "4.7.0"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
+BUILDER_VERSION = "4.7.1"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
 DEFAULT_MAX_ROWS = 200
 ENUM_LIMIT = 8       # 与 sample_cards.py 保持一致
 ENUM_CARD_MAX = 20
@@ -180,6 +184,7 @@ def learn_one(ds_id, max_rows):
 def main():
     args = sys.argv[1:]
     out, workers, max_rows = '.', 4, DEFAULT_MAX_ROWS
+    allow_partial = '--allow-partial' in args
     ds_ids = []
     i = 0
     while i < len(args):
@@ -189,13 +194,15 @@ def main():
             workers = int(args[i + 1]); i += 2
         elif args[i] == '--max-rows':
             max_rows = int(args[i + 1]); i += 2
+        elif args[i] == '--allow-partial':
+            i += 1
         else:
             ds_ids.append(args[i]); i += 1
     if not ds_ids:
-        sys.exit("用法: python3 learn_dataset.py <dsId> [dsId2 ...] -o <工作目录> [--workers 4] [--max-rows 200]")
+        sys.exit("用法: python3 learn_dataset.py <dsId> [dsId2 ...] -o <工作目录> [--workers 4] [--max-rows 200] [--allow-partial]")
     os.makedirs(out, exist_ok=True)
 
-    learned, failed, ds_formulas = {}, [], {}
+    learned, failed, conflicts, ds_formulas = {}, [], [], {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(learn_one, d, max_rows): d for d in ds_ids}
         for fut in as_completed(futs):
@@ -212,8 +219,24 @@ def main():
             print(f"  {r['name']}: {len(entry['columns'])} 列（维度 {n_dim} / 指标 {len(entry['columns']) - n_dim}，"
                   f"计算字段 {n_vc}）" + (f"，采样 {sample.get('sampledRows')} 行" if sample else "，采样失败（已降级）"))
             entry.pop("_name", None)
+            if r["name"] in learned:
+                # 数据集名称是 datasets-raw.json 的键：不同 dsId 同名会静默覆盖，
+                # 档案少一个条目而 _meta.dsFormulas 仍有两个 ID（资产与元数据不一致）
+                conflicts.append((r["name"], learned[r["name"]]["dsId"], ds_id))
+                continue
             learned[r["name"]] = entry
             ds_formulas[ds_id] = {"dsName": r["name"], "virtualColumns": r["virtualColumns"]}
+    if conflicts:
+        lines = [f"《{n}》: {a} 与 {b}" for n, a, b in conflicts]
+        print(f"❌ {len(conflicts)} 组同名数据集冲突: " + "；".join(lines) +
+              "——datasets-raw.json 以数据集名称为键，同名会互相覆盖；请只保留一个或先在 BI 中改名消歧",
+              file=sys.stderr)
+        sys.exit(2)
+    if failed and not allow_partial:
+        print(f"❌ {len(failed)} 个数据集获取失败: {', '.join(failed)}——"
+              f"默认禁止部分成功交付（产物会残缺却看似成功）；重试，或确认容忍后加 --allow-partial",
+              file=sys.stderr)
+        sys.exit(2)
     if not learned:
         sys.exit(f"学习失败: 全部 {len(failed)} 个数据集获取失败（{', '.join(failed)}）——"
                  f"检查数据集权限与 guancli 环境后再试")
@@ -226,6 +249,8 @@ def main():
         "mode": "dataset",
         "dsFormulas": ds_formulas,
     }
+    if failed:  # --allow-partial：失败清单机器可读，交付前可据此判断资产是否残缺
+        result["_meta"]["failedDatasets"] = failed
     out_file = os.path.join(out, 'datasets-raw.json')
     with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=1)
@@ -233,7 +258,7 @@ def main():
     print("定位提醒：数据集直通产出的是「数据探索型」助手——能答「数据里有什么」，"
           "答不了「业务上该看什么」；能力边界必须写进交付助手的自我介绍（第 8 步模板变体）")
     if failed:
-        print(f"⚠️ {len(failed)} 个数据集获取失败已跳过: {', '.join(failed)}")
+        print(f"⚠️ {len(failed)} 个数据集获取失败已跳过（--allow-partial，见 _meta.failedDatasets）: {', '.join(failed)}")
 
 
 if __name__ == '__main__':

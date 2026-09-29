@@ -162,7 +162,8 @@ class ChangedPageTest(MergeCardsTest):
         r = self.read_report()
         self.assertEqual(r["changedPages"][0]["removed"], ["卡B"])
         self.assertEqual(r["changedPages"][0]["added"], [])
-        self.assertEqual(r["pruneSampleKeys"], ["页一__卡B"])
+        # 采样 key 新格式（带 cdId）+ 旧格式双发：升级前交付的包采样文件是旧命名，也要清干净
+        self.assertEqual(r["pruneSampleKeys"], ["页一__卡B", "页一__卡B__c2"])
         self.assertEqual(r["resampleCdIds"], ["c1"])  # 变更页整页重采样
         self.assertEqual(r["affectedExamples"][0]["id"], "Q1")
         self.assertEqual(r["affectedMetrics"], ["卡B指标"])
@@ -187,8 +188,9 @@ class RenamedPageTest(MergeCardsTest):
         self.assertEqual(r["renamedPages"], [{"pgId": "p1", "old": "页一", "new": "页一（新）"}])
         self.assertEqual(r["changedPages"][0]["renamedFrom"], "页一")
         self.assertEqual(r["unchangedPages"], [])  # 未误判为"未变跳过"
-        # 旧页面名下全部采样 key 成为孤儿；整页重采样换新 key
-        self.assertEqual(sorted(r["pruneSampleKeys"]), ["页一__卡A", "页一__卡B"])
+        # 旧页面名下全部采样 key 成为孤儿；整页重采样换新 key（新旧两种 key 格式都清）
+        self.assertEqual(sorted(r["pruneSampleKeys"]),
+                         ["页一__卡A", "页一__卡A__c1", "页一__卡B", "页一__卡B__c2"])
         self.assertEqual(sorted(r["resampleCdIds"]), ["c1", "c2"])
         # 引用旧采样文件的已验收示例被点名
         self.assertEqual(r["affectedExamples"][0]["id"], "Q1")

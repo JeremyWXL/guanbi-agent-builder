@@ -163,7 +163,7 @@ def main(args=None):
             continue
         old_info = learned_pages[pid]
         old_title = old_info.get("title", title)
-        # 结构未变且页面未改名才跳过；改名要走变更路径换键（采样 key 是"页面名__卡片名"，改名即孤儿）
+        # 结构未变且页面未改名才跳过；改名要走变更路径换键（采样 key 含页面名，改名即孤儿）
         if (old_info.get("cardHash") and structure_hash(info["cards"]) == old_info["cardHash"]
                 and old_title == title):
             unchanged_pages.append({"pgId": pid, "title": old_title})
@@ -207,13 +207,18 @@ def main(args=None):
             removed_cards.append({"pgId": pid, "page": title, "name": c.get("name", ""), "cdId": c.get("cdId", "")})
         print(f"  － 移除页面《{title}》{info.get('cardCount', 0)} 张卡片")
 
-    # 采样文件 key（页面名__卡片名）：被删/改名卡片的旧 key 需清理（重命名即孤儿）；
-    # 页面改名时旧页面名下全部采样 key 同样成为孤儿
-    prune_keys = [f"{c['page']}__{safe_name(c['name'])}" for c in removed_cards]
-    prune_keys += [f"{r['page']}__{safe_name(r['old'])}" for r in renamed_cards]
+    # 采样文件 key（页面名__卡片名__cdId，v4.7 起带 cdId 防同名碰撞）：被删/改名卡片的旧 key
+    # 需清理（重命名即孤儿）；页面改名时旧页面名下全部采样 key 同样成为孤儿。
+    # 同时产出旧格式（无 cdId 后缀）key——升级前交付的包采样文件仍是旧命名，也要清干净
+    def sample_keys(page, name, cd_id):
+        base = f"{page}__{safe_name(name)}"
+        return [f"{base}__{cd_id}", base] if cd_id else [base]
+
+    prune_keys = [k for c in removed_cards for k in sample_keys(c['page'], c['name'], c['cdId'])]
+    prune_keys += [k for r in renamed_cards for k in sample_keys(r['page'], r['old'], r['cdId'])]
     for rp in renamed_pages:
         for c in (learned_pages.get(rp["pgId"]) or {}).get("cards") or []:
-            prune_keys.append(f"{rp['old']}__{safe_name(c.get('name') or c.get('cdId', ''))}")
+            prune_keys += sample_keys(rp['old'], c.get('name') or c.get('cdId', ''), c.get('cdId', ''))
 
     # 数据集增删（dsUsage 并集）
     old_ds = set()

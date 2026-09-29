@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """parse_page.py 的单测：v4.2 取数加速层分级（_is_filtered / _ds_usage）+ 结构指纹稳定性
-+ v4.4 实机踩坑回归（SELECTOR 卡片 defaultValue 为字符串）"""
++ v4.4 实机踩坑回归（SELECTOR 卡片 defaultValue 为字符串）
++ 同名看板冲突 exit 2 / 部分失败默认 exit 2 / --allow-partial 机器可读失败清单"""
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -78,6 +80,70 @@ class TestSelectorDefaultValue(unittest.TestCase):
     def test_dict_default_value_reads_value_type(self):
         info = self._parse({"valueType": "DYNAMIC", "value": "本月"})
         self.assertEqual(info["cards"][0]["defaultValueType"], "DYNAMIC")
+
+
+def make_info(title, pid, with_error=False):
+    if with_error:
+        return {"error": "guancli page get --raw 失败: 无权限", "pgId": pid}
+    return {"title": title, "pgId": pid, "mtime": "", "dsIds": ["ds1"], "dsUsage": {},
+            "cards": [{"name": "卡A", "cdId": f"{pid}-c1", "type": "TABLE", "inPool": False,
+                       "dsId": "ds1", "filters": [], "filterDetails": [], "filtered": False,
+                       "unitHints": {}, "dims": [], "measures": []}]}
+
+
+class TestMainBatch(unittest.TestCase):
+    """批量解析出口哨兵：同名看板冲突 / 部分失败——禁止静默产出残缺却看似成功的资产"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def out_file(self):
+        return os.path.join(self.dir, "cards-raw.json")
+
+    def run_main(self, page_ids, infos, extra=()):
+        old = sys.argv
+        sys.argv = ["parse_page.py", *page_ids, "-o", self.dir, *extra]
+        try:
+            with mock.patch.object(pp, "parse_page", side_effect=lambda pid: dict(infos[pid])), \
+                 mock.patch.object(pp, "fetch_ds_formulas", return_value={}), \
+                 mock.patch.object(pp, "bi_base_url", return_value=""):
+                pp.main()
+        finally:
+            sys.argv = old
+
+    def test_same_title_pages_rejected(self):
+        """不同 pgId 同名看板：标题键会互相覆盖（_meta.pages 只剩一个），exit 2 且不写产物"""
+        infos = {"p1": make_info("经营看板", "p1"), "p2": make_info("经营看板", "p2")}
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(["p1", "p2"], infos)
+        self.assertEqual(cm.exception.code, 2)
+        self.assertFalse(os.path.exists(self.out_file()))
+
+    def test_partial_failure_rejected_by_default(self):
+        """部分看板失败默认 exit 2（禁止部分成功静默交付），且不写产物"""
+        infos = {"p1": make_info("经营看板", "p1"), "p2": make_info("x", "p2", with_error=True)}
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(["p1", "p2"], infos)
+        self.assertEqual(cm.exception.code, 2)
+        self.assertFalse(os.path.exists(self.out_file()))
+
+    def test_allow_partial_writes_report_with_failed_ids(self):
+        """--allow-partial：成功项正常写出，失败 pgId 记入 _meta.failedPages（机器可读）"""
+        infos = {"p1": make_info("经营看板", "p1"), "p2": make_info("x", "p2", with_error=True)}
+        self.run_main(["p1", "p2"], infos, extra=["--allow-partial"])
+        with open(self.out_file(), encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertIn("经营看板", doc)
+        self.assertEqual(doc["_meta"]["failedPages"], ["p2"])
+        self.assertEqual(set(doc["_meta"]["pages"].keys()), {"p1"})  # 档案与元数据一致
+
+    def test_all_failed_still_rejected_with_allow_partial(self):
+        """--allow-partial 不放行全灭：全部失败仍非 0 退出、不写产物"""
+        infos = {"p1": make_info("a", "p1", with_error=True), "p2": make_info("b", "p2", with_error=True)}
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(["p1", "p2"], infos, extra=["--allow-partial"])
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertFalse(os.path.exists(self.out_file()))
 
 
 if __name__ == "__main__":

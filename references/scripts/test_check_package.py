@@ -38,7 +38,7 @@ x
 
 CARDS_DOC = {
     "_meta": {
-        "builderVersion": "4.7.0",
+        "builderVersion": "4.7.1",
         "biBaseUrl": "https://bi.example.com",
         "dsFormulas": {"ds1": []},
         "pages": {"p1": {"title": "页一", "mtime": "x", "cardCount": 2, "cardHash": "h",
@@ -196,6 +196,15 @@ class BrokenPackageTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("数据层失败", self.out(r))
 
+    def test_fetch_file_traversal_caught(self):
+        """fetch.file 越界（../ 逃逸出 references/）必须被 ❌ 拦截，不能静默放行"""
+        doc = json.loads(json.dumps(EXAMPLES_DOC))
+        doc["scenarios"]["问数"][0]["fetch"] = {"type": "card", "file": "../SKILL.md"}
+        write_json(os.path.join(self.dir, "references", "examples.json"), doc)
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("路径越界", self.out(r))
+
     def test_skill_md_missing_sections_caught(self):
         write_text(os.path.join(self.dir, "SKILL.md"),
                    "---\nname: x\nagent_created: true\n---\n# 助手\n## 使用方式\nx\n")
@@ -239,7 +248,7 @@ class DatasetModeTest(unittest.TestCase):
         os.unlink(os.path.join(refs, "make_link.py"))
         os.unlink(os.path.join(refs, "sample_cards.py"))
         write_json(os.path.join(refs, "datasets.json"), {
-            "_meta": {"builderVersion": "4.7.0"},
+            "_meta": {"builderVersion": "4.7.1"},
             "数据集一": {"dsId": "ds1", "columns": []},
         })
         # 直通模式示例走 sql 取数；测试环境无 guancli，用 card 形态夹具规避（结构校验才是本测试目的）

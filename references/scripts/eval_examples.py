@@ -96,6 +96,21 @@ def check_expect(ex, text, candidates):
     return (not reasons), reasons
 
 
+def safe_join(base_dir, rel):
+    """fetch.file 目录边界校验：拒绝绝对路径与 ../ / 符号链接逃逸。
+    realpath 后必须仍落在 base_dir 内，否则返回 None。"""
+    if not rel or os.path.isabs(rel):
+        return None
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base, rel))
+    try:
+        if os.path.commonpath([base, target]) != base:
+            return None
+    except ValueError:  # 路径形态无法比较（如跨盘符），一律拒绝
+        return None
+    return target
+
+
 def eval_card(base_dir, ex):
     """fetch.type=card：读采样文件核验。返回 (status, reasons, answerPoints)。
     base_dir = examples.json 所在目录（工作目录，或交付包的 references/）"""
@@ -103,7 +118,9 @@ def eval_card(base_dir, ex):
     rel = fetch.get('file')
     if not rel:
         return 'fail', ["fetch.file 缺失"], ex.get('answerPoints') or []
-    path = os.path.join(base_dir, rel)
+    path = safe_join(base_dir, rel)
+    if path is None:
+        return 'fail', [f"fetch.file 路径越界（拒绝绝对路径/../ 逃逸）: {rel}"], ex.get('answerPoints') or []
     if not os.path.isfile(path):
         return 'fail', [f"采样文件缺失: {rel}（看板可能已改版，需要重新学习）"], ex.get('answerPoints') or []
     try:
@@ -218,7 +235,9 @@ def source_text_and_candidates(workdir, base_dir, ex, script_dir):
     rel = fetch.get('file')
     if not rel:
         return False, "", [], "fetch.file 缺失"
-    path = os.path.join(base_dir, rel)
+    path = safe_join(base_dir, rel)
+    if path is None:
+        return False, "", [], f"fetch.file 路径越界（拒绝绝对路径/../ 逃逸）: {rel}"
     if not os.path.isfile(path):
         return False, "", [], f"采样文件缺失: {rel}"
     try:

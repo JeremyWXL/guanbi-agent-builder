@@ -1,5 +1,17 @@
 # 变更日志
 
+## v4.7.1（2026-09-29）资产完整性哨兵：同名冲突/部分失败/残留/碰撞/越界——静默资产丢失清零
+
+解决的问题：独立测试/代码审查报告发现 4 个 P1 + 2 个 P2，共性是**静默**——进程 exit 0、产物看似成功，但资产已丢失或前后不一致：不同 pgId 同名看板/不同 dsId 同名数据集在 cards-raw/datasets-raw 里以标题/名称为键互相覆盖（档案少一个条目、`_meta` 却保留两个 ID）；批量学习部分看板/数据集权限或网络失败时只要还有一个成功就写出产物 exit 0；`build_package --force` 的 copytree 合并语义不清理旧 references/ 与旧采样（看板↔数据集模式切换后旧 cards.json 残留致体检误判模式）；采样文件名经非法字符归一化/60 字符截断后碰撞（「收入/本月」与「收入:本月」互覆盖）；examples.json 的 fetch.file 直接 join 未拒绝对路径/../ 越界。本版本把这些"静默"全部改成"冲突即报错、失败即拦截、残留即清理、碰撞即免疫、越界即拒绝"。
+
+- **parse_page.py / learn_dataset.py 同名冲突 exit 2**：不同 pgId 的同名看板、不同 dsId 的同名数据集不再互相覆盖——检出即 exit 2 并列出冲突清单（标题 + 双方 ID），要求改名消歧，且不写任何产物；档案结构不变，下游消费方（merge_cards/scope/check_*）零改动
+- **parse_page.py / learn_dataset.py 部分失败默认 exit 2**：批量学习任一失败即 exit 2 且在写出产物前拦截（不再产出"残缺却看似成功"的资产）；确需容忍时显式加 `--allow-partial`，失败 ID 写入机器可读的 `_meta.failedPages` / `_meta.failedDatasets`（`_meta` 增量字段，旧消费方兼容）；`--allow-partial` 不放行全灭（全部失败仍非 0 退出）
+- **build_package.py --force 清理受控区**：双闸门通过后、组装前先清空 `references/` 与生成的 `workbench.html` 再重建——旧模式文件（cards.json/datasets.json）、被删卡片的旧采样、过期 references 文件一律不残留；`memory/` 用户资产永不触碰
+- **sample_cards.py 采样文件键加 cdId**：`<看板名>__<卡片名>__<cdId>`——归一化/截断后同名也不再碰撞；采样前对全部待采 key 做预检，同 key 重复（同 cdId 被列两次）即整批 exit 2，无部分采样、无 index 落盘。**merge_cards.py 同步**：prune keys 产出新格式，并双发旧格式（无 cdId 后缀）key——升级前交付的包采样文件是旧命名，孤儿清理与受影响示例点名对新旧包都有效
+- **eval_examples.py / check_package.py 目录边界校验**：各自实现同口径 `safe_join`（realpath + commonpath）——fetch.file 拒绝绝对路径、`..` 与符号链接逃逸；评测记 fail、`--record` 拒绝回填（exit 2）、体检记 ❌，三处同一防线
+- **测试**：新增 19 例回归（同名覆盖/部分失败退出码与 --allow-partial 报告/--force 清理/文件名碰撞与同 key 整批拒绝/路径越界，含 merge_cards prune 双格式断言更新）；单测 281 → 300 例全绿
+- **版本一致性**：4.7.0 → 4.7.1（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package 的 BUILDER_VERSION 八处；check_package SCRIPT_LIST 中 check_package.py 的 `"4.7.0"` 是特性引入版本标记，语义上保留不动）
+
 ## v4.7.0（2026-09-28）交付工程化：机械组装 + 交付总闸门——低配模型也搭不出"瘫痪包"
 
 解决的问题：用低配模型（DeepSeek v4 flash 级）实机搭建 agent-yecai-finance 后人工 review 发现——内容质量合格，但工程完整性有一处关键缺陷连锁瘫痪三个功能：cards.json 被模型"精简"重构成「名字→摘要」字典（cdId/measures/filtered/dsUsage/filterDetails/筛选器交互字段全丢），导致 run_sql 白名单 dsIds 空集全拦截（SQL 直查 100% 不可用）、make_link 报"可用筛选器：（无）"、sample_cards --scope 整批拒绝；此外验收实测未回填（examples.json 全 humanConfirmed=false）、交付 SKILL.md 自由撰写缺「执行流程」「维护」节且 memory.py 命令凭记忆写错（照做必报"用法错误"）、17 个维度 values 全空（采样画像里枚举其实齐全，手工转写丢失）、「达成率」裁决用[预算数]而「收入达成率」仍用[35预算数]的同族口径矛盾。共性根因：**链条中仍靠 prompt 约束模型自觉的环节（手工转写/组装/回填），正是低配模型最容易偷工减料的地方**。本版本把剩余软约束全部下沉为脚本硬控制——LLM 只产出需要判断力的语义内容，一切结构性产物要么脚本生成、要么脚本验收。

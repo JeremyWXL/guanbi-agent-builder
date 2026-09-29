@@ -113,6 +113,68 @@ class TestEvalCard(unittest.TestCase):
         self.assertIn("采样文件缺失", reasons[0])
 
 
+class TestPathBoundary(unittest.TestCase):
+    """fetch.file 目录边界校验：拒绝绝对路径、../ 与符号链接逃逸（防采样路径越界读文件）"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        write_json(self.dir, "card-data/看板A__卡1.json",
+                   {"rows": [{"渠道": "团购", "收入": 710000}]})
+        # base_dir 外的"敏感"文件：越界时绝不允许读到
+        write_json(self.dir, "outside.json", {"rows": [{"渠道": "团购", "收入": 999}]})
+        self.base = os.path.join(self.dir, "references")
+        os.makedirs(os.path.join(self.base, "card-data"))
+
+    def test_safe_join_accepts_normal_relative(self):
+        p = eval_examples.safe_join(self.base, "card-data/x.json")
+        self.assertIsNotNone(p)
+        self.assertTrue(p.startswith(os.path.realpath(self.base)))
+
+    def test_safe_join_rejects_absolute_and_dotdot(self):
+        self.assertIsNone(eval_examples.safe_join(self.base, "/etc/passwd"))
+        self.assertIsNone(eval_examples.safe_join(self.base, "../outside.json"))
+        self.assertIsNone(eval_examples.safe_join(self.base, "card-data/../../outside.json"))
+        self.assertIsNone(eval_examples.safe_join(self.base, ""))
+
+    def test_safe_join_rejects_symlink_escape(self):
+        link = os.path.join(self.base, "card-data", "link.json")
+        os.symlink(os.path.join(self.dir, "outside.json"), link)
+        self.assertIsNone(eval_examples.safe_join(self.base, "card-data/link.json"))
+
+    def test_eval_card_rejects_traversal(self):
+        write_json(self.dir, "references/examples.json",
+                   {"scenarios": {"问数": [card_example(
+                       fetch={"type": "card", "file": "../outside.json"})]}})
+        status, reasons, _ = eval_examples.eval_card(
+            self.base, card_example(fetch={"type": "card", "file": "../outside.json"}))
+        self.assertEqual(status, "fail")
+        self.assertIn("路径越界", reasons[0])
+
+    def test_eval_card_rejects_absolute_path(self):
+        ex = card_example(fetch={"type": "card", "file": os.path.join(self.dir, "outside.json")})
+        status, reasons, _ = eval_examples.eval_card(self.dir, ex)
+        self.assertEqual(status, "fail")
+        self.assertIn("路径越界", reasons[0])
+
+    def test_record_rejects_traversal_source(self):
+        """--record 的取数源校验同口径：越界 fetch.file 拒绝回填（exit 2）"""
+        write_json(self.dir, "examples.json", {"scenarios": {"问数": [{
+            "id": "q1", "question": "q",
+            "fetch": {"type": "card", "file": "../outside.json"},
+            "expect": {"values": [], "keywords": []}, "humanConfirmed": False}]}})
+        r = run_cli(self.dir, "--record", "q1", "--values", "999")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("路径越界", r.stderr)
+
+    def test_main_exit1_on_traversal(self):
+        write_json(self.dir, "examples.json",
+                   {"scenarios": {"问数": [card_example(
+                       fetch={"type": "card", "file": "../outside.json"})]}})
+        r = run_cli(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("路径越界", r.stdout)
+
+
 class TestMainFlow(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

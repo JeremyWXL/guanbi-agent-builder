@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import learn_dataset as ld
@@ -188,6 +189,57 @@ class TestDownstreamFallback(unittest.TestCase):
                            capture_output=True, text=True, timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("merge_cards.py", r.stderr or r.stdout)
+
+
+class TestMainBatch(unittest.TestCase):
+    """批量学习出口哨兵：同名数据集冲突 / 部分失败——禁止档案与 _meta 不一致的静默交付"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def out_file(self):
+        return os.path.join(self.dir, "datasets-raw.json")
+
+    def run_main(self, ds_ids, learned, extra=()):
+        old = sys.argv
+        sys.argv = ["learn_dataset.py", *ds_ids, "-o", self.dir, *extra]
+        try:
+            with mock.patch.object(ld, "learn_one", side_effect=lambda d, _rows: (d, learned[d])), \
+                 mock.patch.object(ld, "bi_base_url", return_value=""):
+                ld.main()
+        finally:
+            sys.argv = old
+
+    @staticmethod
+    def ok(name, ds_id):
+        entry = ld.build_entry(ds_id, DS_PAYLOAD, ROWS, 200)
+        return {"name": name, "entry": entry, "virtualColumns": []}
+
+    def test_same_name_datasets_rejected(self):
+        """不同 dsId 同名数据集：名称键互相覆盖（档案少一个、dsFormulas 仍两个），exit 2 且不写产物"""
+        learned = {"d1": self.ok("销售数据集", "d1"), "d2": self.ok("销售数据集", "d2")}
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(["d1", "d2"], learned)
+        self.assertEqual(cm.exception.code, 2)
+        self.assertFalse(os.path.exists(self.out_file()))
+
+    def test_partial_failure_rejected_by_default(self):
+        """部分数据集失败默认 exit 2，且不写产物"""
+        learned = {"d1": self.ok("销售数据集", "d1"), "d2": {"error": "ds get 失败: 无权限"}}
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(["d1", "d2"], learned)
+        self.assertEqual(cm.exception.code, 2)
+        self.assertFalse(os.path.exists(self.out_file()))
+
+    def test_allow_partial_writes_report_with_failed_ids(self):
+        """--allow-partial：成功项正常写出，失败 dsId 记入 _meta.failedDatasets（机器可读）"""
+        learned = {"d1": self.ok("销售数据集", "d1"), "d2": {"error": "ds get 失败: 无权限"}}
+        self.run_main(["d1", "d2"], learned, extra=["--allow-partial"])
+        with open(self.out_file(), encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertIn("销售数据集", doc)
+        self.assertEqual(doc["_meta"]["failedDatasets"], ["d2"])
+        self.assertEqual(set(doc["_meta"]["dsFormulas"].keys()), {"d1"})  # 档案与元数据一致
 
 
 if __name__ == "__main__":
