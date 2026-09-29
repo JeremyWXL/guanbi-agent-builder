@@ -206,7 +206,10 @@ def agent_ready(data, governed_names=None):
 
 
 def fetch_governed(ds_ids, workers=4):
-    """指标中心已发布指标名（按数据集，一次调用/数据集）。单个失败不阻断：该数据集记为空集合"""
+    """指标中心已发布指标（按数据集，一次调用/数据集）。单个失败不阻断：该数据集不落盘。
+    返回 {dsId: {指标名: {"id": metricId, "status": 状态}}}——名称（dict 键）供评分命中判定，
+    id/status 落盘 page-check.json 供第 4 步指标中心对齐复用（省一轮 by-dataset 查询）。
+    只收 PUBLISHED 状态（评分语义不变：权威标注只认已发布口径）。"""
     def fetch(ds_id):
         try:
             r = subprocess.run(["guancli", "metric", "by-dataset", ds_id, "--raw"],
@@ -216,10 +219,13 @@ def fetch_governed(ds_ids, workers=4):
             payload = json.loads(r.stdout)
         except (json.JSONDecodeError, subprocess.TimeoutExpired):
             return ds_id, None
-        return ds_id, {(m.get("Detail") or {}).get("name")
-                       for m in payload.get("Metrics") or []
-                       if (m.get("Detail") or {}).get("status") == "PUBLISHED"
-                       and (m.get("Detail") or {}).get("name")}
+        metrics = {}
+        for m in payload.get("Metrics") or []:
+            d = m.get("Detail") or {}
+            if d.get("status") == "PUBLISHED" and d.get("name"):
+                metrics[d["name"]] = {"id": d.get("id") or d.get("metricId"),
+                                      "status": d["status"]}
+        return ds_id, metrics
 
     result = {}
     if not ds_ids:
@@ -249,7 +255,8 @@ def _max_utime(data):
 
 
 def evaluate(page_id, data, err, stale_days, governed=None):
-    """评估单页：data/err 来自 fetch_raw；governed 为 {dsId: 指标名集合}，None 表示未查指标中心"""
+    """评估单页：data/err 来自 fetch_raw；governed 为 {dsId: {指标名: {id, status}}}（新形态）
+    或旧形态 {dsId: 指标名集合}（兼容旧 page-check.json），None 表示未查指标中心"""
     if err:
         return {"pgId": page_id, "verdict": "⛔", "name": page_id,
                 "reasons": [f"看板内容取不到（{err}）——移动端轻应用/报告推送/填报页或无权限，无法学习"],
@@ -328,7 +335,8 @@ def evaluate(page_id, data, err, stale_days, governed=None):
         if page_ds and not any(d in governed for d in page_ds):
             result["agentReady"] = agent_ready(data, None)  # 指标中心全部查询失败：权重重分摊
         else:
-            names = set().union(*(governed.get(d, set()) for d in page_ds)) if page_ds else set()
+            # 新旧形态兼容：dict 形态 union 取其键（指标名），set 形态 union 取元素（同是指标名）
+            names = set().union(*(governed.get(d, {}) for d in page_ds)) if page_ds else set()
             result["agentReady"] = agent_ready(data, names)
     return result
 
@@ -405,10 +413,15 @@ def main():
     if out:
         os.makedirs(out, exist_ok=True)
         fp = os.path.join(out, "page-check.json")
+        doc = {"builtAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+               "staleDays": stale_days,
+               "pages": [results[pid] for pid in page_ids]}
+        # governed 映射（{dsId: {指标名: {id, status}}}）落盘：第 4 步指标中心对齐复用，
+        # 省一轮 by-dataset 查询；--skip-governed 时为 None（旧消费方只读 pages，不受影响）
+        if governed is not None:
+            doc["governed"] = governed
         with open(fp, "w", encoding="utf-8") as f:
-            json.dump({"builtAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                       "staleDays": stale_days,
-                       "pages": [results[pid] for pid in page_ids]}, f, ensure_ascii=False, indent=1)
+            json.dump(doc, f, ensure_ascii=False, indent=1)
         print(f"\n已写入 {fp}", file=sys.stderr)
 
 

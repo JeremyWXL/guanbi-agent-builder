@@ -1,5 +1,36 @@
 # 变更日志
 
+## v4.8.1（2026-09-29）v4.8.0 回归测试修复：旧包冒烟误报、直通模式模板渲染、维度值全量回填
+
+解决的问题：v4.8.0 发布后按 agent-tester 三层回归（单测/L0 冒烟/数据集直通 E2E/L2 交付质量）发现 4 个 P1，本版本全部修复。测试资产见 `_preview/_sandbox-v4.8.0/` 与 `tests/baselines/v4.8.0.*`。
+
+- **check_package.py L3 冒烟版本降级**（P1：对 pre-4.7.0 旧包误报 ❌）：run_sql --check-scope 双向断言仅在 `pkg_version ≥ 4.7.0` **且**包内 run_sql.py 源码含 `--check-scope` 字面量时执行（版本 + 源码双判据取保守）；否则降级 ⚠️ 并注明原因与「升级脚本」出路——此前旧脚本的 argv[1] 把 `--check-scope` 当 dsId 报 exit 3，check_package 误报「误拦白名单内数据集」，诊断方向完全错误。L3 其余冒烟项排查确认无同类问题
+- **直通模式交付包 SKILL.md 渲染修复**（P1：正文引用包内不存在的资产）：templates/agent-SKILL.md 引入模式条件块 `<!-- MODE: dashboard|dataset -->`——dataset 模式下取数流程/超范围话术/数据红线/维护节渲染数据集变体（datasets.json + run_sql/run_metric），「看板直达链接」整节裁掉；渲染校验新增悬空引用闸（cards.json/card-data/sample_cards/make_link 任一残留 exit 2）。dashboard 模式渲染产物逐字节不变（已验证）
+- **直通变体补 governedRef 优先 run_metric**（P1：v4.8.0 接线遗漏）：「数据探索型变体」节与执行流程的取数流程补上"带 governedRef 的指标优先 `run_metric.py <metricId>` 平台直查，失败降级"，与 dashboard 模式同等纪律
+- **description/自我介绍病句修复**（P1）：build_package.py auto_manifest 直通分支的 dashboards 槽位改填数据集名（《fact_sales_daily》而非「1 个数据集」）；render_agent_skill.py 直通模式 description 的「看板《」改「数据集《」、自我介绍「数据探索数据探索」去重复；数据出身行补直通版模板（来源：数据集名 · run_sql/run_metric 直查）
+- **fill_dim_values.py --full 全量枚举回填**（P1：50 行采样导致维度 values 严重不全，消歧协议可能把真实取值误判为不存在）：对每个匹配到数据集物理字段的维度经 run_sql.py 白名单执行 COUNT(DISTINCT) 预检 + SELECT DISTINCT 全量枚举，与现有 values 并集合并（去重保序、绝不删已有值，上限只挡新增）；超 60 个不塞爆 values，改写/追加 note「取值未全量枚举（实际 N 个），消歧前先 SQL 枚举确认」；日期型字段不枚举；run_sql 不可用/失败 ⚠️ 降级不阻断；幂等（零改动不写回不备份）。实机验证：store_id 1→10、sku_id 2→40 补全，check_dims 闸门照过。默认不带 --full 行为逐字节不变
+- **run_sql.py 越界文案按模式区分**（P2）：白名单拦截文案按 scope 来源区分 cards.json（看板模式）/ datasets.json（直通模式）
+- **builder SKILL.md 接线**：第 4 步 fill_dim_values 用法补 `--full`（直通模式或采样覆盖存疑时用）
+- **测试**：test_check_package.py +4（旧包降级三判据 + 新包断言照常）、test_render_agent_skill.py +3、test_build_package.py +1（直通槽位填数据集名）、test_fill_dim_values.py +5（--full 并集/note/降级/幂等）、test_run_sql.py +2（文案分模式）；单测 329 → 344 例全绿
+- **版本一致性**：4.8.0 → 4.8.1（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+- **遗留（下版候选）**：examples.json fetch 不支持 type=metric（指标中心链路无自动化回归覆盖，P2）；check_package 通过时输出过简（P2）；diff_baselines.py 在旧版 l2.score=null 时误报「本次未测评」（测试基建，P2）；v4.4.0 遗留 P2 ×2 仍 open
+
+## v4.8.0（2026-09-29）指标中心轻量集成：metrics.json ↔ 指标中心对齐，引用指标走平台直查
+
+解决的问题：metrics.json 是 agent 侧的口径档案，观远指标中心是平台侧的口径档案，两者此前不通——已发布到指标中心的权威口径（有状态、有血缘、有权限管理，比看板卡片配置更正式）没有被引用，agent 取数只能走卡片/SQL 本地路径，用不上"平台侧计算 + 口径权威"这条更稳的通道。v4.1 的权威标注率评分已埋下只读通道（`metric by-dataset`），本版本把它升级为**口径引用**：对齐只做三件事——引用已发布的同口径指标、顺手创建原子指标（≤10 条）、对未开通的用户做一次性推荐；指标体系建设/批量迁移/复合派生梳理一律路由专项流程，不在本向导展开（设计全文见 references/metric-center-integration.md）。
+
+- **check_pages.py `fetch_governed` 新形态**：返回值从"已发布指标名集合"扩展为 `{指标名: {id, status}}`（仍只收 PUBLISHED，评分语义不变——名称 = dict 键）；page-check.json 新增顶层 `governed` 映射落盘，第 4 步对齐复用该结果省一轮 by-dataset 查询；`--skip-governed` 行为不变；单个数据集查询失败仍不阻断；`evaluate` 兼容旧形态（指标名集合），旧消费方（selection_page 等只读 pages 字段）不受影响
+- **新脚本 `run_metric.py`（指标中心直查执行器，本方案唯一新脚本）**：`python3 run_metric.py <metricId> [-- <透传参数>]`——与 run_sql.py 同构的薄封装，metricId 必须在本包 metrics.json 的 governedRef 白名单内，越界 exit 3 且不调用 guancli（引导话术：回到搭建向导做增量学习/指标中心对齐）；scope 缺失/无 governedRef 时优雅降级不阻断（stderr 提示未校验），与 run_sql.py 降级哲学一致；`--check-scope` dry 校验供 check_package 冒烟复用；只调 `guancli metric query`（本身只读）
+- **scope.py 扩展**：`load_scope()` 新增 `metricIds`——从 scope 文件同目录的 metrics.json 提取各条目 `governedRef.metricId`；旧档案无 metrics.json / 无 governedRef / 文件损坏 → 空集不报错
+- **check_metrics.py governedRef 校验**：条目含 governedRef 但缺 metricId/name（或非对象）→ ❌；status 存在且 ≠ PUBLISHED → ⚠️（未发布的口径不能当权威引用）；无 governedRef 不校验（多数指标没有，正常）
+- **交付链路**：build_package.py 复制清单加 run_metric.py（看板/直通模式都复制——governedRef 可能存在于任何模式）；check_package.py SCRIPT_LIST 同步（引入版本 4.8.0，旧包降级 ⚠️），L3 冒烟加 `run_metric.py --check-scope` 双向断言（档案含 governedRef 时白名单内放行 exit 0 / 外拦截 exit 3；无引用时白名单为空按设计降级，跳过断言）
+- **SKILL.md 第 4 步新增「指标中心对齐」小节**（check_metrics 闸门清零后；快速模式 L3 后、增量学习 I3 后同样执行，只处理当期条目）：三态探针（初判复用 page-check.json 的 governed 结论，只复核不重来；未开通/无权限一次性推荐 + 帮助文档链接，本次搭建不再提；临时失败静默降级）+ 候选发现纪律（优先复用 by-dataset 结果，`metric search --fuzzy` 单批预算：原词 + ≤4 个同义词一次查询）+ 口径一致才写 governedRef（有疑义标待确认，不硬判）+ 不一致列入拍板组（禁止 AI 二选一）+ 未命中汇总一次问（只创建可直接创建的原子指标 ≤10 条走 guanmetric，创建权限不预检、以首次写入实机结果为准）+ 超范围路由话术
+- **红线 17（指标中心三条）**：对齐只做引用/顺手创建原子指标/一次性推荐，指标体系建设路由专项流程；metric query 取数必经 run_metric.py 白名单校验，禁止裸调 `guancli metric query`；指标中心口径与看板口径不一致列入拍板组请用户裁决，禁止 AI 自行二选一。I3 增量口径裁决补"新确认的指标条目重跑指标中心对齐（只处理增量）"；第 8 步交付树加 run_metric.py
+- **agent-SKILL.md 模板**：取数流程加一条——带 governedRef 的指标优先 `python3 references/run_metric.py <metricId>` 平台直查（权威口径 + 平台侧计算，排在三层取数路径之前），失败降级原三层路径；数据红线加"禁止裸调 guancli metric query 取数"
+- **版本一致性**：4.7.1 → 4.8.0（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package 的 BUILDER_VERSION 八处 + 新脚本 run_metric.py 自带 4.8.0）
+- **测试**：新建 test_run_metric.py 9 例（白名单放行透传 guancli/越界 exit 3 且不调 guancli/scope 缺失降级/无 governedRef 降级/--check-scope 双向/查询参数透传）；test_scope.py 补 5 例（metricIds 提取/无 metrics.json/无 governedRef/文件损坏/直通模式）；test_check_metrics.py 补 6 例（governedRef 缺 metricId ❌/缺 name ❌/非对象 ❌/非 PUBLISHED ⚠️/合法通过/无引用不校验）；test_check_pages.py 补 6 例（fetch_governed 新形态只收 PUBLISHED/metricId 字段回退/单数据集失败不阻断/非法 JSON/空输入/新形态 evaluate 与旧形态评分一致）；test_check_package.py 补 3 例（含 governedRef 包冒烟通过/旧包缺 run_metric 降级 ⚠️/新包缺失 ❌）；全部 mock subprocess 不真调 guancli。单测 300 → 329 例全绿
+- **已知边界**：三态探针中"未开通/无权限"的具体错误形态未实机确认，确认前统一按"不可用"对待（文案只说结论不暴露技术原因）；guanmetric 顺手创建不做 preflight 预检，以首次写入实机结果为准；设计文档中 workbench --check"指标中心引用覆盖率"为可选 P2 项，本版本未实施
+
 ## v4.7.1（2026-09-29）资产完整性哨兵：同名冲突/部分失败/残留/碰撞/越界——静默资产丢失清零
 
 解决的问题：独立测试/代码审查报告发现 4 个 P1 + 2 个 P2，共性是**静默**——进程 exit 0、产物看似成功，但资产已丢失或前后不一致：不同 pgId 同名看板/不同 dsId 同名数据集在 cards-raw/datasets-raw 里以标题/名称为键互相覆盖（档案少一个条目、`_meta` 却保留两个 ID）；批量学习部分看板/数据集权限或网络失败时只要还有一个成功就写出产物 exit 0；`build_package --force` 的 copytree 合并语义不清理旧 references/ 与旧采样（看板↔数据集模式切换后旧 cards.json 残留致体检误判模式）；采样文件名经非法字符归一化/60 字符截断后碰撞（「收入/本月」与「收入:本月」互覆盖）；examples.json 的 fetch.file 直接 join 未拒绝对路径/../ 越界。本版本把这些"静默"全部改成"冲突即报错、失败即拦截、残留即清理、碰撞即免疫、越界即拒绝"。

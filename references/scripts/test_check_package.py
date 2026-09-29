@@ -8,7 +8,7 @@ SCRIPT = os.path.join(HERE, "check_package.py")
 
 SCRIPTS_TO_COPY = ["attribute.py", "make_link.py", "memory.py", "check_metrics.py",
                    "check_dims.py", "eval_examples.py", "sample_cards.py", "run_sql.py",
-                   "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
+                   "run_metric.py", "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
                    "check_package.py"]
 
 SKILL_MD = """---
@@ -236,6 +236,104 @@ class BrokenPackageTest(unittest.TestCase):
         r = run(os.path.join(self.dir, "不存在的包"))
         self.assertEqual(r.returncode, 1)
         self.assertIn("不存在", self.out(r))
+
+
+class RunMetricSmokeTest(unittest.TestCase):
+    """v4.8：run_metric.py --check-scope 冒烟——档案含 governedRef 时白名单内放行/外拦截"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        make_dashboard_package(self.dir)
+        write_json(os.path.join(self.dir, "references", "metrics.json"), {"metrics": [
+            {"name": "净收入", "formula": "sum([实际数])",
+             "governedRef": {"metricId": "m100", "name": "净收入", "status": "PUBLISHED"}},
+        ], "rejected": []})
+
+    def test_package_with_governed_ref_passes(self):
+        # scope 冒烟提取 metricIds + run_metric 双向断言全部执行且不报错
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("体检通过", r.stdout)
+
+    def test_missing_run_metric_in_old_package_downgrades_to_warn(self):
+        # 旧包（builderVersion < 4.8.0）缺 run_metric.py → ⚠️ 降级，不硬拦
+        os.unlink(os.path.join(self.dir, "references", "run_metric.py"))
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("run_metric.py", r.stdout)
+
+    def test_missing_run_metric_in_new_package_is_error(self):
+        # 4.8.0 起搭建的包缺 run_metric.py → ❌
+        doc = json.loads(json.dumps(CARDS_DOC))
+        doc["_meta"]["builderVersion"] = "4.8.0"
+        write_json(os.path.join(self.dir, "references", "cards.json"), doc)
+        os.unlink(os.path.join(self.dir, "references", "run_metric.py"))
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("run_metric.py", r.stdout + r.stderr)
+
+
+class OldPackageCheckScopeTest(unittest.TestCase):
+    """P1 回归：--check-scope 自 builder 4.7.0 引入——旧版包的 run_sql.py 不支持该 flag 时，
+    L3 冒烟降级 ⚠️ 而非误报 ❌「误拦白名单内数据集」（旧脚本会把 flag 当 dsId 报 exit 3）"""
+
+    OLD_RUN_SQL = (
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "sys.exit(3 if len(sys.argv) > 1 else 2)  # 旧脚本无 check-scope 模式，把 flag 当 dsId 必然越界\n"
+    )
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        make_dashboard_package(self.dir)
+
+    def _set_version(self, v):
+        doc = json.loads(json.dumps(CARDS_DOC))
+        doc["_meta"]["builderVersion"] = v
+        write_json(os.path.join(self.dir, "references", "cards.json"), doc)
+
+    def _write_run_sql(self, text):
+        write_text(os.path.join(self.dir, "references", "run_sql.py"), text)
+
+    def test_old_package_downgrades_to_warn(self):
+        # 4.4.0 旧包 + 无 --check-scope 的旧 run_sql.py → ⚠️ 降级，不误报 ❌
+        self._set_version("4.4.0")
+        self._write_run_sql(self.OLD_RUN_SQL)
+        r = run(self.dir)
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("跳过 run_sql --check-scope 冒烟", out)
+        self.assertIn("4.4.0", out)
+        self.assertNotIn("误拦白名单内数据集", out)
+
+    def test_missing_version_with_old_script_also_downgrades(self):
+        # pkg_version 缺失/为 "0" + 旧脚本 → 双保险之版本判据生效，同样 ⚠️ 不 ❌
+        self._set_version("0")
+        self._write_run_sql(self.OLD_RUN_SQL)
+        r = run(self.dir)
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("跳过 run_sql --check-scope 冒烟", out)
+        self.assertNotIn("误拦白名单内数据集", out)
+
+    def test_new_version_with_stale_script_downgrades(self):
+        # 版本号新但脚本源码无 --check-scope 字面量（脚本是旧的）→ 源码判据生效，⚠️ 不 ❌
+        self._write_run_sql(self.OLD_RUN_SQL)
+        r = run(self.dir)
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, out)
+        self.assertIn("跳过 run_sql --check-scope 冒烟", out)
+        self.assertNotIn("误拦白名单内数据集", out)
+
+    def test_new_package_assertion_still_enforced(self):
+        # 新版包（4.7.0+ 且脚本含 --check-scope）双向断言照常执行：
+        # 脚本声称支持却放行越界探测 → ❌「未拦截白名单外数据集」
+        self._write_run_sql("#!/usr/bin/env python3\n# supports --check-scope\n"
+                            "import sys\nsys.exit(0)\n")
+        r = run(self.dir)
+        out = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("未拦截白名单外数据集", out)
 
 
 class DatasetModeTest(unittest.TestCase):

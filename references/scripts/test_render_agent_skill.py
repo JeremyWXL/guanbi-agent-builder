@@ -46,10 +46,46 @@ class RenderTest(unittest.TestCase):
 
     def test_dataset_mode_keeps_variant_and_fills_count(self):
         r = self.render(make_manifest(mode="dataset", datasetCount=5,
-                                      dashboards="5 个业财数据集"))
+                                      dashboards="fact_sales_daily"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("数据探索型变体", r.stdout)
         self.assertIn("数据来自 5 个数据集", r.stdout)
+
+    def test_dataset_mode_no_dangling_dashboard_refs(self):
+        """直通模式产物不得引用不随包分发的看板模式资产（悬空引用渲染期拦截）"""
+        r = self.render(make_manifest(mode="dataset", datasetCount=1,
+                                      dashboards="fact_sales_daily"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for ref in ("cards.json", "card-data", "sample_cards", "make_link"):
+            self.assertNotIn(ref, r.stdout)
+        self.assertNotIn("**看板直达链接**", r.stdout)  # 整节裁掉（变体节"没有看板直达链接"是能力边界声明，保留）
+        # 取数主路径：datasets.json 路由 + run_metric 优先 + run_sql
+        self.assertIn("references/datasets.json", r.stdout)
+        self.assertIn("run_metric.py <metricId>", r.stdout)
+        self.assertIn("governedRef", r.stdout)
+        # 直通版数据出身行
+        self.assertIn("来源：数据集名 · run_sql/run_metric 直查", r.stdout)
+        self.assertNotIn("来源：《看板名》卡片名", r.stdout)
+
+    def test_dataset_mode_description_and_self_intro_fixed(self):
+        """description 写数据集而非看板；场景名以「数据探索」结尾时自我介绍不重复"""
+        r = self.render(make_manifest(mode="dataset", datasetCount=1,
+                                      scenario="门店日销数据探索",
+                                      dashboards="fact_sales_daily"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("以观远 BI 数据集《fact_sales_daily》为数据来源", r.stdout)
+        self.assertNotIn("以观远 BI 看板《", r.stdout)
+        self.assertIn("数据来自《fact_sales_daily》", r.stdout)
+        self.assertNotIn("数据探索数据探索", r.stdout)
+        self.assertIn("我是您的门店日销数据探索助手", r.stdout)
+
+    def test_dataset_mode_sql_unavailable_uses_dataset_note(self):
+        r = self.render(make_manifest(mode="dataset", datasetCount=1,
+                                      dashboards="fact_sales_daily", sqlAvailable=False))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("SQL 直查当前不可用", r.stdout)
+        self.assertIn("取数以已验收示例的缓存结论为准", r.stdout)
+        self.assertNotIn("💡 **SQL 直查即主路径**", r.stdout)
 
     def test_sql_unavailable_replaces_note(self):
         r = self.render(make_manifest(sqlAvailable=False))

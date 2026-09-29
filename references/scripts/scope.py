@@ -13,6 +13,9 @@ load_scope 返回:
   {"pgIds": {pgId: 看板名},         # _meta.pages（旧档案无则空集，降级不报错）
    "dsIds": {dsId, ...},            # 各页 dsUsage 键（数据集直通模式：datasets.json 条目 dsId）
    "cdIds": {cdId: "页面__卡片"},   # 各页 cards（sample_cards --scope 用）
+   "metricIds": {metricId, ...},    # 同目录 metrics.json 各条目 governedRef.metricId
+                                    # （指标中心口径引用白名单，run_metric.py 用；
+                                    #   旧档案无 metrics.json / 无 governedRef → 空集，降级不报错）
    "titles": [看板名, ...],         # 超范围话术列举已学看板用
    "source": 路径}
 找不到 scope 文件返回 None——调用方降级跳过校验（脱离交付包单独运行不阻断）。
@@ -36,6 +39,27 @@ def _find_scope_file(candidates):
     return None
 
 
+def _load_metric_ids(scope_dir):
+    """从 scope 文件同目录的 metrics.json 提取指标中心引用白名单（governedRef.metricId）。
+    文件缺失/解析失败/条目无 governedRef → 空集，不报错（多数指标没有引用，正常）。"""
+    fp = os.path.join(scope_dir, "metrics.json")
+    ids = set()
+    if not os.path.exists(fp):
+        return ids
+    try:
+        with open(fp, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        return ids
+    for m in doc.get("metrics") or []:
+        if not isinstance(m, dict):
+            continue
+        ref = m.get("governedRef")
+        if isinstance(ref, dict) and ref.get("metricId"):
+            ids.add(ref["metricId"])
+    return ids
+
+
 def load_scope(candidates=None):
     """提取白名单。candidates 为路径列表（{here} 占位符自动替换为脚本所在目录）；
     默认按 DEFAULT_CANDIDATES 查找。找不到返回 None。"""
@@ -47,7 +71,9 @@ def load_scope(candidates=None):
         return None
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
-    scope = {"pgIds": {}, "dsIds": set(), "cdIds": {}, "titles": [], "source": path}
+    scope = {"pgIds": {}, "dsIds": set(), "cdIds": {}, "metricIds": set(),
+             "titles": [], "source": path}
+    scope["metricIds"] = _load_metric_ids(os.path.dirname(path))
     if os.path.basename(path) == "datasets.json":
         # 数据集直通模式：无卡片层，白名单 = 已学数据集的 dsId
         for k, v in doc.items():

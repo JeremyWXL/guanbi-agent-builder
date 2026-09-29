@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.7.1"
+version: "4.8.1"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -233,17 +233,34 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    python3 references/scripts/check_metrics.py <工作目录>
    ```
    结构/同义词撞车/冲突未裁决（❌ 未清零禁止进入第 5 步）+ 公式一致性/候选未收编/维度未见（⚠️ 需在确认点告知用户）。businessKnowledge.md 仍是人读台账，metrics.json 是机器可读孪生，两者同步维护
-7. **固化机器可读维度档案 `dimensions.json`**（模板：`references/templates/dimensions.json`）：以第 2 步 `dimensions-seed.json` 为底稿，同样异议驱动——默认采纳组成稿，重点与用户拍板三件事：① **维度叫法**（synonyms：用户口头怎么叫，"大区""区域"归到哪个标准维度）② **易混维度分工**（similarTo：名称相近的维度各管什么，"区域"默认指哪个）③ **值别名归一**（valueAliases：用户混用的相似取值，"华东区"→"华东"）；成员值 values 来自采样枚举——**先用脚本机械回填，禁止手工誊写**（手工誊写 = 漏值/错值，实机教训：画像里枚举齐全但成稿 values 全空）：
+7. **指标中心对齐**（check_metrics 闸门 ❌ 清零后执行；快速模式在 L3 后、增量学习在 I3 后同样执行，只处理当期确认的条目）：metrics.json 是 agent 侧的口径档案，指标中心是平台侧的口径档案——对齐后，带引用的指标取数可以走平台已发布的权威口径（交付助手经 run_metric.py 直查）。本小节只做三件事：**引用已发布的同口径指标、顺手创建原子指标、对没开通的用户做一次性推荐**；指标体系建设/批量梳理不做（路由话术见末条）。
+   - **可用性初判（静默，一次）**：第 1 步 check_pages 跑过 governed 查询（未带 `--skip-governed`）时，page-check.json 里的 governed 结论就是初判（`ok` = 可用、`unavailable` = 不可用），此处只复核不重来；结论随 page-check.json 落盘，断点续建按落盘结论恢复。三态处置：
+     - **可用**：进入下面的对齐流程
+     - **未开通/无权限**：一次性告知 + 帮助文档，继续原流程，**本次搭建不再提**（断点续建也不许再弹）：
+       > "您的 BI 环境还没有开通指标中心（或当前账号没有指标中心权限）。指标中心是观远的口径统一管理功能——把'销售额怎么算'这类定义固化在平台上，全公司的看板和 AI 助手用同一套口径，回答会更稳。这次搭建不受影响，我们继续。有兴趣可以了解：[指标中心产品简介](https://docs.guandata.com/product/bi/product-introduction)、[指标中心操作流程](https://docs.guandata.com/product/bi/index-center-operation-process)"
+     - **临时失败**（网络/服务异常）：静默降级，不打扰用户，下次触发再试
+   - **对齐流程（可用时）**：对本期确认的每条指标做一次匹配——
+     1. **候选发现**：优先复用第 1 步 page-check.json 的同数据集已发布指标结果（governed 映射带 id/status）；不够的用 `guancli metric search --fuzzy` 补——单批预算：原词 + ≤4 个同义词一次查询，不拆批、不重复搜
+     2. **口径一致才引用**：名称命中（含 metrics.json 的 synonyms）后，用 `guancli metric get --brief` 的 description/dataset/measureFields 与该条 formula 比对；一致 → 该条写入 `governedRef: {metricId, name, status}`，businessKnowledge.md 口径来源标注"指标中心已发布口径"；一致性判断有疑义的**不引用也不算冲突**，标记待确认即可（引用错了比不引用更糟）
+     3. **口径不一致 = 冲突，不是引用**：列入拍板组请用户裁决（"指标中心里'退款率'是÷GMV，您看板里是÷收入，以哪个为准？"），**禁止 AI 自行二选一**；用户拍板以看板为准的，该条进入下面的创建候选
+     4. **未命中的汇总一次问**（不逐条问）：
+        > "已确认的口径里，有 N 条指标中心还没有收录。您的账号可以在指标中心创建指标——发布上去的好处是口径全公司统一、其他看板和 AI 应用也能复用。要顺手把这几条发布上去吗？（不发布也不影响助手使用）"
+
+        用户不发布 → 继续原流程，不问第二次。用户发布 → **只创建可直接创建的原子指标**（有明确数据集物理字段 + 标准聚合方式），走 guanmetric 逐条创建并回读校验，成功后回填 governedRef（同引用）；超过 10 条提示"数量较多，建议用专门的指标梳理流程批量建设"（路由专项流程）。复合/派生指标**不在顺手创建范围**（依赖排序、公共维度映射是专项工作）——列入提示，路由专项流程
+   - **创建权限不预检**：读权限由初判确认；创建权限在用户选择"要创建"后，以第一次 guanmetric 写入的实际结果为准——失败按权限类错误提示并退回原流程
+   - **超出一律路由**：指标体系建设、业务域划分、批量迁移归并、复合/派生指标批量梳理都不在本向导展开，话术："这部分超出搭建分析助手的范围了——您需要的是一次系统的指标梳理，有专门的迁移流程可以做（业务确认工作簿 → 平台实施工作簿 → 批量创建）。这次先把助手搭完，之后需要的话我们单开一轮做指标建设。"
+8. **固化机器可读维度档案 `dimensions.json`**（模板：`references/templates/dimensions.json`）：以第 2 步 `dimensions-seed.json` 为底稿，同样异议驱动——默认采纳组成稿，重点与用户拍板三件事：① **维度叫法**（synonyms：用户口头怎么叫，"大区""区域"归到哪个标准维度）② **易混维度分工**（similarTo：名称相近的维度各管什么，"区域"默认指哪个）③ **值别名归一**（valueAliases：用户混用的相似取值，"华东区"→"华东"）；成员值 values 来自采样枚举——**先用脚本机械回填，禁止手工誊写**（手工誊写 = 漏值/错值，实机教训：画像里枚举齐全但成稿 values 全空）：
    ```bash
-   python3 references/scripts/fill_dim_values.py <工作目录>   # 只补空 values，已确认值不动，自动备份
+   python3 references/scripts/fill_dim_values.py <工作目录>          # 只补空 values，已确认值不动，自动备份
+   python3 references/scripts/fill_dim_values.py <工作目录> --full   # 全量枚举回填（直通模式 / 采样覆盖存疑时）
    ```
-   画像无枚举的维度缺的从取数结果补，禁止编造。写完后必须过质量闸门：
+   数据集直通模式（或看板采样覆盖存疑时）用 `--full`：经 run_sql.py 对物理字段 `SELECT DISTINCT` 取全量枚举并与已有 values 并集（已有值不动）；单维度超过 60 个不塞爆，改写 note 提示消歧前先 SQL 枚举确认。画像无枚举的维度缺的从取数结果补，禁止编造。写完后必须过质量闸门：
    ```bash
    python3 references/scripts/check_dims.py <工作目录>
    ```
    结构/维度间及与指标的同义词撞车/值别名悬空（❌ 未清零禁止进入第 5 步）+ 值跨维度重叠/相似值未收编/维度未收录成员值（⚠️ 需在确认点告知用户——**值跨维度重叠清单就是交付后必须选项式消歧的取值清单**，如"华东"同时属于销售大区与财务大区）
-8. 业务背景提问："这个业务有什么季节性或特殊节点吗？（如 618、双 11）""有没有口径上的特殊约定？"
-9. **SQL 口径梳理（若启用 SQL 模式）**：当发现 SQL 算的指标与看板口径不一致时，必须把"SQL 口径"作为一条单独的规则写入 businessKnowledge.md，标注"SQL 计算口径 = XX，与看板口径 XX 的差异为 XX"。同时标记底层数据集中"看板卡片未使用的冗余字段"为"禁止引用"，防止后续 SQL 取数时口径混淆。
+9. 业务背景提问："这个业务有什么季节性或特殊节点吗？（如 618、双 11）""有没有口径上的特殊约定？"
+10. **SQL 口径梳理（若启用 SQL 模式）**：当发现 SQL 算的指标与看板口径不一致时，必须把"SQL 口径"作为一条单独的规则写入 businessKnowledge.md，标注"SQL 计算口径 = XX，与看板口径 XX 的差异为 XX"。同时标记底层数据集中"看板卡片未使用的冗余字段"为"禁止引用"，防止后续 SQL 取数时口径混淆。
 
 **确认点**：逐条展示规则清单请用户确认："我把刚才聊的口径整理成了 N 条规则，其中归因公式是：…您看有没有说错的？"同时主动提供工作台选项："想在浏览器里逐条核对、直接改的话，我可以打开校验工作台。"**这一步不允许跳过**，口径错误是洞察质量的最大杀手。
 
@@ -323,7 +340,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    └── references/
        ├── cards.json         # 校验过的卡片映射
        ├── formulas.json      # 指标口径字典（公式+换维度安全性+冲突裁决结果）
-       ├── metrics.json       # 机器可读口径档案（第 4 步确认，check_metrics.py 校验通过版）
+       ├── metrics.json       # 机器可读口径档案（第 4 步确认，check_metrics.py 校验通过版；含 governedRef 指标中心引用，若有）
        ├── dimensions.json    # 机器可读维度档案（第 4 步确认，check_dims.py 校验通过版）
        ├── learningResult.md  # 看板资产目录（用户确认版）
        ├── businessKnowledge.md # 业务口径（用户确认版）
@@ -341,8 +358,9 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
        ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
+       ├── run_metric.py      # 指标中心直查执行器（复制自本 skill；metric query 唯一入口，governedRef 白名单）
        ├── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
-       ├── scope.py           # 范围守卫白名单提取（复制自本 skill；run_sql/sample_cards/scope_audit 共享）
+       ├── scope.py           # 范围守卫白名单提取（复制自本 skill；run_sql/run_metric/sample_cards/scope_audit 共享）
        ├── scope_audit.py     # 越界取数审计（复制自本 skill；扫 qa-log 的 --page/--ds 对照白名单）
        ├── feedback.py        # 问题反馈通道（复制自本 skill；用户遇 bug 经同意发 GitHub issue / SkillHub 评论）
        ├── check_package.py   # 交付包体检（复制自本 skill；结构/内容/功能冒烟三层自检，维护期可重跑）
@@ -373,7 +391,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
 2. **采样发现的高风险疑似口径问题**最多挑 3 条问（如多版本预算字段、编码型字段），其余默认按看板算法采纳
 3. **归因公式一句话问法**："业绩没达标时，您习惯怎么拆原因？"——用户答不上来就用通用归因框架（总量→维度拆解→贡献排序）兜底，并在 insightThinking 中声明为通用框架
 
-共识组亮清单默认采纳（不逐条过）："以下 N 条与看板算法完全一致，我默认采纳，有错请指出"。metrics.json / dimensions.json **以种子自动成稿**（冲突项按裁决填 formula、落选变体进 rejected）；businessKnowledge.md 顶部标注"快速模式成稿：共识口径按看板算法默认采纳，未经逐条确认，可随时逐条深化"。**双闸门照常跑**：`check_metrics.py` / `check_dims.py` ❌ 清零才放行。
+共识组亮清单默认采纳（不逐条过）："以下 N 条与看板算法完全一致，我默认采纳，有错请指出"。metrics.json / dimensions.json **以种子自动成稿**（冲突项按裁决填 formula、落选变体进 rejected）；businessKnowledge.md 顶部标注"快速模式成稿：共识口径按看板算法默认采纳，未经逐条确认，可随时逐条深化"。**双闸门照常跑**：`check_metrics.py` / `check_dims.py` ❌ 清零才放行。闸门清零后按第 4 步「指标中心对齐」小节执行对齐（只处理本期确认的条目）。
 
 ### L4 场景与框架（= 第 5+6 步合并）
 
@@ -432,6 +450,7 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 - 只裁决**新冲突 + 受影响条目**（`incr-report.json` 的 `affectedMetrics` + `formulas.json` 里新出现的 conflicts）；共识组默认采纳
 - 被删/改名卡片牵连的已验收示例（`affectedExamples`）：逐条请用户确认删除或保留（✅ 删除 / ✏️ 保留）
 - **双闸门全量重跑**（`check_metrics.py` / `check_dims.py`）：旧档案已清零，新 ❌ 只来自新内容——❌ 未清零禁止进入下一步（第 4 步命门在 incr 下同样禁止 skipped）
+- **指标中心对齐重跑**（只处理增量）：本期新确认的指标条目按第 4 步「指标中心对齐」小节做匹配——复用 I1 适检的 governed 结果做初判，命中同口径的补 governedRef，未命中的汇总一次问用户是否顺手创建
 
 ### I4 增量验收（= 第 7 步）
 
@@ -469,3 +488,4 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId）；禁止裸调 `guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
 15. **问题反馈三条**：未经用户明确同意不发送反馈；反馈正文禁止含业务数据（只有版本/进度/平台与用户亲口描述的现象）；发送失败按脚本引导处理、不静默跳过（通道与话术见「问题反馈通道」节）
 16. **交付三条**（v4.7 工程化，实机 review 教训）：交付包必须经 `build_package.py` 机械组装 + `check_package.py` 体检通过——禁止手工拼装、禁止裁剪 cards.json（裁剪 = run_sql/make_link/sample_cards 连锁瘫痪）；交付助手 SKILL.md 必须 `render_agent_skill.py` 模板渲染，禁止自由撰写（自由撰写 = 缺节 + CLI 凭记忆写错）；examples.json 验收回填必须走 `eval_examples.py --record/--confirm`——过不了取数源校验的数字进不了基准
+17. **指标中心三条**（v4.8）：指标中心对齐只做引用已发布同口径指标 / 顺手创建原子指标（≤10 条）/ 一次性推荐——指标体系建设、批量迁移归并、复合/派生批量梳理一律路由专项流程，不在本向导展开；指标中心取数必经 `run_metric.py` 白名单校验，禁止裸调 `guancli metric query`；指标中心口径与看板口径不一致时列入拍板组请用户裁决，禁止 AI 自行二选一

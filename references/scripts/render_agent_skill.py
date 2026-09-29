@@ -9,7 +9,8 @@ manifest 字段（* 必填）:
   *slug             agent 标识（frontmatter name = agent-<slug>）
   *scenario         业务场景名（如：业财经营分析）
   *keywords         description 触发关键词（如：收入/毛利/费用、达成率、归因）
-  *dashboards       看板清单（"》《"连接；build_package 从 cards-raw 自动带入；直通模式填数据集描述）
+  *dashboards       看板清单（"》《"连接；build_package 从 cards-raw 自动带入；直通模式填数据集名，
+                    build_package 从 datasets-raw 自动带入）
   *typicalQuestions 4 个典型问题 [问数, 归因, 异常, 洞察]（build_package 从 examples.json 自动带入）
   date              搭建日期（缺省今天）
   mode              dashboard（默认）| dataset（数据集直通：保留「数据探索型变体」节）
@@ -28,10 +29,20 @@ PLACEHOLDER_RE = re.compile(r"\{[^{}\n]{1,30}\}")
 REQUIRED_SECTIONS = ["使用方式", "对话体验规范", "记忆系统", "前置检查", "执行流程", "数据红线", "维护"]
 VARIANT_MARK = "【数据探索型变体"
 SQL_NOTE_MARK = "> 💡 **SQL 直查触发条件**"
+SQL_NOTE_MARK_DATASET = "> 💡 **SQL 直查即主路径**"
 SQL_UNAVAILABLE_NOTE = (
     "> ⚠️ **SQL 直查当前不可用**（第 7 步探活实测失效）：取数以卡片缓存与未筛选（数据集级）卡片"
     "为准，禁止宣称可 SQL 直查。恢复条件：数据集重新可用后按第 7 步流程探活验证，再把本节改回可用表述。"
     "references 中保留 sql-guide.md 与 run_sql.py 备用。")
+SQL_UNAVAILABLE_NOTE_DATASET = (
+    "> ⚠️ **SQL 直查当前不可用**（第 7 步探活实测失效）：取数以已验收示例的缓存结论为准，"
+    "禁止宣称可 SQL 直查。恢复条件：数据集重新可用后按第 7 步流程探活验证，再把本节改回可用表述。"
+    "references 中保留 sql-guide.md 与 run_sql.py 备用。")
+# 模式条件块：<!-- MODE: dashboard|dataset --> ... <!-- /MODE -->，按 manifest.mode 二选一
+MODE_BLOCK_RE = re.compile(r"<!-- MODE: (dashboard|dataset) -->\n([\s\S]*?)<!-- /MODE -->\n?")
+# 直通模式产物不得出现的看板模式资产引用（cards.json/sample_cards/make_link 不随直通包分发，
+# 残留即悬空引用——渲染期拦截）
+DATASET_FORBIDDEN_REFS = ["cards.json", "card-data", "sample_cards", "make_link"]
 
 REQUIRED_KEYS = ["slug", "scenario", "keywords", "dashboards", "typicalQuestions"]
 
@@ -81,13 +92,23 @@ def render(manifest):
         n = manifest.get("datasetCount")
         if n:
             text = text.replace("数据来自 N 个数据集", f"数据来自 {n} 个数据集")
+        # 直通模式措辞修正：description 按数据集口径；场景名本身以"数据探索"结尾时去掉重复
+        text = text.replace("以观远 BI 看板《", "以观远 BI 数据集《", 1)
+        text = text.replace("数据探索数据探索", "数据探索")
+
+    # 模式条件块：命中模式的块去标记保留内容，另一模式的块整块移除（看板模式产物逐字节不变）
+    text = MODE_BLOCK_RE.sub(lambda m: m.group(2) if m.group(1) == mode else "", text)
+    if "<!-- MODE:" in text:
+        die("模式条件块解析失败（存在未闭合的 <!-- MODE: --> 标记）——模板结构可能已漂移，请人工检查")
 
     # SQL 直查可用性（以第 7 步探活实测为准）
     if manifest.get("sqlAvailable") is False:
+        mark = SQL_NOTE_MARK if mode == "dashboard" else SQL_NOTE_MARK_DATASET
+        note = SQL_UNAVAILABLE_NOTE if mode == "dashboard" else SQL_UNAVAILABLE_NOTE_DATASET
         lines = text.splitlines()
         for i, ln in enumerate(lines):
-            if ln.startswith(SQL_NOTE_MARK):
-                lines[i] = SQL_UNAVAILABLE_NOTE
+            if ln.startswith(mark):
+                lines[i] = note
                 break
         else:
             die("找不到 SQL 直查触发条件注释行——模板结构可能已漂移，请人工检查")
@@ -120,6 +141,11 @@ def render(manifest):
             die(f"渲染结果缺少必需章节「{sec}」——模板结构可能已漂移，请人工检查")
     if mode == "dataset" and VARIANT_MARK not in text:
         die("直通模式渲染结果缺少数据探索型变体节——模板结构可能已漂移")
+    if mode == "dataset":
+        bad = [r for r in DATASET_FORBIDDEN_REFS if r in text]
+        if bad:
+            die(f"直通模式渲染结果残留看板模式资产引用: {'、'.join(bad)}——"
+                "这些文件不随直通包分发，模板结构可能已漂移，请人工检查")
     return text
 
 

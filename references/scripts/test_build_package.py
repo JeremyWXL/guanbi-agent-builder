@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """build_package.py 单测：端到端机械组装（cards.json 与 cards-raw 字节一致=零裁剪）、
-验收证据不足拒绝交付、双闸门拦截、--force 语义、memory 重建保留"""
-import json, os, subprocess, sys, tempfile, unittest
+验收证据不足拒绝交付、双闸门拦截、--force 语义、memory 重建保留、直通模式 manifest 槽位"""
+import importlib.util, json, os, subprocess, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "build_package.py")
@@ -105,7 +105,7 @@ class BuildPackageTest(unittest.TestCase):
             record = json.load(f)
         self.assertEqual(record["result"], "pass", record["errors"])
         # 脚本复制齐全
-        for fn in ("run_sql.py", "scope.py", "check_package.py", "eval_examples.py", "feedback.py"):
+        for fn in ("run_sql.py", "run_metric.py", "scope.py", "check_package.py", "eval_examples.py", "feedback.py"):
             self.assertTrue(os.path.isfile(os.path.join(self.pkg, "references", fn)), fn)
 
     def test_unconfirmed_examples_rejected(self):
@@ -169,6 +169,20 @@ class BuildPackageTest(unittest.TestCase):
         r = self.build()
         self.assertEqual(r.returncode, 2)
         self.assertIn("manifest", r.stderr)
+
+    def test_dataset_mode_manifest_fills_dataset_names(self):
+        """直通模式 dashboards 槽位自动带入数据集名（渲染为《fact_sales_daily》，
+        而非"N 个数据集"——后者会让 description/自我介绍出现病句）"""
+        spec = importlib.util.spec_from_file_location("build_package", SCRIPT)
+        bp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bp)
+        write_json(self.workdir, "datasets-raw.json",
+                   {"_meta": {}, "fact_sales_daily": {"dsId": "d1"},
+                    "dim_channel": {"dsId": "d2"}})
+        m = bp.auto_manifest(self.workdir, "dataset", {})
+        self.assertEqual(m["mode"], "dataset")
+        self.assertEqual(m["datasetCount"], 2)
+        self.assertEqual(m["dashboards"], "fact_sales_daily》《dim_channel")
 
 
 if __name__ == "__main__":

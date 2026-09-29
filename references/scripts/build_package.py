@@ -30,14 +30,14 @@ import json, os, shutil, subprocess, sys, tempfile
 from datetime import date, datetime
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.7.1"
+BUILDER_VERSION = "4.8.1"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 复制进交付包 references/ 的脚本（维护期自检/取数/回归全靠它们；check_package 的
 # SCRIPT_LIST 是验收口径，这里额外带 fill_dim_values/render 以外的维护工具）
 PACKAGE_SCRIPTS = ["attribute.py", "make_link.py", "memory.py", "check_metrics.py",
                    "check_dims.py", "eval_examples.py", "sample_cards.py", "run_sql.py",
-                   "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
+                   "run_metric.py", "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
                    "check_package.py", "fill_dim_values.py"]
 DATASET_MODE_DROP = {"make_link.py", "sample_cards.py"}  # 直通模式无卡片层
 OPTIONAL_CONTENT = ["industry-notes.md", "report-insights.md", "conversation-insights.md"]
@@ -107,8 +107,10 @@ def auto_manifest(workdir, mode, manifest):
         m.setdefault("mode", "dashboard")
     else:
         draw = load_json(os.path.join(workdir, "datasets-raw.json")) or {}
-        n = len([k for k in draw if not k.startswith("_")])
-        m.setdefault("dashboards", f"{n} 个数据集")
+        names = [k for k in draw if not k.startswith("_")]
+        n = len(names)
+        # dashboards 槽位直通模式填数据集名（渲染为《fact_sales_daily》而非"N 个数据集"）
+        m.setdefault("dashboards", "》《".join(names) if names else f"{n} 个数据集")
         m.setdefault("mode", "dataset")
         m.setdefault("datasetCount", n)
     if "typicalQuestions" not in m:

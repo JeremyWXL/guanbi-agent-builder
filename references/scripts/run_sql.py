@@ -13,7 +13,8 @@ prompt 红线靠自觉，本脚本提供脚本层强制：只允许单条 SELECT
   1. 去除注释与字符串字面量后，必须以 SELECT 或 WITH 开头
   2. 禁止多语句（; 后还有内容）
   3. 禁止写操作/管理操作关键字（INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/...）
-  4. 范围守卫：数据集 ID 必须在 scope 白名单内（从 cards.json 的 dsUsage 派生；
+  4. 范围守卫：数据集 ID 必须在 scope 白名单内（看板模式从 cards.json 的 dsUsage 派生，
+     数据集直通模式从 datasets.json 已学条目派生；
      找不到 scope 文件时跳过本校验，不阻断脱离交付包的独立使用）
 """
 import os, re, subprocess, sys
@@ -59,8 +60,12 @@ def scope_check(ds_id):
     """白名单 dry 校验：在覆盖范围内返回 None；越界返回错误信息；scope 缺失返回 None（降级）"""
     scope = scope_mod.load_scope() if scope_mod is not None else None
     if scope is not None and ds_id not in scope["dsIds"]:
+        # 越界文案按白名单来源区分：看板模式指向 cards.json 的 dsUsage，直通模式指向 datasets.json
+        src = os.path.basename(scope.get("source") or "")
+        hint = ("references/datasets.json 的已学数据集" if src == "datasets.json"
+                else "references/cards.json 的 dsUsage")
         return (f"数据集 {ds_id} 不在本助手覆盖范围（脚本层白名单拦截）\n"
-                "覆盖范围见 references/cards.json 的 dsUsage；如需接入新数据，回到搭建向导说「增量学习」。")
+                f"覆盖范围见 {hint}；如需接入新数据，回到搭建向导说「增量学习」。")
     return None
 
 

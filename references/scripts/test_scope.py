@@ -72,6 +72,50 @@ class DatasetDirectModeTest(unittest.TestCase):
         self.assertEqual(s["cdIds"], {})
 
 
+class MetricIdsTest(unittest.TestCase):
+    """v4.8 指标中心引用白名单：从 scope 文件同目录的 metrics.json 提取 governedRef.metricId"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        write_json(self.dir, "cards.json", make_cards_doc())
+
+    def load(self):
+        return scope.load_scope(candidates=[os.path.join(self.dir, "cards.json")])
+
+    def test_governed_ref_metric_ids_extracted(self):
+        write_json(self.dir, "metrics.json", {"metrics": [
+            {"name": "净收入", "governedRef": {"metricId": "m100", "name": "净收入", "status": "PUBLISHED"}},
+            {"name": "毛利率"},  # 无 governedRef，不收录（多数指标没有引用，正常）
+            {"name": "达成率", "governedRef": {"metricId": "m200", "name": "达成率"}},
+        ]})
+        s = self.load()
+        self.assertEqual(s["metricIds"], {"m100", "m200"})
+
+    def test_no_metrics_json_empty_set(self):
+        # 旧档案无 metrics.json → 空集，不报错
+        s = self.load()
+        self.assertEqual(s["metricIds"], set())
+
+    def test_metrics_without_governed_ref_empty_set(self):
+        write_json(self.dir, "metrics.json", {"metrics": [{"name": "净收入", "formula": "sum([x])"}]})
+        s = self.load()
+        self.assertEqual(s["metricIds"], set())
+
+    def test_broken_metrics_json_empty_set(self):
+        with open(os.path.join(self.dir, "metrics.json"), "w", encoding="utf-8") as f:
+            f.write("{not json")
+        s = self.load()
+        self.assertEqual(s["metricIds"], set())
+
+    def test_dataset_mode_also_extracts(self):
+        d = tempfile.mkdtemp()
+        write_json(d, "datasets.json", {"数据集甲": {"dsId": "dsX"}})
+        write_json(d, "metrics.json", {"metrics": [
+            {"name": "净收入", "governedRef": {"metricId": "m100", "name": "净收入"}}]})
+        s = scope.load_scope(candidates=[os.path.join(d, "datasets.json")])
+        self.assertEqual(s["metricIds"], {"m100"})
+
+
 class MissingFileTest(unittest.TestCase):
     def test_returns_none_when_no_scope_file(self):
         d = tempfile.mkdtemp()

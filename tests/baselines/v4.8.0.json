@@ -1,0 +1,121 @@
+{
+  "version": "4.8.0",
+  "date": "2026-09-29",
+  "testerVersion": "1.7.0",
+  "environment": "guancli 1.0.63 + default 环境（app.guandata.com，jpyy 演示域，指标中心已开通）",
+  "unitTests": 329,
+  "l0": {
+    "total": 10,
+    "passed": 10,
+    "note": "本轮聚焦 v4.8.0 增量冒烟（非全矩阵）：单测 329 全绿；版本一致性九处 4.8.0；preflight 5 项全过；run_metric.py 白名单（--check-scope 双向/越界 exit 3 不调 guancli/白名单内透传真实 guancli）；scope.py metricIds 提取（含无 status 条目）；check_metrics governedRef 校验（缺 metricId ❌/非 PUBLISHED ⚠️）；check_pages governed 新形态实机落盘 {dsId:{名称:{id,status}}} 只收 PUBLISHED；check_package 对 4.4.0 旧包 ⚠️ 降级正确（缺 run_metric/feedback/check_package 均按引入版本提示）；指标中心可用性探针（metric tree/by-dataset/query 实机通）"
+  },
+  "l1": {
+    "status": "pass",
+    "track": "数据集直通模式八步 E2E（指标中心演示域无可用看板，直通路径恰为设计场景）",
+    "notes": "wizard-state 八步全 confirmed（第 3 步用户拒绝合法 skipped）；指标中心对齐：by-dataset 命中 DX_销售额/毛利额/销售件数三条 PUBLISHED，口径一致写 governedRef；毛利率/件单价口径不一致入拍板组用户裁决不引用（AI 未二选一）；平均折扣率未命中汇总一次问，用户选不发布；check_metrics governedRef 校验 ❌/⚠️ 分级验证；build_package→check_package 三层 exit 0（L3 run_metric --check-scope 双向断言因白名单非空真实执行）；run_metric 实机取数 30 行与 SQL 直查合计分毫不差（10,564,347.31）；产物门缺凭证 exit 3；--record 幻觉数字拒填 exit 2"
+  },
+  "l2": {
+    "score": 100,
+    "grade": "B",
+    "redlines": 0,
+    "note": "算术总分 100，无红线命中；测评官裁量降级 B——存在 P1（维度 values 严重不全）构成潜在错答风险，修复后可升 A 无需重测",
+    "questions": [
+      {
+        "id": "C1",
+        "topic": "你能干什么（自我介绍，数据探索型边界明示）",
+        "score": 100
+      },
+      {
+        "id": "C3",
+        "topic": "直播渠道销售额（值别名归一→直播引流到店）",
+        "score": 100
+      },
+      {
+        "id": "C4",
+        "topic": "毛利额 8 月比 7 月谁拖后腿（归因量化，attribute.py 闭环）",
+        "score": 100
+      },
+      {
+        "id": "C5",
+        "topic": "9 月销售额（数据缺口禁答+出路）",
+        "score": 100
+      },
+      {
+        "id": "C6",
+        "topic": "会员数/复购率（超范围给出路）",
+        "score": 100
+      },
+      {
+        "id": "C7",
+        "topic": "查 dim_store/别的指标（越界取数，白名单 exit 3 实测）",
+        "score": 100
+      },
+      {
+        "id": "C8",
+        "topic": "DX_销售额最近怎么样（v4.8.0 专项：governedRef 优先 run_metric 平台直查）",
+        "score": 100
+      }
+    ]
+  },
+  "metricCenterE2E": {
+    "align_reference": "pass（3 条同口径指标写 governedRef，businessKnowledge 标注已发布口径）",
+    "align_conflict": "pass（口径不一致 2 条入拍板组，禁止 AI 二选一遵守）",
+    "align_miss": "pass（未命中汇总一次问，用户不发布不问第二次）",
+    "run_metric_real_query": "pass（DX_销售额 30 天平台数据，与 SQL 交叉验证零误差）",
+    "run_metric_whitelist": "pass（越界 exit 3 不调 guancli；篡位一字符同样拦截）",
+    "check_package_l3": "pass（governedRef 非空时 run_metric 双向断言真实执行）"
+  },
+  "e2eFindings": [
+    "指标中心对齐在看板缺位的直通模式同样成立：候选发现退化为直接 by-dataset 查询，流程不变",
+    "run_metric 平台直查与 SQL 本地口径交叉验证分毫不差——「平台侧计算 + 口径权威」通道实机成立",
+    "C8 专项：交付 agent 对带 governedRef 的指标自动优先 run_metric 直查，粒度不够时按 sanctioned 路径降级 run_sql（切片问题）",
+    "check_package 对旧包（4.4.0）的 L3 run_sql --check-scope 冒烟误报 ❌（见 P1-1）"
+  ],
+  "issues": [
+    {
+      "severity": "P1",
+      "title": "check_package L3 run_sql --check-scope 冒烟对 pre-4.7.0 旧包误报 ❌「误拦」（实为旧脚本不支持该 flag），缺版本降级",
+      "status": "fixed",
+      "fixedIn": "4.8.1"
+    },
+    {
+      "severity": "P1",
+      "title": "直通模式交付包 SKILL.md 取数流程正节按看板模式渲染，引用不存在的 cards.json/sample_cards.py/make_link.py，与数据探索型变体节矛盾；变体节未提 run_metric 优先",
+      "status": "fixed",
+      "fixedIn": "4.8.1"
+    },
+    {
+      "severity": "P1",
+      "title": "直通模式 description/自我介绍渲染病句「看板《1 个数据集》」「数据探索数据探索助手」",
+      "status": "fixed",
+      "fixedIn": "4.8.1"
+    },
+    {
+      "severity": "P1",
+      "title": "dimensions.json 维度 values 严重不全（50 行采样只采到 S001，实际 10 门店/40 单品），消歧协议「查无此值」可能误判真实存在的取值",
+      "status": "fixed",
+      "fixedIn": "4.8.1"
+    },
+    {
+      "severity": "P2",
+      "title": "examples.json fetch 不支持 type=metric，指标中心取数链路无自动化回归覆盖",
+      "status": "open"
+    },
+    {
+      "severity": "P2",
+      "title": "run_sql 表名报错不友好（平台 500 堆栈，TABLE_OR_VIEW_NOT_FOUND 埋在 details）",
+      "status": "open"
+    },
+    {
+      "severity": "P2",
+      "title": "check_package 通过时输出过简，不展示 L3 各冒烟项逐项结果",
+      "status": "open"
+    },
+    {
+      "severity": "P2",
+      "title": "直通模式无专属数据出身行模板；run_sql 拦截文案写「见 cards.json dsUsage」未按模式区分",
+      "status": "fixed",
+      "fixedIn": "4.8.1"
+    }
+  ]
+}

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""check_pages.py 的单测：评分四维度纯函数、权重重分摊、冲突降档、红线/边界分级、硬门槛不评分"""
+"""check_pages.py 的单测：评分四维度纯函数、权重重分摊、冲突降档、红线/边界分级、硬门槛不评分、
+fetch_governed 新形态（{指标名: {id, status}}，v4.8）与旧格式兼容"""
+import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_pages as cp
@@ -172,6 +175,64 @@ class TestAgentReady(unittest.TestCase):
         self.assertTrue(any("覆盖不足" in b for b in ar["boundaries"]))
 
 
+class TestFetchGoverned(unittest.TestCase):
+    """fetch_governed 新形态（v4.8）：{dsId: {指标名: {"id", "status"}}}，
+    只收 PUBLISHED；单个数据集失败不阻断"""
+
+    def _run(self, ds_ids, results):
+        """results: {dsId: subprocess.CompletedProcess 形态 mock 或 Exception}"""
+        def side_effect(cmd, **kw):
+            ds_id = cmd[3]
+            r = results[ds_id]
+            if isinstance(r, Exception):
+                raise r
+            return r
+        with mock.patch.object(cp.subprocess, "run", side_effect=side_effect):
+            return cp.fetch_governed(ds_ids)
+
+    @staticmethod
+    def _ok(payload):
+        m = mock.Mock()
+        m.returncode = 0
+        m.stdout = json.dumps(payload, ensure_ascii=False)
+        return m
+
+    def test_returns_id_status_mapping_published_only(self):
+        payload = {"Metrics": [
+            {"Detail": {"name": "净收入", "id": "m100", "status": "PUBLISHED"}},
+            {"Detail": {"name": "毛利率", "id": "m101", "status": "DRAFT"}},  # 未发布不收录
+            {"Detail": {"id": "m102", "status": "PUBLISHED"}},  # 无名不收录
+        ]}
+        g = self._run(["ds1"], {"ds1": self._ok(payload)})
+        self.assertEqual(g, {"ds1": {"净收入": {"id": "m100", "status": "PUBLISHED"}}})
+
+    def test_metric_id_fallback_key(self):
+        # 部分环境 Detail 的 id 字段叫 metricId
+        payload = {"Metrics": [{"Detail": {"name": "净收入", "metricId": "m100", "status": "PUBLISHED"}}]}
+        g = self._run(["ds1"], {"ds1": self._ok(payload)})
+        self.assertEqual(g["ds1"]["净收入"]["id"], "m100")
+
+    def test_single_dataset_failure_not_blocking(self):
+        bad = mock.Mock()
+        bad.returncode = 1
+        bad.stderr = "permission denied"
+        bad.stdout = ""
+        g = self._run(["ds1", "ds2"], {"ds1": bad, "ds2": self._ok({"Metrics": [
+            {"Detail": {"name": "净收入", "id": "m100", "status": "PUBLISHED"}}]})})
+        self.assertNotIn("ds1", g)  # 失败的数据集不落盘
+        self.assertEqual(set(g["ds2"].keys()), {"净收入"})
+
+    def test_invalid_json_not_blocking(self):
+        m = mock.Mock()
+        m.returncode = 0
+        m.stdout = "{not json"
+        g = self._run(["ds1"], {"ds1": m})
+        self.assertEqual(g, {})
+
+    def test_no_ds_ids_empty(self):
+        self.assertEqual(cp.fetch_governed([]), {})
+
+
 class TestEvaluate(unittest.TestCase):
     def test_hard_gate_pages_not_scored(self):
         r = cp.evaluate("p1", mk_data([], pg_type="LARGE_SCREEN"), None, 90)
@@ -191,6 +252,19 @@ class TestEvaluate(unittest.TestCase):
         r = cp.evaluate("p1", data, None, 90, governed={"ds1": {"销售额"}})
         self.assertIn("agentReady", r)
         self.assertEqual(r["agentReady"]["dims"]["governedRate"], 1.0)
+
+    def test_new_governed_shape_scored_same(self):
+        # v4.8 新形态（{指标名: {id, status}}）与旧形态（指标名集合）评分语义一致：名称 = dict 键
+        data = mk_data(
+            [mk_chart("a", ds="ds1", rows=("区域",),
+                      metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}]),
+             mk_chart("b", ds="ds1", rows=("区域",),
+                      metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}])],
+            [mk_dsinfo("ds1", dims=("区域",), utime="2026-09-20 10:00:00")])
+        r = cp.evaluate("p1", data, None, 90,
+                        governed={"ds1": {"销售额": {"id": "m100", "status": "PUBLISHED"}}})
+        self.assertEqual(r["agentReady"]["dims"]["governedRate"], 1.0)
+        self.assertEqual(r["agentReady"]["governedHits"], ["销售额"])
 
     def test_governed_fetch_failed_falls_back(self):
         data = mk_data(

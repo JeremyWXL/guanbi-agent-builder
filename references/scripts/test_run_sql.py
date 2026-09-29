@@ -89,6 +89,22 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(code, 0)
         m_run.assert_not_called()
 
+    def test_out_of_scope_message_dashboard_mode(self):
+        # 看板模式：越界文案指向 cards.json 的 dsUsage
+        scope_obj = scope.load_scope(candidates=[os.path.join(self.dir, "cards.json")])
+        with mock.patch.object(run_sql.scope_mod, "load_scope", return_value=scope_obj):
+            err = run_sql.scope_check("ds_evil")
+        self.assertIn("cards.json 的 dsUsage", err)
+
+    def test_out_of_scope_message_dataset_mode(self):
+        # 数据集直通模式：越界文案指向 datasets.json（不再写死 cards.json）
+        write_json(self.dir, "datasets.json", {"数据集一": {"dsId": "ds1", "columns": []}})
+        scope_obj = scope.load_scope(candidates=[os.path.join(self.dir, "datasets.json")])
+        with mock.patch.object(run_sql.scope_mod, "load_scope", return_value=scope_obj):
+            err = run_sql.scope_check("ds_evil")
+        self.assertIn("datasets.json", err)
+        self.assertNotIn("cards.json", err)
+
 
 class ReadOnlyValidationTest(unittest.TestCase):
     def test_select_ok(self):

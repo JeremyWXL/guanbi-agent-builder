@@ -12,6 +12,9 @@
   维度: dims 未在任何卡片出现时 ⚠️（SQL 独有维度可忽略）
   同族分母: 名称互为包含的指标族（如「达成率」⊂「收入达成率」）公式引用的预算字段不一致时 ⚠️
           （启发式——裁决了 A 却漏了同族的 B 是实测出现过的口径矛盾；若是分工请在台账写明）
+  governedRef: 条目含 governedRef（指标中心引用）但缺 metricId/name → ❌；
+          status 存在且 ≠ PUBLISHED → ⚠️（未发布的口径不能当权威引用）；
+          无 governedRef 不校验（多数指标没有引用，正常）
 参照: formulas.json 缺失时只做结构+同义词校验；cards-raw.json 缺失时跳过维度校验
 """
 import json, re, sys, os
@@ -67,6 +70,19 @@ def main():
             warns.append(f"{tag}: safety「{m['safety']}」不是已知分类（{'/'.join(sorted(SAFETY_KNOWN))}）")
         if m.get("pending"):
             errors.append(f"{tag}: 仍带 pending 标记——冲突裁决后请填 formula 并删除 pending/variants")
+        # governedRef（指标中心引用）结构校验：有引用就必须能定位到具体指标
+        ref = m.get("governedRef")
+        if ref is not None:
+            if not isinstance(ref, dict):
+                errors.append(f"{tag}: governedRef 必须是对象（{{metricId, name, status}}）")
+            else:
+                if not str(ref.get("metricId") or "").strip():
+                    errors.append(f"{tag}: governedRef 缺 metricId——run_metric.py 白名单将无法放行该指标")
+                if not str(ref.get("name") or "").strip():
+                    errors.append(f"{tag}: governedRef 缺 name——口径对账时无法确认引用的是哪个指标中心指标")
+                if ref.get("status") and ref["status"] != "PUBLISHED":
+                    warns.append(f"{tag}: governedRef.status={ref['status']}（非 PUBLISHED）——"
+                                 "未发布的口径不能当权威引用，请确认指标中心里该指标已发布")
 
     # ---- 同义词撞车 ----
     owners = {name: name for name in seen}  # 词 → 占用者

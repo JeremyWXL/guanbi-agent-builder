@@ -6,6 +6,7 @@
              SKILL.md 必需章节、模板占位符残留）
   L3 功能冒烟层：不只看结构，实测"功能还活着"——scope 白名单非空、run_sql --check-scope
              双向断言、make_link --list 找得到筛选器、eval_examples 回归通过、memory status 正常
+             （--check-scope 冒烟对不支持该 flag 的旧版 run_sql.py 降级 ⚠️，见下「版本兼容」）
 用法:
   python3 check_package.py <交付包路径> [--json]
 退出码: 0 通过（可有 ⚠️）/ 1 存在 ❌ / 2 用法或 IO 错误
@@ -18,7 +19,7 @@
 import importlib.util, json, os, re, subprocess, sys
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.7.1"
+BUILDER_VERSION = "4.8.1"
 
 # 复制进交付包的脚本清单（(文件名, 看板模式必需, 直通模式必需, 引入版本)）
 SCRIPT_LIST = [
@@ -30,6 +31,7 @@ SCRIPT_LIST = [
     ("eval_examples.py", True, True, "0"),
     ("sample_cards.py", True, False, "0"),
     ("run_sql.py", True, True, "0"),
+    ("run_metric.py", True, True, "4.8.0"),
     ("workbench.py", True, True, "0"),
     ("scope.py", True, True, "4.5.0"),
     ("scope_audit.py", True, True, "4.5.0"),
@@ -323,6 +325,15 @@ class PackageCheck:
             if leftover:
                 self.err(f"{fn} 残留未填充的模板占位符: {'、'.join(sorted(set(leftover))[:5])}")
 
+    @staticmethod
+    def _script_has_flag(path, flag):
+        """检测包内脚本源码是否含某 flag 字面量——旧版脚本功能冒烟的双保险判据"""
+        try:
+            with open(path, encoding="utf-8") as f:
+                return flag in f.read()
+        except OSError:
+            return False
+
     # ---------- L3 功能冒烟层 ----------
     def check_smoke(self):
         # scope 白名单：dsIds/cdIds/pgIds 必须从档案实际派生出来
@@ -348,16 +359,44 @@ class PackageCheck:
         if not self.scope.get("pgIds") and self.mode == "dashboard":
             self.err("scope 白名单 pgIds 为空——检查 cards.json._meta.pages")
 
-        # run_sql --check-scope 双向断言：白名单内放行、白名单外拦截
+        # run_sql --check-scope 双向断言：白名单内放行、白名单外拦截。
+        # --check-scope 自 builder 4.7.0 引入——包版本过旧或包内脚本源码无该 flag 字面量时
+        # 降级 ⚠️（双判据取保守，pkg_version 缺失/为 "0" 同样 graceful），
+        # 否则旧脚本会把 "--check-scope" 当 dsId 报 exit 3，误报成「白名单误拦」
         run_sql = os.path.join(self.refs, "run_sql.py")
         if os.path.isfile(run_sql) and self.scope.get("dsIds"):
-            good = sorted(self.scope["dsIds"])[0]
-            code, out = run_cmd([sys.executable, run_sql, "--check-scope", good])
+            version_ok = ver_tuple(self.pkg_version) >= (4, 7, 0)
+            has_flag = self._script_has_flag(run_sql, "--check-scope")
+            if version_ok and has_flag:
+                good = sorted(self.scope["dsIds"])[0]
+                code, out = run_cmd([sys.executable, run_sql, "--check-scope", good])
+                if code != 0:
+                    self.err(f"run_sql --check-scope 误拦白名单内数据集 {good}（exit {code}）: {out.strip()[:200]}")
+                code, _ = run_cmd([sys.executable, run_sql, "--check-scope", OUT_OF_SCOPE_PROBE])
+                if code != 3:
+                    self.err(f"run_sql --check-scope 未拦截白名单外数据集（exit {code}，应为 3）——范围守卫失效")
+            else:
+                reasons = []
+                if not version_ok:
+                    reasons.append(f"本包搭建于 builder {self.pkg_version}（--check-scope 自 4.7.0 引入）")
+                if not has_flag:
+                    reasons.append("包内 run_sql.py 源码无 --check-scope 字面量（旧版脚本）")
+                self.warn("跳过 run_sql --check-scope 冒烟：" + "；".join(reasons) +
+                          "——在搭建向导说「升级脚本」更新后再体检")
+
+        # run_metric --check-scope 双向断言（仅当档案含 governedRef——无引用时白名单为空，
+        # 脚本按设计降级放行，无可断言对象）
+        run_metric = os.path.join(self.refs, "run_metric.py")
+        metric_ids = self.scope.get("metricIds") or set()
+        if os.path.isfile(run_metric) and metric_ids:
+            good = sorted(metric_ids)[0]
+            code, out = run_cmd([sys.executable, run_metric, "--check-scope", good])
             if code != 0:
-                self.err(f"run_sql --check-scope 误拦白名单内数据集 {good}（exit {code}）: {out.strip()[:200]}")
-            code, _ = run_cmd([sys.executable, run_sql, "--check-scope", OUT_OF_SCOPE_PROBE])
+                self.err(f"run_metric --check-scope 误拦白名单内指标 {good}（exit {code}）: {out.strip()[:200]}")
+            code, _ = run_cmd([sys.executable, run_metric, "--check-scope", OUT_OF_SCOPE_PROBE])
             if code != 3:
-                self.err(f"run_sql --check-scope 未拦截白名单外数据集（exit {code}，应为 3）——范围守卫失效")
+                self.err(f"run_metric --check-scope 未拦截白名单外指标（exit {code}，应为 3）——"
+                         "指标中心口径白名单失效")
 
         # make_link --list：至少一张看板有可用筛选器（看板模式）
         if self.mode == "dashboard":
