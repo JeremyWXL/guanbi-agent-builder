@@ -25,7 +25,7 @@ except ImportError:
     scope_mod = None  # scope.py 未随包复制时降级跳过白名单校验，不阻断指标直查主功能
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.8.1"
+BUILDER_VERSION = "4.8.2"
 
 
 def scope_check(metric_id):
