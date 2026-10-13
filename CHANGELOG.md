@@ -1,5 +1,14 @@
 # 变更日志
 
+## v4.8.3（2026-10-13）工作台资产表渲染修复：cards 数组形态兼容（issue #4）
+
+解决的问题：工作台（workbench.py）数据资产区块对合法交付包渲染为空——pagesOf() 只认 cards 为「名字→摘要」字典的旧形态，而 check_package.py 的规范形态要求 cards 为数组（保 cdId/measures/filtered 全字段），两者冲突导致通过交付校验的包在工作台里必然显示「还没有数据资产」。该问题由交付包 feedback.py 通道实机上报（issue #4）。
+
+- **pagesOf() 接受数组形态 cards**：现行 slim 形态（数组）按卡片名归一化为渲染用对象（字段全保留，同名卡补 cdId 后缀防键碰撞），旧 dict 形态与两级 legacy schema（pages 列表/平铺）兼容不变；check_package 的数组硬约束不动——工作台做宽容消费侧
+- **Python 侧三处 dict-only 判断同步放开**：cards_struct_warnings（数组形态不再误报「缺页面分组结构」）、content_summary（数组形态计入页/卡数）、collect_agents（总览卡片计数）；_accel_stats 原本已兼容两种形态
+- **测试**：test_workbench.py +2（数组形态自检不误报 / 内容摘要计数）；pagesOf 六种形态（slim 数组/同名卡/dict 旧形态/两级 legacy/空资产）node 断言全过；单测 344 → 346 例全绿
+- **版本一致性**：4.8.2 → 4.8.3（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+
 ## v4.8.2（2026-10-12）行数上限纪律：大数据集取数的提醒与分批取数规范
 
 解决的问题：CLI 对数据量较大的数据集有行数限制（卡片 preview 图表默认最多 10000 行，超上限即截断；SQL 直查明细行在大数据集上同样会触顶）。此前搭建向导与交付助手都没有针对该限制的纪律——用户要"全量明细"时助手可能默默取回截断结果当全量回答，或不经告知就发起长流程分批取数。本版本把"先提醒、先聚合、分批须告知成本"固化为红线。

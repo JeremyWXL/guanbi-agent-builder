@@ -21,7 +21,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.8.2"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.8.3"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -481,9 +481,20 @@ function emptyState(title, guide){
 }
 function pagesOf(){
   if(!DATA.assets) return [];
+  /* cards 兼容两种形态：dict（旧「名字→摘要」）与 list（现行 slim 全字段，check_package 的规范形态）。
+     list 归一化成以卡片名为键的对象供渲染（信息超集，不丢字段）；同名卡补 cdId 后缀防键碰撞。 */
+  const toMap = list => {
+    const m = {};
+    (list || []).forEach((c, i) => {
+      let k = (c && (c.name || c.cdId)) || ("卡片" + (i+1));
+      if(m[k]) k += "·" + (c && c.cdId || i+1);
+      m[k] = c || {};
+    });
+    return m;
+  };
   const norm = Object.entries(DATA.assets).filter(([k,v]) =>
-    k !== "_meta" && v && typeof v === "object" && !Array.isArray(v) && v.cards && !Array.isArray(v.cards));
-  if(norm.length) return norm;
+    k !== "_meta" && v && typeof v === "object" && !Array.isArray(v) && v.cards);
+  if(norm.length) return norm.map(([k,v]) => [k, Array.isArray(v.cards) ? {...v, cards: toMap(v.cards)} : v]);
   /* 旧版结构降级：pages 为 {名称: pgId} 字典或 [{name, pageId, cards:[...]}] 列表 */
   const old = DATA.assets.pages;
   if(Array.isArray(old)) return old.map(p => [p.name || p.pageId || "看板", {pgId: p.pageId || p.pgId || "",
@@ -1457,7 +1468,7 @@ def cards_struct_warnings(cards_doc):
     warns = []
     if not cards_doc.get("_meta"):
         warns.append("cards.json 缺 _meta：看板名无法跳转 BI，结构指纹/体检失效")
-    grouped = any(isinstance(v, dict) and isinstance(v.get("cards"), dict)
+    grouped = any(isinstance(v, dict) and isinstance(v.get("cards"), (dict, list))
                   for k, v in cards_doc.items() if k != "_meta")
     legacy = isinstance(cards_doc.get("pages"), (dict, list))
     if not grouped and not legacy:
@@ -1476,7 +1487,7 @@ def content_summary(workdir):
             for k, v in doc.items():
                 if k == "_meta":
                     continue
-                if isinstance(v, dict) and isinstance(v.get("cards"), dict):
+                if isinstance(v, dict) and isinstance(v.get("cards"), (dict, list)):
                     pages += 1
                     cards += len(v["cards"])
                 elif k == "pages" and isinstance(v, dict):
@@ -1621,7 +1632,7 @@ def collect_agents(skills_dir):
             for k, v in assets.items():
                 if k == "_meta":
                     continue
-                if isinstance(v, dict) and isinstance(v.get("cards"), dict):
+                if isinstance(v, dict) and isinstance(v.get("cards"), (dict, list)):
                     a["pages"] += 1
                     a["cards"] += len(v["cards"])
                 elif k == "pages" and isinstance(v, dict):

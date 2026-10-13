@@ -165,6 +165,20 @@ class TestDiagnostics(unittest.TestCase):
     def test_struct_warnings_non_dict(self):
         self.assertTrue(wb.cards_struct_warnings(["not", "a", "dict"]))
 
+    def test_struct_warnings_list_cards_ok(self):
+        # issue #4：现行 slim 形态 cards 为数组（check_package 规范形态），不得误报缺分组结构
+        doc = {"_meta": {"pages": {}},
+               "P": {"pgId": "pgA", "cards": [{"cdId": "c1", "name": "卡A", "type": "TABLE"}]}}
+        self.assertEqual(wb.cards_struct_warnings(doc), [])
+
+    def test_content_summary_list_cards(self):
+        # issue #4：数组形态 cards 也要计入页/卡数
+        write_json(self.dir, "cards.json", {"_meta": {},
+                                            "P": {"pgId": "pgA", "cards": [{"cdId": "c1", "name": "卡A"},
+                                                                           {"cdId": "c2", "name": "卡B"}]}})
+        s = wb.content_summary(self.dir)
+        self.assertEqual((s["pages"], s["cards"]), (1, 2))
+
     def test_content_summary_counts(self):
         write_json(self.dir, "cards.json", {"_meta": {},
                                             "P": {"pgId": "pgA", "cards": {"卡A": {}, "卡B": {}}},
