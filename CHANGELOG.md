@@ -1,5 +1,16 @@
 # 变更日志
 
+## v4.8.4（2026-10-13）数据出身行升级：回答必须带数据范围与口径
+
+解决的问题：交付 agent 的回答只有「来源卡片 + 取数时点」，不声明数据范围（期间/筛选）与指标口径——用户无法判断"这个数是哪个月、什么范围、按什么算法算的"。实机案例：蜜雪商品经营 agent（快速模式交付）回答品类占比时未说明数据期间与卡片隐藏筛选（营业月份/品类 IN 列表），而素材（cards.json `filterDetails`、metrics.json 公式）学习时已采集，缺的是输出端纪律。按现行规则该回答"合规"——合规线本身缺这条，属 skill 要求缺口而非单次执行问题。
+
+- **agent-SKILL.md 模板「数据出身行」升级**（看板/直通双模式）：格式扩为 `来源 · 数据范围（期间+筛选，取自卡片 filterDetails/查询 WHERE，禁止凭印象）· 取数于 …`；新增「口径随数声明」——核心指标首次出现带一句算法（以 metrics.json 为准，governedRef 注明"指标中心已发布口径"）；「数据红线」两处出身行引用同步扩写
+- **builder SKILL.md 第 7 步验收清单加项**：回答须声明来源 + 数据范围（期间+筛选）、核心指标首次出现带口径——搭建验收即可拦截
+- **测评 rubric C 维度重排**：出身行锚点扩为「来源+数据范围/筛选+取数时点（采样/实时区分）」，新增「指标口径随数声明」5 分档；agent-tester 第 7 步检查点同步
+- **版本一致性**：4.8.3 → 4.8.4（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+- **测试**：纯文档/模板变更，无脚本行为变化；test_render_agent_skill 出身行断言（前缀匹配）兼容，全套单测回归通过
+- **存量交付包升级**：「升级脚本」只替换 references 脚本；新「数据出身行」节属模板结构性变更，按升级通道原则追加/替换进交付包 SKILL.md（保留场景化内容），不动 memory/
+
 ## v4.8.3（2026-10-13）工作台资产表渲染修复：cards 数组形态兼容（issue #4）
 
 解决的问题：工作台（workbench.py）数据资产区块对合法交付包渲染为空——pagesOf() 只认 cards 为「名字→摘要」字典的旧形态，而 check_package.py 的规范形态要求 cards 为数组（保 cdId/measures/filtered 全字段），两者冲突导致通过交付校验的包在工作台里必然显示「还没有数据资产」。该问题由交付包 feedback.py 通道实机上报（issue #4）。

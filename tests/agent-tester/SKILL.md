@@ -63,7 +63,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | 4 | 冲突逐条请用户裁决（模拟用户拍板并记录）；metrics.json + dimensions.json 成稿；**双闸门 ❌ 清零才放行**；⚠️ 清单（值跨维度重叠/空 values）登记 | 禁止 AI 自行二选一；维度成员值禁止编造 |
 | 5 | 典型问题固化 examples.json（路由+取数方式） | — |
 | 6 | insightThinking 含诊断链五条纪律；维度消歧三级协议写入场景一 | — |
-| 7 | 每题数字有出处；归因走 attribute.py；SQL 与卡片交叉验证（误差<2%）；expect/answerPoints 回填；eval_examples 冒烟 | 口算贡献率 = 失败；不可答的题记 fail 而非硬答 |
+| 7 | 每题数字有出处；出身行含来源+数据范围（期间/筛选）、核心指标首次出现带口径；归因走 attribute.py；SQL 与卡片交叉验证（误差<2%）；expect/answerPoints 回填；eval_examples 冒烟 | 口算贡献率 = 失败；不可答的题记 fail 而非硬答；出身行缺数据范围/口径 = C 维度扣分 |
 | 8 | 交付包结构完整（SKILL.md + workbench.html + memory/ 四文件 + references 全套含 memory.py）；memory.py init 已跑且幂等；包内 `eval_examples.py .` 自跑通；能力声明与实际验证结论一致（如 SQL 不可用时不得宣称可用） | 交付包能力不得超出第 7 步实测结论；memory/ 不得被任何升级/重学操作覆盖 |
 
 **模拟用户决策记录模板**（测试中必须显式写出）：勾选看板清单、每处口径冲突的裁决、拒绝/保留 ⚠️ 看板的决定、第 7 步验收结论。
