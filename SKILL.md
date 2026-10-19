@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.8.5"
+version: "4.9.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -166,12 +166,12 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/parse_page.py <pageId1> <pageId2> ... -o <工作目录>
    ```
-   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据。另外每张数据卡还带 **`filtered` 标记与页面 `dsUsage` 分级**（v4.2 取数加速层）：带筛选 = 卡片级（只作应答缓存，禁止二次加工回答全局问题），未筛选 = 数据集级（开放二次计算）——**生成 cards.json 时这两个字段同样必须带入**，它是交付助手取数路径分层与体检报告环境指标的依据。数据卡的 **`filterDetails`（隐藏筛选上下文，如"时间维度=月累计"）也必须带入**——它是口径字典 scope 的原料，且增量学习回读 cards.json 时没有 cards-raw.json 可用，缺了它口径候选会丢隐藏筛选上下文
+   解析出全部卡片（名称/ID/类型/筛选器/所属数据集/单位线索，**及每张卡的行维度、度量聚合方式、计算公式**）。脚本主走 `guancli page get --raw` 的 JSON 结构解析（名称与 ID 天然配对，不受文本格式变动影响），--raw 不可用时自动回退文本解析（按 Card 块内联的 `**ID:**` 配对，禁止用 brief 输出顺序配对——SELECTOR 交错会错位，这是已踩过的坑）。**哨兵**：原始数据里有卡片却一张都解析不出来时脚本直接报错退出，禁止带着空资产继续。脚本同时会在 cards-raw.json 写入 `_meta`（学习时点、builder 版本号、BI 地址、各看板学习时的更新时间与**卡片结构指纹 cardHash + 卡片清单**、**各数据集的计算字段公式 dsFormulas**——卡片按 fdId 引用数据集计算字段时靠它补全口径；`--skip-ds-formulas` 可关闭）——**生成 cards.json 时必须把 `_meta` 原样带入**，它是交付后"资产体检"（改版对比/复核阈值/脚本升级提示）的依据；同时每张看板的**筛选器卡片必须保留 cdId、关联字段名及筛选交互字段**（`inFilterBar` 是否在筛选栏、`linkedCardCount` 联动卡片数、`defaultValueType` 默认值类型、`multiSelect`、`selectorType`）——这是交付后 make_link.py 选直达链接候选（只认筛选栏成员且有联动的筛选器）、判 FIRST_PICK 降级的原料，也是交付助手理解页面筛选交互的依据。另外每张数据卡还带 **`filtered` 标记与页面 `dsUsage` 分级**（v4.2 取数加速层）：带筛选 = 卡片级（只作应答缓存，禁止二次加工回答全局问题），未筛选 = 数据集级（开放二次计算）——**生成 cards.json 时这两个字段同样必须带入**，它是交付助手取数路径分层与体检报告环境指标的依据。数据卡的 **`filterDetails`（隐藏筛选上下文，如"时间维度=月累计"）也必须带入**——它是口径字典 scope 的原料，且增量学习回读 cards.json 时没有 cards-raw.json 可用，缺了它口径候选会丢隐藏筛选上下文。数据卡的 **`dynamicParams`（卡片声明的全局参数：dpId/参数名/类型/默认值）同样必须带入**——参数化计算字段与直连数据集 SQL 的取值由全局参数决定（如 `[DYNAMIC_PARAMS.开始时间]` 控制筛选范围），它是交付助手用 `card preview --dynamic-param` 传参取数、以及判断"空结果是不是默认参数范围所致"的依据
 2. 批量采样：
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
    ```
-   每张卡默认最多落盘 200 行（防大卡片撑爆上下文，原始行数记入索引）；`_sample_index.json` 同时给出每列画像（数值列 min/max、低基数文本列的枚举值——回答筛选取值类问题时以枚举值为准，禁止编造取值）
+   每张卡默认最多落盘 200 行（防大卡片撑爆上下文，原始行数记入索引）；`_sample_index.json` 同时给出每列画像（数值列 min/max、低基数文本列的枚举值——回答筛选取值类问题时以枚举值为准，禁止编造取值）。**参数化卡片（cards-raw.json 该卡 `dynamicParams` 非空）采样按参数默认值执行**——默认值为 `{{{yesterday}}}` 类宏或收窄区间时采样可能 0 行，此时先怀疑默认参数范围而非"没数据"，可用 `guancli card preview <cdId> --dynamic-param "参数名=值"` 手动验证后再下结论
 3. 强制质量校验：
    ```bash
    python3 references/scripts/validate_cards.py <工作目录>/card-data
@@ -185,7 +185,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    python3 references/scripts/check_formulas.py <工作目录>
    ```
    把卡片与数据集里的计算公式汇总成 `formulas.json` 口径字典，做三件事：
-   - **换维度安全性分类**：自由重聚合（sum/sum 比率型，SQL 内联公式即可）/ 需明细现算（含 COUNT DISTINCT、MAX、AVG）/ 行级逻辑 / 时间宏——这决定 SQL 直查能不能换维度
+   - **换维度安全性分类**：自由重聚合（sum/sum 比率型，SQL 内联公式即可）/ 需明细现算（含 COUNT DISTINCT、MAX、AVG）/ 行级逻辑 / 时间宏 / **全局参数依赖（PARAM_DEPENDENT：公式含 DYNAMIC_PARAMS，没有静态口径，禁止 SQL 内联，走卡片取数传参）**——这决定 SQL 直查能不能换维度、能不能内联
    - **同名口径冲突检测**：同名指标公式不一致（如"退款率"在 A 卡分母是收入、B 卡是 GMV）列为冲突，**必须带入第 4 步请用户裁决，禁止 AI 自行二选一**
    - **口径候选条目**（candidateRules）：带出来源卡片与卡片的隐藏筛选（口径上下文，如"时间维度=月累计"），直接作为第 4 步逐条确认的素材
    - 追加 `--seed-metrics` 可同时生成 `metrics-seed.json`：共识指标预填公式/safety/维度成稿，冲突指标标 `pending`——这是第 4 步产出机器可读口径档案（metrics.json）的起草底稿
@@ -498,6 +498,7 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 10. **SQL 直查公式纪律（实测踩坑）**：
     - 禁止 `AVG(明细比率)`——换维度后结果错得不多、最难察觉（实测 105% vs 103.6%）；比率型指标必须内联公式"分子分母分别求和再相除"
     - 禁止按名引用数据集计算字段（SQL 引擎只认物理列，直接报 UNRESOLVED_COLUMN）——必须内联展开公式原文
+    - 禁止内联含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）——SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）；这类指标走卡片取数 `guancli card preview <cdId> --dynamic-param "参数名=值"`，卡片声明的参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数（传未声明的参数静默无效）
     - SQL 必须显式复写卡片的隐藏筛选条件（如 `时间维度='月累计'`）——漏掉就是数量级错误（实测差 259 倍）
 11. **归因算术禁止口算**：贡献额/贡献率/乘法因子拆解一律走 attribute.py，LLM 只负责解释脚本输出（LLM 口算贡献占比是"归因必须量化"最大的可靠性漏洞）
 12. **快速模式可裁确认深度，三条底线不破**：适检评分的提醒义务、口径冲突逐条裁决、验收实测（见 lite 分支「三条不破底线」）；第 4、7 步命门在 lite 下同样禁止 skipped

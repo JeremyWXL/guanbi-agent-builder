@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """parse_page.py 的单测：v4.2 取数加速层分级（_is_filtered / _ds_usage）+ 结构指纹稳定性
 + v4.4 实机踩坑回归（SELECTOR 卡片 defaultValue 为字符串）
-+ 同名看板冲突 exit 2 / 部分失败默认 exit 2 / --allow-partial 机器可读失败清单"""
++ 同名看板冲突 exit 2 / 部分失败默认 exit 2 / --allow-partial 机器可读失败清单
++ v4.9 全局参数收割（_card_dynamic_params：跨层收集 + dpId 去重 + 写入卡片）"""
 import json
 import os
 import sys
@@ -80,6 +81,39 @@ class TestSelectorDefaultValue(unittest.TestCase):
     def test_dict_default_value_reads_value_type(self):
         info = self._parse({"valueType": "DYNAMIC", "value": "本月"})
         self.assertEqual(info["cards"][0]["defaultValueType"], "DYNAMIC")
+
+
+class TestCardDynamicParams(unittest.TestCase):
+    """v4.9 全局参数收割：图表层与数据集层的 dynamicParameters 都要收到、按 dpId 去重"""
+
+    def test_collects_and_dedupes_by_dpid(self):
+        card = {"content": {
+            "meta": {"chartMain": {"config": {"props": {"dynamicParameters": [
+                {"dpId": "dp1", "name": "指标选取", "valueType": "STRING",
+                 "defaultValue": "营业额", "multiple": True}]}}}},
+            "dsInfo": {"config": {"dynamicParameters": [
+                {"dpId": "dp1", "name": "指标选取", "valueType": "STRING", "defaultValue": "营业额"},
+                {"dpId": "dp2", "name": "开始时间", "valueType": "DATE", "defaultValue": "{{{yesterday}}}"}]}}}}
+        params = pp._card_dynamic_params(card)
+        self.assertEqual([p["name"] for p in params], ["指标选取", "开始时间"])
+        self.assertEqual(params[1]["defaultValue"], "{{{yesterday}}}")
+
+    def test_no_params_returns_empty(self):
+        self.assertEqual(pp._card_dynamic_params({"content": {"meta": {}}}), [])
+        self.assertEqual(pp._card_dynamic_params({}), [])
+
+    def test_parse_page_raw_attaches_dynamic_params(self):
+        raw = {"data": {"name": "页", "utime": "", "dsInfos": [],
+                        "meta": {"backlogLayout": [], "filterLayout": []},
+                        "cards": [{"cdId": "c1", "cdType": "CHART", "name": "温度占比",
+                                   "content": {"chartType": "PIE", "dsId": "ds1",
+                                               "dsInfo": {"config": {"dynamicParameters": [
+                                                   {"dpId": "dp2", "name": "开始时间",
+                                                    "valueType": "DATE",
+                                                    "defaultValue": "{{{yesterday}}}"}]}}}}]}}
+        with mock.patch.object(pp, "run_guancli", return_value=(0, json.dumps(raw), "")):
+            info = pp.parse_page_raw("pg1")
+        self.assertEqual(info["cards"][0]["dynamicParams"][0]["name"], "开始时间")
 
 
 def make_info(title, pid, with_error=False):

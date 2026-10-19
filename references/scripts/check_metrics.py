@@ -19,7 +19,7 @@
 """
 import json, re, sys, os
 
-SAFETY_KNOWN = {"FREE", "DISTINCT", "AVG", "NONADDITIVE", "ROW_LOGIC", "TIME_MACRO"}
+SAFETY_KNOWN = {"FREE", "DISTINCT", "AVG", "NONADDITIVE", "ROW_LOGIC", "TIME_MACRO", "PARAM_DEPENDENT"}
 BUDGET_FIELD_RE = re.compile(r"\[([^\]]*预算[^\]]*)\]")
 
 

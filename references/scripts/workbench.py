@@ -21,7 +21,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.8.5"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.9.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -677,7 +677,8 @@ function parseRule(rule){
 }
 /* ---------- 指标档案（metrics.json 表格视图） ---------- */
 const SAFETY_LABEL = {FREE:"可自由换维度",DISTINCT:"换维度须明细现算·去重",AVG:"换维度须明细现算·均值",
-  NONADDITIVE:"换维度须明细现算·最值",ROW_LOGIC:"含行级判断逻辑",TIME_MACRO:"与时间宏绑定",CONSTANT:"硬编码常量"};
+  NONADDITIVE:"换维度须明细现算·最值",ROW_LOGIC:"含行级判断逻辑",TIME_MACRO:"与时间宏绑定",CONSTANT:"硬编码常量",
+  PARAM_DEPENDENT:"含全局参数·禁止SQL内联"};
 const SOURCE_LABEL = {card:"看板卡片",dataset:"数据集",user:"用户确认",sql:"SQL 口径"};
 function metricsPanel(){
   const raw = DATA.files["metrics.json"];

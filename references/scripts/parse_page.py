@@ -6,7 +6,7 @@
 用法: python3 parse_page.py <pageId> [pageId2 ...] -o <输出目录> [--skip-ds-formulas] [--workers 4] [--allow-partial]
 输出: <输出目录>/cards-raw.json
   {看板名: {pgId, mtime, dsIds, dsUsage, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails,
-                                        filtered, unitHints, dims, measures}]},
+                                        filtered, unitHints, dims, measures, dynamicParams}]},
    "_meta": {builtAt, builderVersion, biBaseUrl, parser,
              pages: {pgId: {title, mtime, cardCount, cardHash, cards: [{cdId, name}]}},
              dsFormulas: {dsId: {dsName, virtualColumns}},
@@ -21,6 +21,9 @@
   - dims: 卡片的行维度（指标的当前粒度，判断"换维度是否安全"的依据）
   - _meta.dsFormulas: 各数据集的计算字段（virtualColumns）公式原文，
     供卡片按 fdId 引用数据集计算字段时补全；--skip-ds-formulas 可关闭
+  - 卡片 dynamicParams: 卡片声明的全局参数（DYNAMIC_PARAMS：dpId/参数名/类型/默认值）——
+    参数化计算字段与直连数据集 SQL 的取值开关；取数时经 card preview --dynamic-param 透传，
+    未传时按默认值取数（默认值是 {{{yesterday}}} 类宏时，空结果先怀疑默认参数范围而非"没数据"）
 哨兵: 任何看板解析出 0 张卡片即整体报错退出（exit 2），禁止静默产出空资产；
   不同 pgId 的看板同名时标题键会互相覆盖——exit 2 要求消歧，禁止静默丢看板；
   批量解析默认要求全部成功，部分失败即 exit 2 且不写产物（避免产出"看似成功"的残缺资产）；
@@ -31,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "4.8.5"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "4.9.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -126,6 +129,38 @@ def _card_measures(card):
         if len(entry) > 4:
             measures.append(entry)
     return measures
+
+
+def _card_dynamic_params(card):
+    """卡片声明的全局参数（DYNAMIC_PARAMS）：遍历 content 里所有 dynamicParameters 列表
+    （图表层 chartMain.config.props 与数据集层 dsInfo.config 都可能有），按 dpId 去重。
+    参数化计算字段/直连 SQL 的取值由它们决定——交付助手取数时经 --dynamic-param 透传。"""
+    seen, out = set(), []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "dynamicParameters" and isinstance(v, list):
+                    for p in v:
+                        if not isinstance(p, dict) or not p.get("name"):
+                            continue
+                        key = p.get("dpId") or p["name"]
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        entry = {"dpId": p.get("dpId", ""), "name": p["name"]}
+                        for f in ("valueType", "defaultValue", "multiple"):
+                            if p.get(f) is not None:
+                                entry[f] = p[f]
+                        out.append(entry)
+                else:
+                    walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(card.get("content") or {})
+    return out
 
 
 def _card_filters(card, fd_names):
@@ -248,6 +283,7 @@ def parse_page_raw(page_id):
             "unitHints": _unit_hints(c),
             "dims": _card_dims(c),
             "measures": _card_measures(c),
+            "dynamicParams": _card_dynamic_params(c),
         }
         if c.get("cdType") == "SELECTOR":
             # 筛选交互原料：直达链接选候选（筛选栏成员 + 有联动）与 FIRST_PICK 降级判断都靠这几个字段
@@ -302,6 +338,7 @@ def parse_page_text(page_id):
             "unitHints": {},
             "dims": [],
             "measures": [],
+            "dynamicParams": [],
         })
     return {"title": title, "pgId": page_id, "mtime": mtime, "dsIds": [], "dsUsage": {},
             "cards": cards, "_parser": "text-fallback"}
@@ -372,9 +409,11 @@ def main():
         n_pool = sum(1 for c in info['cards'] if c['inPool'])
         n_formula = sum(1 for c in info['cards'] for m in c.get('measures', []) if m.get('formula'))
         n_filtered = sum(1 for c in info['cards'] if c.get('filtered'))
+        n_param = sum(1 for c in info['cards'] if c.get('dynamicParams'))
         print(f"  {info['title']}: {len(info['cards'])} 张卡片"
               f"（数据卡 {n_data}，筛选器/文本 {len(info['cards'])-n_data}，卡片池 {n_pool}，"
-              f"公式字段 {n_formula}，带筛选 {n_filtered}/数据集级 {n_data - n_filtered}）")
+              f"公式字段 {n_formula}，带筛选 {n_filtered}/数据集级 {n_data - n_filtered}）"
+              + (f"，⚠️ 参数化卡 {n_param} 张（含全局参数，取数按参数默认值，可 --dynamic-param 透传）" if n_param else ""))
         if info['title'] in result:
             # 看板标题是 cards-raw.json 的键：不同 pgId 同名会静默覆盖（后者顶掉前者）
             conflicts.append((info['title'], result[info['title']]['pgId'], pid))

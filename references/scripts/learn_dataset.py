@@ -3,14 +3,17 @@
 数据集直学器（数据集冷启动路径）：没有合适看板时，第 2 步资产学习的替代动作
 用法: python3 learn_dataset.py <dsId> [dsId2 ...] -o <工作目录> [--workers 4] [--max-rows 200] [--allow-partial]
 输出: <工作目录>/datasets-raw.json
-  {数据集名: {dsId, mtime, rowCount,
+  {数据集名: {dsId, mtime, rowCount, dynamicParams,
               columns: [{name, fdId, metaType, fdType, aggrType?, calcType?, formula?}],
               sample: {rows, sampledRows, truncated, profile}},
    "_meta": {builtAt, builderVersion, biBaseUrl, mode: "dataset",
              dsFormulas: {dsId: {dsName, virtualColumns}},
              failedDatasets: [dsId]（仅 --allow-partial 且有失败时存在）}}
   _meta.dsFormulas 与 cards-raw.json 同构——check_formulas.py 回退读它时无需特判；
-  sample.profile 列画像与 sample_cards.py 同构（枚举值是 check_dims.py 种子的成员值来源）
+  sample.profile 列画像与 sample_cards.py 同构（枚举值是 check_dims.py 种子的成员值来源）；
+  dynamicParams 是数据集声明的全局参数（DYNAMIC_PARAMS：dpId/参数名/类型/默认值）——
+  直连数据集 SQL 常用参数控筛选范围（如 [DYNAMIC_PARAMS.开始时间]），
+  含参数的公式会被 check_formulas.py 分类为 PARAM_DEPENDENT（禁止 SQL 内联）
 产物定位（与看板路径的诚实差异）:
   有：字段清单 / 数据集计算字段口径 / 列画像枚举值 → metrics/dimensions 档案与 SQL 直查照走
   没有：卡片、筛选器、看板语义（分析路径与问题空间）→ 交付的是"数据探索型"助手，
@@ -25,7 +28,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-BUILDER_VERSION = "4.8.5"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
+BUILDER_VERSION = "4.9.0"  # 发布时与 SKILL.md frontmatter version 同步（同 parse_page.py/workbench.py）
 DEFAULT_MAX_ROWS = 200
 ENUM_LIMIT = 8       # 与 sample_cards.py 保持一致
 ENUM_CARD_MAX = 20
@@ -143,6 +146,37 @@ def profile(rows):
     return out
 
 
+def _dynamic_params(data):
+    """数据集声明的全局参数（DYNAMIC_PARAMS）：遍历所有 dynamicParameters 列表按 dpId 去重。
+    与 parse_page._card_dynamic_params 同逻辑——直连 SQL 常用参数控筛选范围。"""
+    seen, out = set(), []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "dynamicParameters" and isinstance(v, list):
+                    for p in v:
+                        if not isinstance(p, dict) or not p.get("name"):
+                            continue
+                        key = p.get("dpId") or p["name"]
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        entry = {"dpId": p.get("dpId", ""), "name": p["name"]}
+                        for f in ("valueType", "defaultValue", "multiple"):
+                            if p.get(f) is not None:
+                                entry[f] = p[f]
+                        out.append(entry)
+                else:
+                    walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(data)
+    return out
+
+
 def build_entry(ds_id, data, rows, max_rows):
     """单数据集的 datasets-raw 条目（纯函数，便于单测）"""
     columns = extract_columns(data)
@@ -151,6 +185,7 @@ def build_entry(ds_id, data, rows, max_rows):
         "mtime": (data.get("utime") or "")[:19],
         "rowCount": data.get("rowCount"),
         "columns": columns,
+        "dynamicParams": _dynamic_params(data),
     }
     if rows is not None:
         entry["sample"] = {
@@ -217,7 +252,8 @@ def main():
             n_vc = len(r["virtualColumns"])
             sample = entry.get("sample") or {}
             print(f"  {r['name']}: {len(entry['columns'])} 列（维度 {n_dim} / 指标 {len(entry['columns']) - n_dim}，"
-                  f"计算字段 {n_vc}）" + (f"，采样 {sample.get('sampledRows')} 行" if sample else "，采样失败（已降级）"))
+                  f"计算字段 {n_vc}）" + (f"，采样 {sample.get('sampledRows')} 行" if sample else "，采样失败（已降级）")
+                  + (f"，⚠️ 全局参数 {len(entry['dynamicParams'])} 个（含参数的公式禁止 SQL 内联）" if entry.get("dynamicParams") else ""))
             entry.pop("_name", None)
             if r["name"] in learned:
                 # 数据集名称是 datasets-raw.json 的键：不同 dsId 同名会静默覆盖，

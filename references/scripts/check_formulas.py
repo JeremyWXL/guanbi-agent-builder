@@ -12,6 +12,8 @@
   1. 汇总全部卡片/数据集的公式字段，按指标名归组
   2. 同名指标公式比对 → 口径冲突清单（如"退款率"在不同卡片分母不同）——第 4 步必须请用户裁决
   3. 按公式结构分类"换维度聚合安全性"：
+     - PARAM_DEPENDENT 含全局参数 DYNAMIC_PARAMS → 没有静态口径，禁止内联进 SQL；
+       走 card preview --dynamic-param 透传参数取数（卡片声明的参数与默认值见 cards.json dynamicParams）
      - FREE        纯 sum 可加 / sum/sum 比率型 → 换维度安全（分子分母分别求和再相除）
      - DISTINCT    含 count(distinct) → 必须从明细现算，禁止把分组结果再加总/平均
      - NONADDITIVE 含 max/min 聚合 → 换维度语义会变，必须从明细现算
@@ -26,17 +28,20 @@ from collections import defaultdict
 from datetime import datetime
 
 RULES = [  # (优先级, 类别, 正则, 中文说明)
-    (0, "CONSTANT", re.compile(r'^\s*[\d.,\s]+\s*$'),
+    (0, "PARAM_DEPENDENT", re.compile(r'DYNAMIC_PARAMS\s*\.', re.I),
+     "含全局参数（DYNAMIC_PARAMS）：取值随参数当前值变化，没有静态口径——禁止内联进 SQL"
+     "（SQL 引擎无参数上下文，必报错或静默算错）；走卡片取数 card preview --dynamic-param 透传"),
+    (1, "CONSTANT", re.compile(r'^\s*[\d.,\s]+\s*$'),
      "硬编码常量：疑似演示/大屏专属（如写死的目标值、调整系数），禁止当业务口径"),
-    (1, "DISTINCT", re.compile(r'count\s*\(\s*distinct', re.I),
+    (2, "DISTINCT", re.compile(r'count\s*\(\s*distinct', re.I),
      "含 COUNT DISTINCT：换维度必须从明细现算；禁止把各分组结果相加或平均"),
-    (2, "AVG", re.compile(r'\bavg\s*\(', re.I),
+    (3, "AVG", re.compile(r'\bavg\s*\(', re.I),
      "含 AVG：禁止对分组均值再平均，换维度必须 sum/count 现算"),
-    (3, "NONADDITIVE", re.compile(r'\b(max|min|median|percentile|stddev)\s*\(', re.I),
+    (4, "NONADDITIVE", re.compile(r'\b(max|min|median|percentile|stddev)\s*\(', re.I),
      "含 MAX/MIN 等非加聚合：换维度后语义会变，必须从明细现算"),
-    (4, "TIME_MACRO", re.compile(r'current_date|current_timestamp|date_trunc|dayofmonth|last_day|now\s*\(', re.I),
+    (5, "TIME_MACRO", re.compile(r'current_date|current_timestamp|date_trunc|dayofmonth|last_day|now\s*\(', re.I),
      "含时间宏/日期函数：结果与「今天」绑定，SQL 复写时需显式日期"),
-    (5, "ROW_LOGIC", re.compile(r'\bcase\s+when\b', re.I),
+    (6, "ROW_LOGIC", re.compile(r'\bcase\s+when\b', re.I),
      "含行级条件逻辑：SQL 可复写，但语义绑定数据集行粒度"),
 ]
 RATIO_OF_SUM = re.compile(
@@ -248,7 +253,8 @@ def main():
     cls_label = {"FREE": "✅ 自由重聚合", "DISTINCT": "⚠️ 需明细现算(去重)",
                  "AVG": "⚠️ 需明细现算(均值)", "NONADDITIVE": "⚠️ 需明细现算(最值)",
                  "ROW_LOGIC": "ℹ️ 行级逻辑", "TIME_MACRO": "ℹ️ 时间宏",
-                 "CONSTANT": "🚫 硬编码常量"}
+                 "CONSTANT": "🚫 硬编码常量",
+                 "PARAM_DEPENDENT": "🔀 全局参数依赖(禁止SQL内联)"}
     for cls, n in sorted(cls_counts.items()):
         print(f"  {cls_label.get(cls, cls)}: {n} 个")
     if conflicts:

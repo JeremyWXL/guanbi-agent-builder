@@ -1,5 +1,17 @@
 # 变更日志
 
+## v4.9.0（2026-10-19）全局参数（DYNAMIC_PARAMS）全链路支持：学习可发现、口径有分类、取数可传参
+
+解决的问题：观远 BI 看板大量用全局参数做动态筛选与指标/维度切换（计算字段或直连数据集 SQL 里引用 `[DYNAMIC_PARAMS.xxx]`，页面上改参数即改变筛选范围），此前 skill 对此零感知——学到的参数化公式被当普通公式，SQL 直查内联必报错或静默算错（参数名撞物理列名时）；交付 agent 取数只能拿到参数默认值下的结果，无法响应"看 9 月的数据"这类参数取值诉求。实机验证（蜜雪《【月报】饮品分析》直连数据集，SQL 用 `[DYNAMIC_PARAMS.开始时间/结束时间]` 控筛选范围）：`guancli card preview --dynamic-param "参数名=值"` 传参真实生效（默认昨天=空结果，传 9 月区间正常出数），且卡片 raw 里 `dynamicParameters`（dpId/名称/类型/默认值）可机器发现。
+
+- **parse_page.py**：每张卡片新增 `dynamicParams`（遍历图表层与数据集层的 dynamicParameters、按 dpId 去重，含 dpId/参数名/类型/默认值）；SKILL.md 第 2 步明确该字段必须带入 cards.json，参数化卡片采样按默认值执行、0 行先怀疑默认参数范围
+- **check_formulas.py**：新增 `PARAM_DEPENDENT` 分类（最高优先级，命中 `DYNAMIC_PARAMS.`）——含参公式不再落入 ROW_LOGIC/FREE 被 SQL 内联；控制台报告与 metrics-seed 的 safety 透传；check_metrics.py 的 SAFETY_KNOWN 与 metrics.json 模板同步收录该分类
+- **learn_dataset.py**：直通模式数据集条目新增 `dynamicParams`（同逻辑收割数据集级声明）
+- **红线与指南**：builder 红线 10 新增"禁止内联含 DYNAMIC_PARAMS 的公式"；sql-guide.md 换维度安全性表新增 PARAM_DEPENDENT 行 + 数据红线新增"参数化公式禁止内联、走 card preview --dynamic-param 传参"条
+- **agent-SKILL.md 模板（看板模式）**：取数流程新增参数化卡片纪律（不传参按默认值、用户指定取值时 --dynamic-param 透传、只传卡片声明过的参数——传未声明的参数静默无效、CLI 回显不等于生效、空结果先怀疑默认参数范围）；数据红线新增"参数化卡片报数须在出身行声明参数取值"
+- **测试**：test_parse_page +3（跨层收集/dpId 去重/写入卡片）、test_learn_dataset +2、新增 test_check_formulas.py +6（分类优先级/集成/seed 透传）；全套单测 346 → 357 例全绿；实机验证 mxbc 页面 34 卡中识别参数化卡 22 张、v370 沙箱 3 个参数化指标正确归类
+- **版本一致性**：4.8.5 → 4.9.0（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+
 ## v4.8.5（2026-10-13）首次开场白：欢迎 + 为什么搭建 + 会发生什么
 
 解决的问题：首次使用的用户（多为 WorkBuddy 新手，不了解 data agent 如何搭建）进入向导后没有基础认知铺垫——不知道"为什么不直接问数要先搭建"、"接下来要多久、自己要做什么"，容易在搭建中段失去耐心。

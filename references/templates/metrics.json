@@ -6,7 +6,7 @@
     "字段设计向 OSI（开放语义交换标准）对齐：name/formula/dims/synonyms，让口径档案可跨工具存活、可被脚本校验",
     "name：指标标准名（必填、唯一）；formula：内联公式原文（SQL 可复写）；无公式的物理字段用 baseField + aggrType 代替",
     "dims：指标可用的分析维度；synonyms：用户可能叫的别名/同义词（禁止与其他指标的 name/synonyms 撞车）",
-    "safety：换维度聚合安全性（FREE/DISTINCT/AVG/NONADDITIVE/ROW_LOGIC/TIME_MACRO），与 formulas.json 分类一致，决定 SQL 直查能否换维度",
+    "safety：换维度聚合安全性（FREE/DISTINCT/AVG/NONADDITIVE/ROW_LOGIC/TIME_MACRO/PARAM_DEPENDENT），与 formulas.json 分类一致，决定 SQL 直查能否换维度；PARAM_DEPENDENT = 公式含全局参数（DYNAMIC_PARAMS），禁止 SQL 内联，走 card preview --dynamic-param 传参取数",
     "source：card（看板卡片）/ dataset（数据集计算字段）/ user（用户口述口径）/ sql（SQL 专用口径）",
     "exampleQuestions：用户问法示例（供 agent 路由参照）；unit/unitNote：单位约定",
     "rejected：确认过但不收编的候选（如展示层派生、冲突落选变体），写明原因——防止下次学习又被当成新发现提问",

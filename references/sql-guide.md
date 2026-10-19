@@ -89,6 +89,7 @@ SQL 取数是自由查询，**自由意味着口径可能和看板不一致**。
 ### 换维度安全性（以 formulas.json 的 classification 为准）
 | 分类 | 含义 | SQL 直查规则 |
 |---|---|---|
+| PARAM_DEPENDENT | 公式含全局参数 `[DYNAMIC_PARAMS.xxx]`（如指标/维度切换器、参数化时间区间） | **禁止内联进 SQL**——SQL 引擎没有参数上下文，内联必报 UNRESOLVED_COLUMN 或静默算错（参数名撞物理列名时）。改走卡片取数：`guancli card preview <cdId> --dynamic-param "参数名=值"`（可多次指定；参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数——传未声明的参数静默无效，CLI 回显不等于生效） |
 | FREE | 纯 sum / sum/sum 比率型 | 可自由换维度，内联公式现算 |
 | DISTINCT | 含 COUNT DISTINCT（如店效） | 只能从明细现算；禁止把各分组结果相加或平均 |
 | AVG / NONADDITIVE | 含 AVG / MAX / MIN | 禁止对分组结果再聚合，必须从明细现算 |
@@ -127,6 +128,7 @@ SQL 取数是自由查询，**自由意味着口径可能和看板不一致**。
 - **复杂口径追溯**：SQL 计算复杂口径时，必须在回答中标注计算公式的来源
 - **比率禁止再平均**：禁止 `AVG(明细比率)`；比率指标用 formulas.json 里的公式内联现算
 - **计算字段必须内联**：数据集计算字段（virtualColumns）在 SQL 里不存在，按名引用会报错；用 formulas.json 的公式原文展开
+- **参数化公式禁止内联**：含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）在 SQL 里没有参数上下文，内联必错——这类指标走卡片取数路径 `guancli card preview <cdId> --dynamic-param "参数名=值"`（直连数据集 SQL 里用参数控筛选范围的同样适用，实测参数可透传进 WHERE 生效）；不传参时按参数默认值取数，**空结果先怀疑默认参数范围（如 `{{{yesterday}}}` 宏）而非"没数据"**
 - **隐藏筛选必须复写**：卡片的 filterDetails（如 `时间维度='月累计'`）是口径的一部分，SQL 漏写会差出数量级
 - 金额字段统一 ÷10000 转"万"后再展示给用户
 - 中文别名是已知的 SQL 解析器陷阱，必须用英文别名

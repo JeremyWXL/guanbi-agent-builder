@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""learn_dataset.py 的单测：字段合并/列画像/条目结构 + check_formulas/check_dims 回退 datasets-raw 集成"""
+"""learn_dataset.py 的单测：字段合并/列画像/条目结构 + check_formulas/check_dims 回退 datasets-raw 集成
++ v4.9 全局参数收割（_dynamic_params：跨层收集 + dpId 去重）"""
 import json
 import os
 import subprocess
@@ -95,6 +96,19 @@ class TestBuildEntry(unittest.TestCase):
         e = ld.build_entry("ds1", DS_PAYLOAD, None, 200)
         self.assertNotIn("sample", e)
         self.assertEqual(len(e["columns"]), 4)
+
+    def test_dynamic_params_collected(self):
+        payload = dict(DS_PAYLOAD)
+        payload["config"] = {"dynamicParameters": [
+            {"dpId": "dp1", "name": "开始时间", "valueType": "DATE", "defaultValue": "{{{yesterday}}}"},
+            {"dpId": "dp1", "name": "开始时间"},  # 同 dpId 重复声明应去重
+            {"dpId": "dp2", "name": "指标选取", "valueType": "STRING", "defaultValue": "营业额"}]}
+        e = ld.build_entry("ds1", payload, ROWS, 200)
+        self.assertEqual([p["name"] for p in e["dynamicParams"]], ["开始时间", "指标选取"])
+
+    def test_no_dynamic_params_empty(self):
+        e = ld.build_entry("ds1", DS_PAYLOAD, ROWS, 200)
+        self.assertEqual(e["dynamicParams"], [])
 
 
 class TestDownstreamFallback(unittest.TestCase):
