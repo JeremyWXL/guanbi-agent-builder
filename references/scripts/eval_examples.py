@@ -38,7 +38,9 @@ NUM_TOKEN = re.compile(r'[￥$¥]?\s*-?\d[\d,]*(?:\.\d+)?\s*(?:%|万|亿)?')
 
 
 def num_candidates(v):
-    """把单元格/文本值解析成候选浮点数，容忍货币符号（￥/$/¥）、千分位、百分号、中文单位（万/亿）"""
+    """把单元格/文本值解析成候选浮点数，容忍货币符号（￥/$/¥）、千分位、百分号、中文单位（万/亿）
+    及中文量词后缀（"4,334.3万元"/"10.6万杯"/"6.34元"——v4.9.1 实机缺陷：带量词后缀的显示值
+    此前整体解析为空，--record 连真实数字都拒收）"""
     if isinstance(v, bool):
         return []
     if isinstance(v, (int, float)):
@@ -54,6 +56,7 @@ def num_candidates(v):
     pct = '%' in s
     cleaned = (s.replace(',', '').replace('%', '').replace('万', '').replace('亿', '')
                .replace('￥', '').replace('$', '').replace('¥', '').strip())
+    cleaned = re.sub(r'[一-鿿]+$', '', cleaned).strip()  # 量词后缀（元/杯/个/件/单/店…）
     try:
         n = float(cleaned)
     except ValueError:

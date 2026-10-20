@@ -27,7 +27,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-1 | 前置检查 | `python3 references/scripts/preflight.py <沙箱目录>` | 5 项全 ✅；带目录时能打印断点摘要 |
 | L0-2 | 状态机 | `wizard_state.py init/set/confirm`（含 `--mode lite`） | 状态流转正确；第 4、7 步 set skipped 被拒绝（lite 下同样拒绝，退出码 3）；lite init 落盘 `mode: "lite"`，show/next 带模式标签 |
 | L0-3 | 看板扫描 | `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword "<词>"` | 三种模式均返回结构化结果 |
-| L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心 |
+| L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心；数据集全部不可读时做卡片通道探针，card preview 可取数降 ⚠️ 不误拦（v4.9.2） |
 | L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType；数据卡含 filtered 标记、页面含 dsUsage 分级（v4.2 取数加速层）；参数化卡片含 dynamicParams（dpId/参数名/类型/默认值，跨层去重，v4.9） |
 | L0-6 | 采样 | `sample_cards.py cards-raw.json card-data` | `_sample_index.json` 含列画像；`_meta` 键不崩溃 |
 | L0-7 | 数据校验 | `validate_cards.py card-data` | ❌/⚠️/ℹ️ 分级输出，退出码反映 ❌ |

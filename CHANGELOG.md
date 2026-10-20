@@ -1,5 +1,16 @@
 # 变更日志
 
+## v4.9.2（2026-10-20）v4.9.1 回归两个 P1 修复：check_pages ⛔ 误报 + eval_examples 中文量词解析
+
+解决的问题：v4.9.1 基线回归（mxbc 全矩阵）发现的两个主流程 P1——① check_pages 把「数据集 API 无权限」当「看板不可用」：mxbc 全部数据卡 `isDsReadable=false` 即判 ⛔，但 card preview 实际可取数、62/62 卡学习全链路实测可用，无可换看板的环境被硬阻断；② eval_examples 数值提取不剥中文量词后缀：「4,334.3万元」「10.6万杯」「6.34元」整体解析为空，--suggest 无候选、--record 连真实数字都拒收，带单位的 KPI 卡无法走第 7 步机械回填（62 张中 44 张受影响）。
+
+- **check_pages.py 卡片通道探针**：数据集全部不可读（`isDsReadable=false`）的看板不再直接 ⛔——先做一次 `card preview` 只读探针（每张看板至多一次调用，并发）：探针可取数 → 降 ⚠️ 并明示"数据集 API 无权限但卡片通道可取数，学习不受影响；SQL 直查与数据集级探查不可用"，且照常进入 agent-ready 评分；探针也不可用 → 维持 ⛔（原因注明卡片通道实测不可用）。isDsReadable 只表达数据集 API 权限，卡片通道是独立权限面。`evaluate()` 新增 `preview_ok` 参数（None=未探针，旧行为兼容）；部分不可读的既有警告行为不变
+- **eval_examples.py 量词后缀剥离**：`num_candidates` 在去除 万/亿/货币符号后再剥尾部中文量词（元/杯/个/件/单/店…）——「4,334.3万元」→ 43,343,000、「6.34元」→ 6.34；无后缀值行为逐字节不变
+- **实机验证**：mxbc 两张月报看板重跑 check_pages——均由 ⛔ 降 ⚠️ 并给出评分（饮品 49/中 含「占比」4 变体 🔴、周边 80/高），与 v4.9.1 L1 实搭经验完全一致
+- **文档同步**：SKILL.md 第 1 步适检三档补探针说明；agent-tester L0-4 检查点同步
+- **测试**：test_check_pages.py +6（降 ⚠️/探针失败维持 ⛔/未探针兼容/部分不可读警告不变/探针选卡与退出码）、test_eval_examples.py +1（量词后缀四值 + 无后缀不变）；单测 359 → 366 例全绿
+- **版本一致性**：4.9.1 → 4.9.2（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+
 ## v4.9.1（2026-10-20）文档与测试基建补齐：ROADMAP/README 同步、CI 版本检查扩面、交付体检补 fill_dim_values、agent-tester 补 v4.8/v4.9 检查点
 
 解决的问题：整体 review 发现一批"功能健康但文档/基建滞后"的欠账——ROADMAP 状态快照停在 v4.3.0（17 脚本 + 11 测试文件 146 例，实际已是 27 + 24 / 357 例）、「v4.4 看板角色迁移·规划中」与已发布的 v4.4.0（增量学习通道）版本号冲突、缺 v4.4–v4.9 全部章节；README 特性列表停在 v2.5；CI 版本一致性只查 2 个脚本（发布惯例是九处）；check_package 的 SCRIPT_LIST 漏了 fill_dim_values.py（build_package 会复制、SKILL.md 交付树也列了，但体检闸门不拦它的缺失）；agent-tester 停在 v4.5.0 时代（无指标中心/全局参数/反馈通道检查点）。

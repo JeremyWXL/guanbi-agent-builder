@@ -1,135 +1,169 @@
 {
-  "version": "4.9.1",
-  "date": "2026-10-20",
-  "testerVersion": "1.8.0",
-  "environment": "guancli 1.0.63 + mxbc 环境（https://bi.mxbc.net，餐饮连锁演示域；SQL 直查/数据集 API/指标中心均不可用）",
-  "unitTests": 359,
-  "l0": {
-    "total": 27,
-    "passed": 25,
-    "note": "全矩阵 27 检查点：25 通过 + 2 部分通过（L0-19 learn_dataset 成功路径环境受限——mxbc 数据集 API 不可读，失败哨兵 exit 2 已验证；L0-16/24 受 P1 eval 数值提取不剥中文单位后缀影响局部失效）。v4.9 增量全核到：parse_page dynamicParams（60 张参数化卡，dpId/参数名/类型/默认值，卡内无重复）、check_formulas PARAM_DEPENDENT 分类 2 条禁 SQL 内联、L0-26 run_metric 白名单双向断言（fixture，越界 exit 3 不调 guancli）、L0-27 feedback dry-run 零发送+隐私红线+500 字 exit 2。L0-20 merge_cards 与 L0-23 build/check_package 在真实交付包补测通过（cards.json 字节一致、体检 exit 0）"
-  },
-  "l1": {
-    "status": "pass",
-    "track": "完整模式 dashboard 轨道八步 E2E（mxbc 仅 2 张月报看板全纳入，含必选参数化看板《【月报】饮品分析》）",
-    "notes": "wizard-state 八步全 confirmed（第 3 步用户拒绝合法 skipped）；check_pages 双双 ⛔ 实测为误报（isDsReadable=false 但 card preview 可取数，记 P1），模拟用户知情坚持并登记风险；口径冲突「占比」4 变体用户拍板拆分为 4 条独立指标（AI 未二选一）；双闸门 ❌ 清零（check_metrics 12 条+1 rejected / check_dims 26 条）；指标中心 0/10 判未开通→一次性告知后全程未再提（三态之未开通分支）；第 7 步 5/5 实测：--dynamic-param 传参对比（默认昨天宏 27.1万 vs 9 月区间 45.7万）、0 行卡传参出数、attribute.py 闭环、SQL 探活失败降级卡片交叉；eval --record/--confirm 机械回填 5/5；build_package→check_package exit 0（pass，0 errors/0 warnings），包内 eval 自跑 5/5，sqlAvailable=false 渲染正确"
-  },
-  "l2": {
-    "score": 97.4,
-    "grade": "A",
-    "redlines": 0,
-    "note": "8 题（C1-C7 各 1 + 参数取值专项 1，均为 examples.json 之外新题）；总分=(96+96+94+100×1.5+96+97+99+100)/8.5=97.4；无 governedRef 故未出指标中心直查题（mxbc 未开通）；P1 均为 builder 侧缺陷不构成交付 agent 错答风险，不降级（对照 v4.8.0 降 B 理由为交付包内容缺陷）",
-    "questions": [
-      {"id": "C1", "topic": "你能干什么（自我介绍，SQL 不可用如实声明）", "score": 96},
-      {"id": "C2", "topic": "「总计」门店排名（跨 5 维度重叠值，识别合计行纠正前提）", "score": 96},
-      {"id": "C3", "topic": "9 月各大区营业额（大区→运营区域归一+覆盖缺口不硬答给出路）", "score": 94},
-      {"id": "C4", "topic": "2025 年 9 月销量环比谁拖累（attribute.py 复算逐项一致，季节性待验证声明）", "score": 100},
-      {"id": "C5", "topic": "新品占比（rejected 泛名给 2 候选请拍板+全周期累计边界声明）", "score": 96},
-      {"id": "C6", "topic": "加盟费回本周期（超范围列看板+增量学习出路）", "score": 97},
-      {"id": "C7", "topic": "直接 SQL 拉门店明细（SQL 不可用声明+三条出路+行数上限提醒）", "score": 99},
-      {"id": "C8", "topic": "2025 年 10 月各糖度占比（v4.9 专项：--dynamic-param 传参+出身行声明参数取值+属性覆盖提醒）", "score": 100}
-    ]
-  },
-  "paramE2E": {
-    "parse_dynamicParams": "pass（60 张参数化卡收割 dpId/参数名/valueType/defaultValue/multiple，卡内无重复，跨层去重）",
-    "param_dependent_classification": "pass（2 条 PARAM_DEPENDENT 含禁止 SQL 内联说明，进 metrics.json 成稿）",
-    "dynamic_param_fetch": "pass（同卡默认参数 27.1万 vs 9 月传参 45.7万对比生效；0 行卡传参出数验证'先怀疑默认参数范围'）",
-    "provenance_param_declaration": "pass（L2 题 8 出身行含参数取值+默认值对比说明，v4.9 纪律端到端成立）",
-    "drill_limitation": "DRILL 卡不支持 --dynamic-param（guancli 限制，记 P2）"
-  },
-  "e2eFindings": [
-    "v4.9.0 DYNAMIC_PARAMS 全链路实机成立：收割→分类禁内联→传参取数→出身行声明，交付 agent 自发执行",
-    "check_pages ⛔ 判定与演示域权限模型错配：isDsReadable=false ≠ 卡片不可取数（P1）",
-    "eval_examples 数值提取对中文单位后缀失效，带单位 KPI 卡无法机械回填（P1）",
-    "交付 agent 质量高：归因与 attribute.py 复算零误差、传参与测评官实测逐项一致、覆盖缺口/口径边界诚实声明",
-    "指标中心三态已覆盖两态（v4.8.0 可用全分支 + 本轮未开通分支），临时失败分支未实测"
-  ],
-  "issues": [
-    {
-      "severity": "P1",
-      "title": "check_pages ⛔ 误报：全部数据卡 isDsReadable=false（数据集 API 无权限）即判不可用，但 card preview 可取数、学习全链路实测可用；无可换看板环境=硬阻断，建议 ⛔ 前抽查 card preview 降级 ⚠️",
-      "status": "open"
-    },
-    {
-      "severity": "P1",
-      "title": "eval_examples num_candidates 不剥中文单位后缀（4,334.3万元/10.6万杯/6.34元/10家 解析为空）→ --suggest 无候选、--record 真实数字也拒、eval 匹配 fail，带单位 KPI 卡无法机械回填",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "workbench --check 在 cards.json 缺失时抛未捕获 FileNotFoundError traceback",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "manifest keywords 传数组时 render_agent_skill TypeError（SKILL.md 未注明须字符串）",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "DRILL 卡不支持 --dynamic-param；传未声明参数 guancli 显式报错与交付包 SKILL.md「静默无效」表述不符",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "make_link.py --list 不带看板名参数时 IndexError 崩溃（参数解析缺边界检查）",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "新老品 KPI 卡无时间筛选/时间参数（全周期累计口径），资产目录与 businessKnowledge 未登记该边界",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "资产目录未提示大区覆盖缺口（饮品无大区×营业额卡、周边大区数据仅华东片区）",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "businessKnowledge「期间取值 2025 年各月」与 examples/趋势卡含 2026 年数据矛盾（搭建期表述不准）",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "card preview 只返回格式化显示值（4.5万 1 位小数），贡献额按显示值计算有舍入误差（工具限制登记）",
-      "status": "open"
-    },
-    {
-      "severity": "P2",
-      "title": "examples.json fetch 不支持 type=metric，指标中心取数链路无自动化回归覆盖",
-      "status": "open",
-      "note": "沿用 v4.8.0 open 项，本版模板仍仅 card/sql，未修"
-    },
-    {
-      "severity": "P2",
-      "title": "run_sql 表名报错不友好（平台 500 堆栈，TABLE_OR_VIEW_NOT_FOUND 埋在 details）",
-      "status": "open",
-      "note": "沿用 v4.8.0 open 项，mxbc SQL 不可用未复测"
-    },
-    {
-      "severity": "P2",
-      "title": "check_package 通过时输出过简，不展示 L3 各冒烟项逐项结果",
-      "status": "open",
-      "note": "沿用 v4.8.0 open 项，本轮 build_package [4/5] 仍一行带过，复测仍在"
-    },
-    {
-      "severity": "P2",
-      "title": "diff_baselines 旧版 l2.score=null 时把新版成绩误报为「本次未测评」",
-      "status": "open",
-      "note": "沿用 v4.8.0 差异节所记 P2"
-    },
-    {
-      "severity": "P2",
-      "title": "run_sql 裸中文表名反引号",
-      "status": "open",
-      "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
-    },
-    {
-      "severity": "P2",
-      "title": "停更页采样失败",
-      "status": "open",
-      "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
-    }
+ "version": "4.9.1",
+ "date": "2026-10-20",
+ "testerVersion": "1.8.0",
+ "environment": "guancli 1.0.63 + mxbc 环境（https://bi.mxbc.net，餐饮连锁演示域；SQL 直查/数据集 API/指标中心均不可用）",
+ "unitTests": 359,
+ "l0": {
+  "total": 27,
+  "passed": 25,
+  "note": "全矩阵 27 检查点：25 通过 + 2 部分通过（L0-19 learn_dataset 成功路径环境受限——mxbc 数据集 API 不可读，失败哨兵 exit 2 已验证；L0-16/24 受 P1 eval 数值提取不剥中文单位后缀影响局部失效）。v4.9 增量全核到：parse_page dynamicParams（60 张参数化卡，dpId/参数名/类型/默认值，卡内无重复）、check_formulas PARAM_DEPENDENT 分类 2 条禁 SQL 内联、L0-26 run_metric 白名单双向断言（fixture，越界 exit 3 不调 guancli）、L0-27 feedback dry-run 零发送+隐私红线+500 字 exit 2。L0-20 merge_cards 与 L0-23 build/check_package 在真实交付包补测通过（cards.json 字节一致、体检 exit 0）"
+ },
+ "l1": {
+  "status": "pass",
+  "track": "完整模式 dashboard 轨道八步 E2E（mxbc 仅 2 张月报看板全纳入，含必选参数化看板《【月报】饮品分析》）",
+  "notes": "wizard-state 八步全 confirmed（第 3 步用户拒绝合法 skipped）；check_pages 双双 ⛔ 实测为误报（isDsReadable=false 但 card preview 可取数，记 P1），模拟用户知情坚持并登记风险；口径冲突「占比」4 变体用户拍板拆分为 4 条独立指标（AI 未二选一）；双闸门 ❌ 清零（check_metrics 12 条+1 rejected / check_dims 26 条）；指标中心 0/10 判未开通→一次性告知后全程未再提（三态之未开通分支）；第 7 步 5/5 实测：--dynamic-param 传参对比（默认昨天宏 27.1万 vs 9 月区间 45.7万）、0 行卡传参出数、attribute.py 闭环、SQL 探活失败降级卡片交叉；eval --record/--confirm 机械回填 5/5；build_package→check_package exit 0（pass，0 errors/0 warnings），包内 eval 自跑 5/5，sqlAvailable=false 渲染正确"
+ },
+ "l2": {
+  "score": 97.4,
+  "grade": "A",
+  "redlines": 0,
+  "note": "8 题（C1-C7 各 1 + 参数取值专项 1，均为 examples.json 之外新题）；总分=(96+96+94+100×1.5+96+97+99+100)/8.5=97.4；无 governedRef 故未出指标中心直查题（mxbc 未开通）；P1 均为 builder 侧缺陷不构成交付 agent 错答风险，不降级（对照 v4.8.0 降 B 理由为交付包内容缺陷）",
+  "questions": [
+   {
+    "id": "C1",
+    "topic": "你能干什么（自我介绍，SQL 不可用如实声明）",
+    "score": 96
+   },
+   {
+    "id": "C2",
+    "topic": "「总计」门店排名（跨 5 维度重叠值，识别合计行纠正前提）",
+    "score": 96
+   },
+   {
+    "id": "C3",
+    "topic": "9 月各大区营业额（大区→运营区域归一+覆盖缺口不硬答给出路）",
+    "score": 94
+   },
+   {
+    "id": "C4",
+    "topic": "2025 年 9 月销量环比谁拖累（attribute.py 复算逐项一致，季节性待验证声明）",
+    "score": 100
+   },
+   {
+    "id": "C5",
+    "topic": "新品占比（rejected 泛名给 2 候选请拍板+全周期累计边界声明）",
+    "score": 96
+   },
+   {
+    "id": "C6",
+    "topic": "加盟费回本周期（超范围列看板+增量学习出路）",
+    "score": 97
+   },
+   {
+    "id": "C7",
+    "topic": "直接 SQL 拉门店明细（SQL 不可用声明+三条出路+行数上限提醒）",
+    "score": 99
+   },
+   {
+    "id": "C8",
+    "topic": "2025 年 10 月各糖度占比（v4.9 专项：--dynamic-param 传参+出身行声明参数取值+属性覆盖提醒）",
+    "score": 100
+   }
   ]
+ },
+ "paramE2E": {
+  "parse_dynamicParams": "pass（60 张参数化卡收割 dpId/参数名/valueType/defaultValue/multiple，卡内无重复，跨层去重）",
+  "param_dependent_classification": "pass（2 条 PARAM_DEPENDENT 含禁止 SQL 内联说明，进 metrics.json 成稿）",
+  "dynamic_param_fetch": "pass（同卡默认参数 27.1万 vs 9 月传参 45.7万对比生效；0 行卡传参出数验证'先怀疑默认参数范围'）",
+  "provenance_param_declaration": "pass（L2 题 8 出身行含参数取值+默认值对比说明，v4.9 纪律端到端成立）",
+  "drill_limitation": "DRILL 卡不支持 --dynamic-param（guancli 限制，记 P2）"
+ },
+ "e2eFindings": [
+  "v4.9.0 DYNAMIC_PARAMS 全链路实机成立：收割→分类禁内联→传参取数→出身行声明，交付 agent 自发执行",
+  "check_pages ⛔ 判定与演示域权限模型错配：isDsReadable=false ≠ 卡片不可取数（P1）",
+  "eval_examples 数值提取对中文单位后缀失效，带单位 KPI 卡无法机械回填（P1）",
+  "交付 agent 质量高：归因与 attribute.py 复算零误差、传参与测评官实测逐项一致、覆盖缺口/口径边界诚实声明",
+  "指标中心三态已覆盖两态（v4.8.0 可用全分支 + 本轮未开通分支），临时失败分支未实测"
+ ],
+ "issues": [
+  {
+   "severity": "P1",
+   "title": "check_pages ⛔ 误报：全部数据卡 isDsReadable=false（数据集 API 无权限）即判不可用，但 card preview 可取数、学习全链路实测可用；无可换看板环境=硬阻断，建议 ⛔ 前抽查 card preview 降级 ⚠️",
+   "status": "fixed",
+   "fixedIn": "4.9.2"
+  },
+  {
+   "severity": "P1",
+   "title": "eval_examples num_candidates 不剥中文单位后缀（4,334.3万元/10.6万杯/6.34元/10家 解析为空）→ --suggest 无候选、--record 真实数字也拒、eval 匹配 fail，带单位 KPI 卡无法机械回填",
+   "status": "fixed",
+   "fixedIn": "4.9.2"
+  },
+  {
+   "severity": "P2",
+   "title": "workbench --check 在 cards.json 缺失时抛未捕获 FileNotFoundError traceback",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "manifest keywords 传数组时 render_agent_skill TypeError（SKILL.md 未注明须字符串）",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "DRILL 卡不支持 --dynamic-param；传未声明参数 guancli 显式报错与交付包 SKILL.md「静默无效」表述不符",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "make_link.py --list 不带看板名参数时 IndexError 崩溃（参数解析缺边界检查）",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "新老品 KPI 卡无时间筛选/时间参数（全周期累计口径），资产目录与 businessKnowledge 未登记该边界",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "资产目录未提示大区覆盖缺口（饮品无大区×营业额卡、周边大区数据仅华东片区）",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "businessKnowledge「期间取值 2025 年各月」与 examples/趋势卡含 2026 年数据矛盾（搭建期表述不准）",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "card preview 只返回格式化显示值（4.5万 1 位小数），贡献额按显示值计算有舍入误差（工具限制登记）",
+   "status": "open"
+  },
+  {
+   "severity": "P2",
+   "title": "examples.json fetch 不支持 type=metric，指标中心取数链路无自动化回归覆盖",
+   "status": "open",
+   "note": "沿用 v4.8.0 open 项，本版模板仍仅 card/sql，未修"
+  },
+  {
+   "severity": "P2",
+   "title": "run_sql 表名报错不友好（平台 500 堆栈，TABLE_OR_VIEW_NOT_FOUND 埋在 details）",
+   "status": "open",
+   "note": "沿用 v4.8.0 open 项，mxbc SQL 不可用未复测"
+  },
+  {
+   "severity": "P2",
+   "title": "check_package 通过时输出过简，不展示 L3 各冒烟项逐项结果",
+   "status": "open",
+   "note": "沿用 v4.8.0 open 项，本轮 build_package [4/5] 仍一行带过，复测仍在"
+  },
+  {
+   "severity": "P2",
+   "title": "diff_baselines 旧版 l2.score=null 时把新版成绩误报为「本次未测评」",
+   "status": "open",
+   "note": "沿用 v4.8.0 差异节所记 P2"
+  },
+  {
+   "severity": "P2",
+   "title": "run_sql 裸中文表名反引号",
+   "status": "open",
+   "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
+  },
+  {
+   "severity": "P2",
+   "title": "停更页采样失败",
+   "status": "open",
+   "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
+  }
+ ]
 }

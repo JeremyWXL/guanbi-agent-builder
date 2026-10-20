@@ -275,5 +275,65 @@ class TestEvaluate(unittest.TestCase):
         self.assertEqual(r["agentReady"]["dims"]["governed"], "unavailable")
 
 
+class TestUnreadableDsProbe(unittest.TestCase):
+    """v4.9.2 回归：isDsReadable 只表达数据集 API 权限——全部不可读但卡片通道可取数时
+    ⛔ 降 ⚠️（mxbc 实机误报：62/62 卡可学却全判 ⛔，无可换看板环境 = 硬阻断）"""
+
+    def _data(self):
+        cards = [mk_chart("a", ds="ds1", rows=("区域",),
+                          metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}]),
+                 mk_chart("b", ds="ds1", rows=("区域",),
+                          metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}])]
+        for c in cards:
+            c["isDsReadable"] = False
+        return mk_data(cards, [mk_dsinfo("ds1", dims=("区域",), utime="2026-10-15 10:00:00")])
+
+    def test_all_unreadable_no_probe_keeps_blocked(self):
+        # preview_ok=None（未探针，旧行为兼容）：维持 ⛔
+        r = cp.evaluate("p1", self._data(), None, 90)
+        self.assertEqual(r["verdict"], "⛔")
+        self.assertNotIn("agentReady", r)
+
+    def test_all_unreadable_probe_failed_stays_blocked(self):
+        r = cp.evaluate("p1", self._data(), None, 90, preview_ok=False)
+        self.assertEqual(r["verdict"], "⛔")
+        self.assertIn("卡片通道实测也不可用", r["reasons"][0])
+        self.assertNotIn("agentReady", r)
+
+    def test_all_unreadable_probe_ok_downgrades_to_warn(self):
+        r = cp.evaluate("p1", self._data(), None, 90, preview_ok=True)
+        self.assertEqual(r["verdict"], "⚠️")
+        self.assertTrue(r["signals"].get("dsApiUnreadable"))
+        self.assertTrue(any("卡片通道实测可取数" in x for x in r["reasons"]))
+        # 降档后不再误报「这些卡学习不到」，且照常进入 agent-ready 评分
+        self.assertFalse(any("学习不到" in x for x in r["reasons"]))
+        self.assertIn("agentReady", r)
+
+    def test_partial_unreadable_warns_regardless_of_probe(self):
+        # 部分不可读：探针结论不影响既有「N 张卡学习不到」警告
+        cards = [mk_chart("a", ds="ds1", rows=("区域",),
+                          metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}]),
+                 mk_chart("b", ds="ds1", rows=("区域",),
+                          metrics=[{"name": "销售额", "alias": "销售额", "aggrType": "SUM"}])]
+        cards[0]["isDsReadable"] = False
+        data = mk_data(cards, [mk_dsinfo("ds1", dims=("区域",), utime="2026-10-15 10:00:00")])
+        r = cp.evaluate("p1", data, None, 90, preview_ok=True)
+        self.assertTrue(any("学习不到" in x for x in r["reasons"]))
+
+    def test_preview_probe_picks_first_data_card(self):
+        data = self._data()
+        with mock.patch.object(cp.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=0, stdout="...", stderr="")
+            self.assertTrue(cp.preview_probe(data))
+            args = m.call_args[0][0]
+            self.assertEqual(args[:3], ["guancli", "card", "preview"])
+            self.assertEqual(args[3], "cd-a")
+
+    def test_preview_probe_nonzero_exit_is_false(self):
+        with mock.patch.object(cp.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=1, stdout="", stderr="denied")
+            self.assertFalse(cp.preview_probe(self._data()))
+
+
 if __name__ == "__main__":
     unittest.main()

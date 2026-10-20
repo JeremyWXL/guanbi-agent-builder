@@ -11,7 +11,9 @@
   适检三档（硬门槛 + 风险信号）:
     ✅ 适合   —— 无风险信号
     ⚠️ 有风险 —— 能用但有坑（重名卡多/数据停更/一次性快照/卡片过少/名称疑似演示备份）
-    ⛔ 不可用 —— 取不到/非普通仪表板/0 数据卡/数据集全部不可读（不评分）
+    ⛔ 不可用 —— 取不到/非普通仪表板/0 数据卡/数据集全部不可读且卡片通道探针也不可用（不评分）
+         （数据集全部不可读时会先做一次 card preview 探针：卡片通道能取数则降 ⚠️——
+          isDsReadable 只表达数据集 API 权限，卡片通道是独立权限面）
   agent-ready 评分（0–100，看板作为知识源的质量，设计推演见 references/dashboard-knowledge-rationale.md 第一节）:
     口径一致性(40)  同名指标多种算法 = 口径混乱，是有毒信号 → 进红线清单，必须先治理
     权威标注率(25)  指标中心（metric by-dataset）已发布指标名命中看板指标名的比例
@@ -20,7 +22,8 @@
     ≥75 高 / 45–74 中 / <45 低；有口径冲突最高只到「中」。指标中心查不到时该维度权重按比例重分摊。
     低分不拦路：建议先在 BI 里治理（标注权威口径/统一同名指标算法）再进挖掘向导；
     坚持继续也可以，红线项会在第 4 步口径确认逐条裁决。
-调用预算: 每张看板一次 page get --raw（并发）；每个数据集一次 metric by-dataset（--skip-governed 可省）。
+调用预算: 每张看板一次 page get --raw（并发）；每个数据集一次 metric by-dataset（--skip-governed 可省）；
+  数据集全部不可读的看板额外一次 card preview 探针。
 """
 import json, re, subprocess, sys, os
 from collections import Counter
@@ -47,6 +50,22 @@ def fetch_raw(page_id, timeout=60):
         return json.loads(r.stdout).get("data"), None
     except json.JSONDecodeError:
         return None, "返回数据格式异常"
+
+
+def preview_probe(data, timeout=60):
+    """数据集全部不可读（isDsReadable=false）时的兜底探针：挑一张数据卡试 card preview（只读）。
+    isDsReadable 表达的是「数据集 API 权限」，卡片通道是独立权限面——数据集 API 无权限但
+    卡片实际可取数的环境真实存在（v4.9.1 mxbc 实机：62/62 卡可学，全部被判 ⛔ 误报）。
+    探针调用成功（exit 0）即视为卡片通道可用，返回 True。"""
+    for c in data.get("cards") or []:
+        if isinstance(c, dict) and c.get("cdType") in DATA_TYPES and c.get("cdId"):
+            try:
+                r = subprocess.run(["guancli", "card", "preview", str(c["cdId"])],
+                                   capture_output=True, text=True, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return False
+            return r.returncode == 0
+    return False
 
 
 def _zone_data(card):
@@ -254,9 +273,10 @@ def _max_utime(data):
     return latest[:10]
 
 
-def evaluate(page_id, data, err, stale_days, governed=None):
+def evaluate(page_id, data, err, stale_days, governed=None, preview_ok=None):
     """评估单页：data/err 来自 fetch_raw；governed 为 {dsId: {指标名: {id, status}}}（新形态）
-    或旧形态 {dsId: 指标名集合}（兼容旧 page-check.json），None 表示未查指标中心"""
+    或旧形态 {dsId: 指标名集合}（兼容旧 page-check.json），None 表示未查指标中心；
+    preview_ok 为数据集全部不可读时的卡片通道探针结论（None=未探针，维持原 ⛔ 判定）"""
     if err:
         return {"pgId": page_id, "verdict": "⛔", "name": page_id,
                 "reasons": [f"看板内容取不到（{err}）——移动端轻应用/报告推送/填报页或无权限，无法学习"],
@@ -279,10 +299,16 @@ def evaluate(page_id, data, err, stale_days, governed=None):
                 "reasons": ["没有任何数据卡片（纯文本/图片/导航页），无资产可学"],
                 "signals": {"pgType": pg_type, "dataCards": 0}}
     unreadable = [c for c in data_cards if c.get("isDsReadable") is False]
-    if unreadable and len(unreadable) == len(data_cards):
+    all_unreadable = unreadable and len(unreadable) == len(data_cards)
+    if all_unreadable and preview_ok is not True:
+        note = "，卡片通道实测也不可用" if preview_ok is False else ""
         return {"pgId": page_id, "verdict": "⛔", "name": name,
-                "reasons": ["全部数据卡片的数据集都不可读（无数据集权限）"],
+                "reasons": [f"全部数据卡片的数据集都不可读（无数据集权限{note}）"],
                 "signals": {"dataCards": len(data_cards)}}
+    if all_unreadable:  # preview_ok is True：数据集 API 无权限但卡片通道可用，降 ⚠️ 不拦路
+        signals["dsApiUnreadable"] = True
+        reasons.append("全部数据卡片的数据集 API 不可读（无数据集权限），但卡片通道实测可取数"
+                       "——看板学习不受影响；SQL 直查与数据集级探查不可用，取数全程走卡片通道")
 
     # ── 质量信号 ──
     signals["pgType"] = pg_type
@@ -297,7 +323,7 @@ def evaluate(page_id, data, err, stale_days, governed=None):
                        f"——助手按名找卡会歧义，学习时需以下级维度/筛选条件消歧")
     if len(data_cards) < 5:
         reasons.append(f"只有 {len(data_cards)} 张数据卡，覆盖的问题面偏窄，建议搭配同主题看板")
-    if unreadable:
+    if unreadable and not all_unreadable:
         reasons.append(f"{len(unreadable)} 张卡的数据集不可读，这些卡学习不到")
     latest = _max_utime(data)
     if latest:
@@ -378,7 +404,27 @@ def main():
         print(f"  指标中心: {len(governed)}/{len(ds_ids)} 个数据集查询成功"
               f"（已发布权威口径 {sum(len(v) for v in governed.values())} 个）", file=sys.stderr)
 
-    results = {pid: evaluate(pid, *raws[pid], stale_days, governed) for pid in page_ids}
+    # 阶段三：数据集全部不可读的看板做卡片通道探针（isDsReadable 只表达数据集 API 权限，
+    # 卡片通道是独立权限面——v4.9.1 mxbc 实机误报：62/62 卡可学却全判 ⛔；每张看板至多一次 preview）
+    probes = {}
+    probe_pids = []
+    for pid in page_ids:
+        data, err = raws[pid]
+        if not data:
+            continue
+        dc = [c for c in data.get("cards") or [] if isinstance(c, dict) and c.get("cdType") in DATA_TYPES]
+        if dc and all(c.get("isDsReadable") is False for c in dc):
+            probe_pids.append(pid)
+    if probe_pids:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = {pool.submit(preview_probe, raws[pid][0]): pid for pid in probe_pids}
+            for fut in as_completed(futs):
+                pid = futs[fut]
+                probes[pid] = fut.result()
+                print(f"  卡片通道探针: {pid} → {'可取数（⛔ 降 ⚠️）' if probes[pid] else '不可取数'}",
+                      file=sys.stderr)
+
+    results = {pid: evaluate(pid, *raws[pid], stale_days, governed, probes.get(pid)) for pid in page_ids}
 
     n_ok = sum(1 for r in results.values() if r["verdict"] == "✅")
     n_warn = sum(1 for r in results.values() if r["verdict"] == "⚠️")

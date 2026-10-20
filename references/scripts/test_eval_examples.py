@@ -57,6 +57,16 @@ class TestNumCandidates(unittest.TestCase):
         self.assertEqual(eval_examples.num_candidates("abc"), [])
         self.assertEqual(eval_examples.num_candidates(""), [])
 
+    def test_chinese_measure_suffix(self):
+        # v4.9.2 回归：带量词后缀的显示值此前整体解析为空（--record 连真实数字都拒收）
+        self.assertEqual(eval_examples.num_candidates("4,334.3万元"), [43343000.0])
+        self.assertEqual(eval_examples.num_candidates("10.6万杯"), [106000.0])
+        self.assertEqual(eval_examples.num_candidates("6.34元"), [6.34])
+        self.assertEqual(eval_examples.num_candidates("892,839.80元"), [892839.8])
+        cands = eval_examples.num_candidates("16.62%")
+        self.assertEqual(cands[0], 16.62)
+        self.assertAlmostEqual(cands[1], 0.1662)  # 无后缀行为不变
+
     def test_num_token_finds_prefixed_numbers(self):
         text = "销售额￥1,234，达成率95%，GMV $3.5亿，净额-2,000"
         toks = eval_examples.NUM_TOKEN.findall(text)
