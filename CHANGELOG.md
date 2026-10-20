@@ -11,7 +11,7 @@
 - **agent-tester 升 v1.8.0**：L0-5 补 dynamicParams、L0-8 补 PARAM_DEPENDENT、新增 L0-26（run_metric 白名单双向断言）与 L0-27（feedback dry-run 零发送 + 隐私红线）；L1 第 4 步补指标中心对齐三态处置检查点、第 7 步补参数化卡片出身行参数取值声明
 - **杂项**：`output/` 加入 .gitignore（培训产物不入库）
 - **版本一致性**：4.9.0 → 4.9.1（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
-- **测试**：全套单测回归（357 → 359 例全绿，test_check_package +2）；v4.8.1 起的 E2E 回归与基线归档仍待跑（v4.9.0 动了核心解析，优先补，见 ROADMAP 状态快照）
+- **测试**：全套单测回归（357 → 359 例全绿，test_check_package +2）；**E2E 回归已补**（2026-10-20 mxbc 全矩阵：L0 25/27 无失败、L1 完整模式八步 pass、L2 97.4/A 零红线，基线 `tests/baselines/v4.9.1.md/.json` 双写归档并与 v4.8.0 diff）——新发现 P1×2：check_pages ⛔ 误报（isDsReadable=false 但 card preview 可取数）、eval_examples 数值提取不剥中文单位后缀（带单位 KPI 卡无法机械回填），均 open 待下版修复
 
 ## v4.9.0（2026-10-19）全局参数（DYNAMIC_PARAMS）全链路支持：学习可发现、口径有分类、取数可传参
 
