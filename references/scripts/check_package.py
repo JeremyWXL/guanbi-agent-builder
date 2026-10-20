@@ -19,7 +19,7 @@
 import importlib.util, json, os, re, subprocess, sys
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.9.0"
+BUILDER_VERSION = "4.9.1"
 
 # 复制进交付包的脚本清单（(文件名, 看板模式必需, 直通模式必需, 引入版本)）
 SCRIPT_LIST = [
@@ -37,6 +37,7 @@ SCRIPT_LIST = [
     ("scope_audit.py", True, True, "4.5.0"),
     ("feedback.py", True, True, "4.6.0"),
     ("check_package.py", True, True, "4.7.0"),
+    ("fill_dim_values.py", True, True, "4.7.0"),
 ]
 # SKILL.md 必需章节（(章节名, 判定正则, 缺失级别)）——执行流程/维护是交付模板的骨干，缺失即 ❌
 SKILL_SECTIONS = [

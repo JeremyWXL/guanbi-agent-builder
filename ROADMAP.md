@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-09-26（v4.3.0 快速模式，已发布 GitHub + SkillHub 246636；L1-lite 沙箱实测通过，基线 v4.3.0 已归档）
+> 最近更新：2026-10-20（v4.9.1 文档与测试基建补齐：本文件与 README 同步至当前版本、CI 版本检查扩面、check_package 补 fill_dim_values 体检、agent-tester 补 v4.8/v4.9 检查点；前序 v4.9.0 全局参数全链路）
 
 ## 当前状态快照
 
-- **版本**：v4.3.0（快速模式 lite 轨道：向导开头模式选择，五步快速搭建——砍确认深度不砍产物结构，交付包与完整版同构；深化通道复用断点续建回完整版第 4 步。前序：v4.2.0 取数加速层 / v4.1.1 数据集冷启动 / v4.1.0 看板质量前置闸），独立测试 Agent 在 `tests/agent-tester/`（L0 脚本矩阵 / L1 八步 E2E + L1-lite 五步 E2E / L2 交付答题评分，基线 `tests/baselines/` 双写 .md+.json，`diff_baselines.py` 一键版本对比），发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 全程红线）+ references/scripts（17 个脚本 + 11 个测试文件 146 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md（含取数路径三层）+ dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）；CI 在 .github/workflows/ci.yml
-- **脚本现状**：`list_pages.py` / `check_pages.py`（适检三档 + agent-ready 评分：口径冲突/权威标注/复用率/粒度覆盖，`--skip-governed` 跳过指标中心）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级）/ `learn_dataset.py`（数据集直学：字段/计算字段/列画像 → datasets-raw.json，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics` 种子；cards-raw 缺失回退 datasets-raw）/ `check_metrics.py`（口径档案校验闸门）/ `check_dims.py`（维度档案校验闸门 + `--seed-dims` 种子，同样回退 datasets-raw）/ `sample_cards.py`（截断+列画像）/ `validate_cards.py` / `run_sql.py`（只读强制）/ `preflight.py`（前置检查+断点检测，摘要带模式标签与 lite 深化提示，--json 纯 JSON）/ `wizard_state.py`（断点状态机 + `--mode full|lite` 轨道标记）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + 取数路径缓存占比统计）/ `memory.py`（记忆系统：init/log/recall/correct/status/distilled/clear，recall 纠错自动标 ⚠️）/ `workbench.py`（保存回调已抽离为 make_save_file，含 memory/profile.md 特例白名单；核心路径有单测覆盖；整体仍单文件——交付模型约束，勿拆多文件）
+- **版本**：v4.9.1（文档与测试基建补齐。前序：v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 + 数据出身行升级 / v4.7.x 交付工程化 + 资产完整性哨兵 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.8.0；L0 脚本矩阵 25+ 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.8.0；**v4.8.1 起的新版本 E2E 回归与基线归档待跑**，v4.9.0 动了核心解析，优先补），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 全程红线 18 条）+ references/scripts（27 个脚本 + 24 个测试文件 357 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 九处版本一致性）
+- **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr 三模式 + confirm 第 7/8 步产物门）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -82,7 +82,23 @@
 - **顺手修正**：wizard_state.py BUILDER_VERSION 3.0.0 → 4.3.0（与 frontmatter 同步的注释已漂移两个大版本）
 - **测试**：新建 test_wizard_state.py 7 例（mode 落盘/lite 下第 3 步可 skipped、第 4/7 步仍拒绝/旧档案无 mode 兼容/lite 完成提示深化）；单测 146 → 153 例；agent-tester 升 v1.5.0（L0-2 补 --mode lite、新增 L1-lite 五步 E2E 检查点表含深化通道实测）；**E2E 沙箱实测通过**（低分看板提醒义务+坚持继续、双闸门首轮 10❌ 拦截后零❌、交付包同构包内回归 3/3、深化通道 memory/ md5 未变；实抓隐藏筛选+DYNAMIC_PARAMS 双重陷阱，基线 v4.3.0 归档）
 
-## v4.8（指标中心轻量集成）——✅ 已完成（2026-09-29，v4.8.0）
+## v4.4（增量学习通道）——✅ 已完成（2026-09-27，v4.4.0）
+
+交付模板三处承诺的增量学习落地：`wizard_state.py init --mode incr`（独立状态文件 wizard-state-incr.json，不覆盖搭建档案）+ merge_cards.py（cardHash 结构指纹比对，**未变页零重学零重采样**，变更页报告具体增删/改名）+ sample_cards 定向刷新（`--only-cdIds` / `--prune-keys`）+ 五步地图 I1 增量选看板 → I2 增量学习 → I3 增量口径裁决 → I4 增量验收 → I5 交付更新。三条命门：新冲突逐条裁决禁止 AI 二选一、双闸门 ❌ 清零、验收实测（旧示例全量回归 + 新能力 ≥1 题）；memory/ 永不在覆盖范围。详见 CHANGELOG。
+
+## v4.5（范围守卫）——✅ 已完成（2026-09-27，v4.5.0）
+
+覆盖外看板/数据集禁止当答案：scope.py 白名单单一事实源（从 cards.json/datasets.json 派生，增量合并后自动扩容，永不手工维护）+ run_sql dsId 白名单（越界 exit 3 且不调 guancli）+ sample_cards `--scope` 越界整批拒绝 + memory log `--page/--ds` 结构化出处 + scope_audit.py 事后审计。红线 14。已知边界：agent 有 Bash 理论上能绕过一切脚本——目标是"合规路径成为唯一阻力小的路径 + 事后可审计"。详见 CHANGELOG。
+
+## v4.6（问题反馈通道）——✅ 已完成（2026-09-28，v4.6.0）
+
+feedback.py 双通道（GitHub issue / SkillHub 评论 ≤500 字硬校验）：用户遇 bug 经**明确同意**后一键反馈，只带环境信息（版本/搭建进度/平台/guancli 有无）绝不带业务数据；builder 与交付助手双侧接线，红线 15。上线后即立功：v4.8.3 的工作台渲染修复（issue #4）就是经此通道实机上报的。详见 CHANGELOG。
+
+## v4.7（交付工程化）——✅ 已完成（2026-09-28/29，v4.7.0–v4.7.1）
+
+把"靠 prompt 约束模型自觉"的剩余环节全部下沉为脚本硬控制（correct by construction）：build_package.py 机械组装（**cards.json 由 cards-raw.json 整体复制派生，禁止裁剪**——裁剪 = run_sql/make_link/sample_cards 连锁瘫痪）+ render_agent_skill.py 模板渲染（CLI 用法单一事实源是脚本源码，test_template_cli 守护）+ check_package.py 三层体检总闸门（结构/内容/功能冒烟）+ eval_examples `--record/--confirm` 验收回填（过不了取数源校验的数字进不了基准）+ wizard_state confirm 产物门（第 7/8 步验产物不看口头申报）+ fill_dim_values.py 维度枚举机械回填。v4.7.1 资产完整性哨兵：同名冲突 exit 2 / 部分失败默认拦截（`--allow-partial` 显式放行）/ `--force` 清理受控区 / 采样键加 cdId 防碰撞 / 路径越界拒绝。红线 16。详见 CHANGELOG。
+
+## v4.8（指标中心轻量集成）——✅ 已完成（2026-09-29 起，v4.8.0–v4.8.5）
 
 > 方案全文见 [references/metric-center-integration.md](references/metric-center-integration.md)（2026-09-29）。核心判断：指标中心是观远的语义层，metrics.json 是 agent 侧口径档案——两者对齐顺着"受治理语义层 + agent"路线走。v4.1 的权威标注率评分已埋下只读通道，本版本把它升级为口径引用。
 
@@ -90,8 +106,13 @@
 - **三态探针**：可用（A）/ 未开通或无权限（B）/ 临时失败（C），初判复用 check_pages 的 governed 结果，结论落盘防断点续建重复打扰
 - **防变重边界**：指标体系建设、批量迁移归并、复合/派生批量梳理一律路由专项 skill（guandata-metric-migration，持续迭代中）；红线拟加第 17 条（指标中心三条）
 - **开放问题**：未开通/无权限的错误形态需实机确认；guanmetric 预检放 preflight 还是首用时提示（倾向后者）；口径一致性核对宁标待确认不硬判
+- **后续小版本**（v4.8.1–v4.8.5，均已完成）：v4.8.0 回归修复（旧包冒烟版本降级 / 直通模式模板渲染条件块 / fill_dim_values `--full` 全量枚举回填）；v4.8.2 行数上限纪律（红线 18：先提醒缩小范围或聚合、明细分批须告知成本、截断禁止当全量）；v4.8.3 工作台 cards 数组形态渲染修复（issue #4，feedback 通道首个实机上报）；v4.8.4 数据出身行升级（回答必须带数据范围与口径随数声明）；v4.8.5 首次开场白（欢迎 + 为什么搭建 + 会发生什么三要素）
 
-## v4.4（看板角色迁移）——规划中（原 v4.3 顺延）
+## v4.9（全局参数 DYNAMIC_PARAMS 全链路）——✅ 已完成（2026-10-19，v4.9.0）
+
+观远看板大量用全局参数做动态筛选与指标切换，此前零感知——参数化公式被 SQL 内联必报错或静默算错，agent 取数只能拿参数默认值。本版本全链路支持：parse_page/learn_dataset 收割 `dynamicParams`（dpId/名称/类型/默认值，跨层去重）带入 cards.json；check_formulas 新增 PARAM_DEPENDENT 最高优先分类（含参公式禁止 SQL 内联，走 `card preview --dynamic-param` 传参取数）；红线 10 与 sql-guide 同步；交付模板加参数化卡片取数纪律（只传声明过的参数/回显不等于生效/空结果先怀疑默认参数范围）与出身行参数声明。实机验证：mxbc 页面识别参数化卡 22/34、v370 沙箱 3 个参数化指标正确归类。详见 CHANGELOG。
+
+## 看板角色迁移——规划中（原"v4.4"规划；版本号 v4.4.0 已被增量学习通道占用，本项递延，实施时另取版本号）
 
 > 来源：同上讨论（推演原文第二节）。知识抽象出来后看板不消失，角色迁移为：agent 的**训练语料 + 漂移检测基准 + 呈现模板库**。失去价值的只是"看板作为人与数据唯一界面"这一定位。
 
@@ -121,3 +142,5 @@
 - eval_examples.py 的 fetch.file 相对 examples.json 所在目录解析，与 sample_cards.py 的扁平命名 `card-data/<看板名>__<卡片名>.json` 对齐；examples.json 在工作目录根缺失时自动回退 `references/examples.json`（交付包形态），交付包内回归直接 `python3 references/eval_examples.py .`（包根目录），run_sql.py 定位优先 `<工作目录>/references/scripts/`、回退同目录
 - parse_page.py 必须单次调用传入全部 pageId（逐张循环会覆盖 cards-raw.json 静默丢看板，v3.7.0 沙箱实测踩中，SKILL.md 已改为明示）
 - SQL 直查探查结论会过期：数据集学习时可用不代表验收时可用（演示域文件型数据集实测中途失效）；第 7 步必须先探活再测，失效降级卡片间交叉验证，交付能力标注以第 7 步实测为准
+- 靠 prompt 约束模型自觉的环节（手工转写/组装/回填）正是低配模型最容易偷工减料的地方：v4.7 实机 review 发现 cards.json 被"精简"重构导致三功能连锁瘫痪——一切结构性产物要么脚本生成、要么脚本验收（correct by construction），LLM 只产出需要判断力的语义内容
+- 参数化公式（含 `[DYNAMIC_PARAMS.xxx]`）不是普通公式：SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）——PARAM_DEPENDENT 分类最高优先，走 card preview 传参取数（v4.9 实机验证）

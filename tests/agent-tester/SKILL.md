@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.7.0"
+version: "1.8.0"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -28,10 +28,10 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-2 | 状态机 | `wizard_state.py init/set/confirm`（含 `--mode lite`） | 状态流转正确；第 4、7 步 set skipped 被拒绝（lite 下同样拒绝，退出码 3）；lite init 落盘 `mode: "lite"`，show/next 带模式标签 |
 | L0-3 | 看板扫描 | `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword "<词>"` | 三种模式均返回结构化结果 |
 | L0-4 | 看板适检+评分 | `check_pages.py <pageId...>` | 输出 ⛔/⚠️/✅ 三档 + agent-ready 评分（⛔ 不评分）；口径冲突进 🔴 红线、覆盖不足进 🔷 边界；--skip-governed 跳过指标中心 |
-| L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType；数据卡含 filtered 标记、页面含 dsUsage 分级（v4.2 取数加速层） |
+| L0-5 | 看板解析 | `parse_page.py <多个pageId> -o <目录>`（**单次调用传全部 ID**） | 多页合并写入 cards-raw.json；`_meta` 含 cardHash/builderVersion/dsFormulas；筛选器卡含 inFilterBar/linkedCardCount/defaultValueType/multiSelect/selectorType；数据卡含 filtered 标记、页面含 dsUsage 分级（v4.2 取数加速层）；参数化卡片含 dynamicParams（dpId/参数名/类型/默认值，跨层去重，v4.9） |
 | L0-6 | 采样 | `sample_cards.py cards-raw.json card-data` | `_sample_index.json` 含列画像；`_meta` 键不崩溃 |
 | L0-7 | 数据校验 | `validate_cards.py card-data` | ❌/⚠️/ℹ️ 分级输出，退出码反映 ❌ |
-| L0-8 | 口径字典+种子 | `check_formulas.py <目录> --seed-metrics` | formulas.json 冲突清单 + metrics-seed.json |
+| L0-8 | 口径字典+种子 | `check_formulas.py <目录> --seed-metrics` | formulas.json 冲突清单 + metrics-seed.json；含 `[DYNAMIC_PARAMS.]` 的公式归 PARAM_DEPENDENT（最高优先，禁止 SQL 内联，v4.9） |
 | L0-9 | 维度种子 | `check_dims.py <目录> --seed-dims` | dimensions-seed.json（枚举来自列画像，非编造） |
 | L0-10 | 口径闸门 | `check_metrics.py <目录>` | 对故意埋雷（同义词撞车/冲突未裁决）能报 ❌ |
 | L0-11 | 维度闸门 | `check_dims.py <目录>` | 对值别名悬空/维度指标撞车能报 ❌ |
@@ -49,6 +49,8 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-23 | 交付组装与体检 | `build_package.py <工作目录> --package <交付包>` + `check_package.py <交付包>` | 端到端组装后 cards.json 与 cards-raw.json 字节一致（零裁剪）；examples 未全 humanConfirmed 拒交付（exit 2）；check_package 三层（结构/内容/功能冒烟）对瘫痪包精确报 ❌；--force 重建不动 memory/ |
 | L0-24 | 验收回填 | `eval_examples.py <目录> --suggest/--record/--confirm` | --record 的期望值必须在取数源容差内命中（幻觉数字 exit 2 拒填）；回填自动重置 humanConfirmed；expect 空的题 --confirm 拒绝 |
 | L0-25 | 交付状态机产物门 | `wizard_state.py confirm --step 7/8` | 无 examples.json 验收回填 confirm 7 exit 3；无 package-check.json（或 result=fail）confirm 8 exit 3；凭证齐全放行 |
+| L0-26 | 指标中心直查 | `run_metric.py <metricId>` / `--check-scope`（v4.8 起） | metricId 须在 metrics.json governedRef 白名单内：越界 exit 3 且**不调 guancli**；无 governedRef 时降级不阻断；--check-scope 双向断言（白名单内 exit 0 / 外 exit 3） |
+| L0-27 | 问题反馈通道 | `feedback.py <目录> --title "..." --description "..." --dry-run`（v4.6 起） | dry-run 打印双通道预览且零发送；正文只含版本/进度/平台等环境信息，**不含业务数据**；SkillHub 通道 >500 字退出 2 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -60,10 +62,10 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | 1 | 目录扫描→勾选→适检三档→业务范围追问 | ⚠️ 看板的风险点必须登记跟踪，不得静默丢弃 |
 | 2 | parse/sample/validate/口径字典/双种子全跑通；validate ❌ 卡片在 cards.json 标记下钻/禁用；cards.json **必须携带 `_meta`**；重名卡消歧后键唯一 | 合计不闭环不往下走；空解析哨兵 |
 | 3 | 主动询问是否补充认知；用户拒则跳 | 不得强制补充 |
-| 4 | 冲突逐条请用户裁决（模拟用户拍板并记录）；metrics.json + dimensions.json 成稿；**双闸门 ❌ 清零才放行**；⚠️ 清单（值跨维度重叠/空 values）登记 | 禁止 AI 自行二选一；维度成员值禁止编造 |
+| 4 | 冲突逐条请用户裁决（模拟用户拍板并记录）；metrics.json + dimensions.json 成稿；**双闸门 ❌ 清零才放行**；⚠️ 清单（值跨维度重叠/空 values）登记；闸门清零后执行指标中心对齐（三态处置：可用→同口径才写 governedRef、未开通/无权限→一次性推荐后本次搭建不再提、临时失败→静默降级） | 禁止 AI 自行二选一（含指标中心口径与看板口径不一致时）；维度成员值禁止编造；PARAM_DEPENDENT 指标不得 SQL 内联 |
 | 5 | 典型问题固化 examples.json（路由+取数方式） | — |
 | 6 | insightThinking 含诊断链五条纪律；维度消歧三级协议写入场景一 | — |
-| 7 | 每题数字有出处；出身行含来源+数据范围（期间/筛选）、核心指标首次出现带口径；归因走 attribute.py；SQL 与卡片交叉验证（误差<2%）；expect/answerPoints 回填；eval_examples 冒烟 | 口算贡献率 = 失败；不可答的题记 fail 而非硬答；出身行缺数据范围/口径 = C 维度扣分 |
+| 7 | 每题数字有出处；出身行含来源+数据范围（期间/筛选）、核心指标首次出现带口径、**参数化卡片须声明参数取值**（v4.9）；归因走 attribute.py；SQL 与卡片交叉验证（误差<2%）；expect/answerPoints 回填；eval_examples 冒烟 | 口算贡献率 = 失败；不可答的题记 fail 而非硬答；出身行缺数据范围/口径 = C 维度扣分 |
 | 8 | 交付包结构完整（SKILL.md + workbench.html + memory/ 四文件 + references 全套含 memory.py）；memory.py init 已跑且幂等；包内 `eval_examples.py .` 自跑通；能力声明与实际验证结论一致（如 SQL 不可用时不得宣称可用） | 交付包能力不得超出第 7 步实测结论；memory/ 不得被任何升级/重学操作覆盖 |
 
 **模拟用户决策记录模板**（测试中必须显式写出）：勾选看板清单、每处口径冲突的裁决、拒绝/保留 ⚠️ 看板的决定、第 7 步验收结论。

@@ -9,7 +9,7 @@ SCRIPT = os.path.join(HERE, "check_package.py")
 SCRIPTS_TO_COPY = ["attribute.py", "make_link.py", "memory.py", "check_metrics.py",
                    "check_dims.py", "eval_examples.py", "sample_cards.py", "run_sql.py",
                    "run_metric.py", "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
-                   "check_package.py"]
+                   "check_package.py", "fill_dim_values.py"]
 
 SKILL_MD = """---
 name: agent-test
@@ -271,6 +271,31 @@ class RunMetricSmokeTest(unittest.TestCase):
         r = run(self.dir)
         self.assertEqual(r.returncode, 1)
         self.assertIn("run_metric.py", r.stdout + r.stderr)
+
+
+class FillDimValuesScriptTest(unittest.TestCase):
+    """SCRIPT_LIST 回归：fill_dim_values.py（4.7.0 引入）此前漏进体检清单——
+    新包缺失应 ❌，旧包（< 4.7.0）缺失降级 ⚠️ 并提示「升级脚本」"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        make_dashboard_package(self.dir)
+
+    def test_missing_fill_dim_values_in_new_package_is_error(self):
+        # 夹具 builderVersion = 4.7.1 ≥ 4.7.0 → ❌
+        os.unlink(os.path.join(self.dir, "references", "fill_dim_values.py"))
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("fill_dim_values.py", r.stdout + r.stderr)
+
+    def test_missing_fill_dim_values_in_old_package_downgrades_to_warn(self):
+        doc = json.loads(json.dumps(CARDS_DOC))
+        doc["_meta"]["builderVersion"] = "4.6.0"
+        write_json(os.path.join(self.dir, "references", "cards.json"), doc)
+        os.unlink(os.path.join(self.dir, "references", "fill_dim_values.py"))
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("fill_dim_values.py", r.stdout)
 
 
 class OldPackageCheckScopeTest(unittest.TestCase):

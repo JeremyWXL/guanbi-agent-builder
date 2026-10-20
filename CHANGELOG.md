@@ -1,5 +1,18 @@
 # 变更日志
 
+## v4.9.1（2026-10-20）文档与测试基建补齐：ROADMAP/README 同步、CI 版本检查扩面、交付体检补 fill_dim_values、agent-tester 补 v4.8/v4.9 检查点
+
+解决的问题：整体 review 发现一批"功能健康但文档/基建滞后"的欠账——ROADMAP 状态快照停在 v4.3.0（17 脚本 + 11 测试文件 146 例，实际已是 27 + 24 / 357 例）、「v4.4 看板角色迁移·规划中」与已发布的 v4.4.0（增量学习通道）版本号冲突、缺 v4.4–v4.9 全部章节；README 特性列表停在 v2.5；CI 版本一致性只查 2 个脚本（发布惯例是九处）；check_package 的 SCRIPT_LIST 漏了 fill_dim_values.py（build_package 会复制、SKILL.md 交付树也列了，但体检闸门不拦它的缺失）；agent-tester 停在 v4.5.0 时代（无指标中心/全局参数/反馈通道检查点）。
+
+- **ROADMAP.md 全量同步**：状态快照更新至当前版本（27 脚本 + 24 测试文件 357 例单测，脚本现状逐一带关键行为注解）；补 v4.4 增量学习 / v4.5 范围守卫 / v4.6 反馈通道 / v4.7 交付工程化 / v4.9 全局参数五个已完成章节；「v4.4 看板角色迁移·规划中」改名消解版本号冲突（递延，实施时另取版本号）；已踩过的坑补 v4.7（prompt 软约束下沉脚本硬控制）与 v4.9（参数化公式非普通公式）两条
+- **README.md 特性列表更新**：从 v2.5 补齐到 v4.9（质量前置闸 / 双档案口径治理 / 交付工程化 / 记忆系统 / 范围守卫 / 快速模式与增量学习 / 全局参数）
+- **CI 版本一致性扩面**：脚本检查从 parse_page / workbench 2 处扩到 7 处（+ learn_dataset / wizard_state / build_package / check_package / run_metric），与"九处一致"发布惯例对齐
+- **check_package.py SCRIPT_LIST 补 fill_dim_values.py**（引入版本 4.7.0）：4.7.0 起搭建的包缺失即 ❌，旧包降级 ⚠️ 并提示「升级脚本」；test_check_package.py +2 例回归（新包 ❌ / 旧包 ⚠️）
+- **agent-tester 升 v1.8.0**：L0-5 补 dynamicParams、L0-8 补 PARAM_DEPENDENT、新增 L0-26（run_metric 白名单双向断言）与 L0-27（feedback dry-run 零发送 + 隐私红线）；L1 第 4 步补指标中心对齐三态处置检查点、第 7 步补参数化卡片出身行参数取值声明
+- **杂项**：`output/` 加入 .gitignore（培训产物不入库）
+- **版本一致性**：4.9.0 → 4.9.1（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+- **测试**：全套单测回归（357 → 359 例全绿，test_check_package +2）；v4.8.1 起的 E2E 回归与基线归档仍待跑（v4.9.0 动了核心解析，优先补，见 ROADMAP 状态快照）
+
 ## v4.9.0（2026-10-19）全局参数（DYNAMIC_PARAMS）全链路支持：学习可发现、口径有分类、取数可传参
 
 解决的问题：观远 BI 看板大量用全局参数做动态筛选与指标/维度切换（计算字段或直连数据集 SQL 里引用 `[DYNAMIC_PARAMS.xxx]`，页面上改参数即改变筛选范围），此前 skill 对此零感知——学到的参数化公式被当普通公式，SQL 直查内联必报错或静默算错（参数名撞物理列名时）；交付 agent 取数只能拿到参数默认值下的结果，无法响应"看 9 月的数据"这类参数取值诉求。实机验证（蜜雪《【月报】饮品分析》直连数据集，SQL 用 `[DYNAMIC_PARAMS.开始时间/结束时间]` 控筛选范围）：`guancli card preview --dynamic-param "参数名=值"` 传参真实生效（默认昨天=空结果，传 9 月区间正常出数），且卡片 raw 里 `dynamicParameters`（dpId/名称/类型/默认值）可机器发现。
