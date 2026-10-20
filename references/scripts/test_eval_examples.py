@@ -11,11 +11,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import eval_examples
 
 SCRIPT = os.path.abspath(eval_examples.__file__)
+HERE = os.path.dirname(SCRIPT)
 
 
 def run_cli(*args):
@@ -97,6 +99,63 @@ class TestCheckExpect(unittest.TestCase):
         ok, reasons = eval_examples.check_expect(ex, "别的词", [123.0])
         self.assertFalse(ok)
         self.assertEqual(len(reasons), 2)  # 数值未命中 + 关键词未出现
+
+
+class TestEvalMetric(unittest.TestCase):
+    """fetch.type=metric（v4.9.3）：经 run_metric.py 平台直查重跑核验——指标中心链路回归覆盖"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        # run_metric.py 只需存在（find_run_metric 定位用），调用被 mock
+        write_json(self.dir, "references/scripts/dummy.json", {})
+        open(os.path.join(self.dir, "references", "scripts", "run_metric.py"), "w").write("# stub\n")
+
+    def _ex(self, **fetch_over):
+        fetch = {"type": "metric", "metricId": "m100"}
+        fetch.update(fetch_over)
+        return {"id": "Q1", "question": "销售额多少", "fetch": fetch,
+                "expect": {"values": [10564347.31]}, "answerPoints": []}
+
+    def test_pass(self):
+        with mock.patch.object(eval_examples.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=0, stdout="DX_销售额: 10,564,347.31", stderr="")
+            status, reasons, _ = eval_examples.eval_metric(self.dir, self._ex(), HERE)
+        self.assertEqual(status, "pass")
+        # metricId 透传给 run_metric.py
+        argv = m.call_args[0][0]
+        self.assertIn("m100", argv)
+
+    def test_params_passthrough_after_double_dash(self):
+        with mock.patch.object(eval_examples.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=0, stdout="10,564,347.31", stderr="")
+            eval_examples.eval_metric(self.dir, self._ex(params=["--dim", "渠道"]), HERE)
+        argv = m.call_args[0][0]
+        self.assertEqual(argv[-3:], ["--", "--dim", "渠道"])
+
+    def test_value_miss_fails(self):
+        with mock.patch.object(eval_examples.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=0, stdout="总计: 123", stderr="")
+            status, reasons, _ = eval_examples.eval_metric(self.dir, self._ex(), HERE)
+        self.assertEqual(status, "fail")
+
+    def test_nonzero_exit_fails(self):
+        with mock.patch.object(eval_examples.subprocess, "run") as m:
+            m.return_value = mock.Mock(returncode=3, stdout="", stderr="越界拦截")
+            status, reasons, _ = eval_examples.eval_metric(self.dir, self._ex(), HERE)
+        self.assertEqual(status, "fail")
+        self.assertIn("exit 3", reasons[0])
+
+    def test_missing_run_metric_skips(self):
+        os.unlink(os.path.join(self.dir, "references", "scripts", "run_metric.py"))
+        status, reasons, _ = eval_examples.eval_metric(self.dir, self._ex(), tempfile.mkdtemp())
+        self.assertEqual(status, "skip")
+
+    def test_missing_metric_id_fails(self):
+        ex = self._ex()
+        del ex["fetch"]["metricId"]
+        status, reasons, _ = eval_examples.eval_metric(self.dir, ex, HERE)
+        self.assertEqual(status, "fail")
+        self.assertIn("metricId 缺失", reasons[0])
 
 
 class TestEvalCard(unittest.TestCase):
@@ -256,7 +315,7 @@ class TestMainFlow(unittest.TestCase):
         self.assertIn("缓存占比 50%", r.stdout)
         r = run_cli(self.dir, "--json")
         doc = json.loads(r.stdout)
-        self.assertEqual(doc["fetchMix"], {"card": 1, "sql": 1, "cacheShare": 0.5})
+        self.assertEqual(doc["fetchMix"], {"card": 1, "sql": 1, "metric": 0, "cacheShare": 0.5})
 
 
 class TestRecordConfirm(unittest.TestCase):

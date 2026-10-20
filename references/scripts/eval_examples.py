@@ -21,6 +21,9 @@
      - fetch.type=sql: 调用 run_sql.py 重跑（优先 <工作目录>/references/scripts/run_sql.py，
        回退与本脚本同目录的 run_sql.py），对结果文本做同样匹配；
        run_sql.py 不可用时该条记 skip 而非 fail
+     - fetch.type=metric: 调用 run_metric.py 平台直查重跑（fetch.metricId 必填，
+       fetch.params 可选、经 -- 透传 guancli metric query），同样匹配；
+       run_metric.py 不可用时该条记 skip 而非 fail（v4.9.3，指标中心链路回归覆盖）
      - 数值匹配容忍货币符号（￥1,234）、千分位（1,234.5）、百分号（35% ≈ 0.35）、中文单位（71万 ≈ 710000）
   2. 结论层人工核对: answerPoints 无法自动判，逐条打印为核对清单；
      humanConfirmed=false 的条目单独统计「待人工确认」
@@ -147,6 +150,51 @@ def find_run_sql(workdir, script_dir):
     return None
 
 
+def find_run_metric(workdir, script_dir):
+    """run_metric.py 定位：优先工作目录产物包内，回退与本脚本同目录"""
+    for cand in (os.path.join(workdir, 'references', 'scripts', 'run_metric.py'),
+                 os.path.join(script_dir, 'run_metric.py')):
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def _metric_argv(run_metric, fetch):
+    """fetch.type=metric 的命令行：metricId 必填；params（可选）经 -- 透传 guancli metric query"""
+    metric_id = fetch.get('metricId')
+    if not metric_id:
+        return None
+    argv = [sys.executable, run_metric, str(metric_id)]
+    params = fetch.get('params') or []
+    if params:
+        argv += ['--'] + [str(p) for p in params]
+    return argv
+
+
+def eval_metric(workdir, ex, script_dir):
+    """fetch.type=metric：经 run_metric.py 平台直查重跑核验。run_metric 不可用记 skip"""
+    fetch = ex.get('fetch') or {}
+    run_metric = find_run_metric(workdir, script_dir)
+    if not run_metric:
+        return 'skip', ["run_metric.py 不可用（既不在 <工作目录>/references/scripts/ 也不在本脚本同目录），"
+                        "跳过指标直查重跑"], ex.get('answerPoints') or []
+    argv = _metric_argv(run_metric, fetch)
+    if not argv:
+        return 'fail', ["fetch.metricId 缺失"], ex.get('answerPoints') or []
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=SQL_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 'skip', [f"run_metric.py 执行失败（{e}），跳过"], ex.get('answerPoints') or []
+    if r.returncode != 0:
+        return 'fail', [f"run_metric.py 返回非 0（exit {r.returncode}）: {(r.stderr or r.stdout)[:200]}"], ex.get('answerPoints') or []
+    text = r.stdout
+    candidates = []
+    for tok in NUM_TOKEN.findall(text):
+        candidates.extend(num_candidates(tok))
+    ok, reasons = check_expect(ex, text, candidates)
+    return ('pass' if ok else 'fail'), reasons, ex.get('answerPoints') or []
+
+
 def eval_sql(workdir, ex, script_dir):
     """fetch.type=sql：经 run_sql.py 重跑核验。run_sql 不可用记 skip"""
     fetch = ex.get('fetch') or {}
@@ -230,6 +278,24 @@ def source_text_and_candidates(workdir, base_dir, ex, script_dir):
             return False, "", [], f"run_sql.py 执行失败（{e}）"
         if r.returncode != 0:
             return False, "", [], f"run_sql.py 返回非 0: {(r.stderr or r.stdout)[:200]}"
+        text = r.stdout
+        candidates = []
+        for tok in NUM_TOKEN.findall(text):
+            candidates.extend(num_candidates(tok))
+        return True, text, candidates, ""
+    if fetch.get('type') == 'metric':
+        run_metric = find_run_metric(workdir, script_dir)
+        if not run_metric:
+            return False, "", [], "run_metric.py 不可用，无法校验指标直调取数源"
+        argv = _metric_argv(run_metric, fetch)
+        if not argv:
+            return False, "", [], "fetch.metricId 缺失"
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=SQL_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return False, "", [], f"run_metric.py 执行失败（{e}）"
+        if r.returncode != 0:
+            return False, "", [], f"run_metric.py 返回非 0: {(r.stderr or r.stdout)[:200]}"
         text = r.stdout
         candidates = []
         for tok in NUM_TOKEN.findall(text):
@@ -456,7 +522,7 @@ def main():
 
     # 逐条评测
     results = {}  # scenario -> [item]
-    fetch_mix = {"card": 0, "sql": 0}  # v4.2 取数路径统计：card=应答缓存（成本近零），sql=现算
+    fetch_mix = {"card": 0, "sql": 0, "metric": 0}  # v4.2 取数路径统计：card=应答缓存（成本近零），sql/metric=现算
     for name, items in scenarios.items():
         if scenario_filter and name != scenario_filter:
             continue
@@ -467,9 +533,11 @@ def main():
             if not isinstance(ex, dict):
                 continue
             fetch_type = (ex.get('fetch') or {}).get('type', 'card')
-            fetch_mix["sql" if fetch_type == 'sql' else "card"] += 1
+            fetch_mix[fetch_type if fetch_type in ("sql", "metric") else "card"] += 1
             if fetch_type == 'sql':
                 status, reasons, points = eval_sql(workdir, ex, script_dir)
+            elif fetch_type == 'metric':
+                status, reasons, points = eval_metric(workdir, ex, script_dir)
             else:
                 status, reasons, points = eval_card(base_dir, ex)
             rows.append({
@@ -501,7 +569,7 @@ def main():
 
     judged = total['pass'] + total['fail']
     pass_rate = (total['pass'] / judged) if judged else None
-    n_fetch = fetch_mix['card'] + fetch_mix['sql']
+    n_fetch = fetch_mix['card'] + fetch_mix['sql'] + fetch_mix['metric']
     cache_share = (fetch_mix['card'] / n_fetch) if n_fetch else None
 
     if as_json:
@@ -532,8 +600,10 @@ def main():
                         print(f"         - {p}")
         print(f"\n总体: 通过 {total['pass']} / 失败 {total['fail']} / 跳过 {total['skip']} / 待人工确认 {total['pending']}")
         if n_fetch:
-            print(f"取数路径: 卡片缓存 {fetch_mix['card']} 条 / SQL 直查 {fetch_mix['sql']} 条"
-                  f"（缓存占比 {cache_share:.0%}——缓存条目命中卡片形态，回归取数成本近零）")
+            line = f"取数路径: 卡片缓存 {fetch_mix['card']} 条 / SQL 直查 {fetch_mix['sql']} 条"
+            if fetch_mix['metric']:
+                line += f" / 指标中心直查 {fetch_mix['metric']} 条"
+            print(line + f"（缓存占比 {cache_share:.0%}——缓存条目命中卡片形态，回归取数成本近零）")
         if total['fail']:
             print("结论: ❌ 存在数据层失败——新 agent 与旧 agent 表现不一致，需排查失败条目（可能看板已改版需重新学习）")
         elif total['pending']:

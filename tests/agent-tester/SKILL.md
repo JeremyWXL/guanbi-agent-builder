@@ -36,10 +36,10 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-10 | 口径闸门 | `check_metrics.py <目录>` | 对故意埋雷（同义词撞车/冲突未裁决）能报 ❌ |
 | L0-11 | 维度闸门 | `check_dims.py <目录>` | 对值别名悬空/维度指标撞车能报 ❌ |
 | L0-12 | 归因引擎 | `attribute.py add` / `mul` | 贡献率合计闭环 100%；数值解析容忍千分位/百分号/万/亿 |
-| L0-13 | SQL 执行器 | `run_sql.py <dsId> 'SELECT ...'` | 只读强制：INSERT/多语句被拦截；`ORDER BY DESC` 放行 |
-| L0-14 | 直达链接 | `make_link.py --list '<看板名>'` | 只列筛选栏内且有联动的筛选器；FIRST_PICK 页告警 |
+| L0-13 | SQL 执行器 | `run_sql.py <dsId> 'SELECT ...'` | 只读强制：INSERT/多语句被拦截；`ORDER BY DESC` 放行；裸中文表名自动补反引号（v4.9.3）；平台 500 堆栈提炼为友好文案（TABLE_OR_VIEW_NOT_FOUND → 表不存在+核对指引，v4.9.3） |
+| L0-14 | 直达链接 | `make_link.py --list '<看板名>'`（或 `'<看板名>' --list`，v4.9.3 旗标化） | 只列筛选栏内且有联动的筛选器；FIRST_PICK 页告警；--list/--filter/--anchor 缺值给明确报错不 traceback |
 | L0-15 | 工作台 | `workbench.py <目录>` + `--agents` + `--check` | 静态页生成；总览页生成；体检报告具体增删卡 + 取数加速层环境指标（复用率/分级，v4.2） |
-| L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿）；数据缺失记 skip；报告含取数路径缓存占比（v4.2） |
+| L0-16 | 回归评测 | `eval_examples.py <目录>` | 期望值容差匹配（千分位/百分号/万/亿/中文量词后缀）；数据缺失记 skip；报告含取数路径缓存占比；fetch.type=metric 经 run_metric 白名单重跑（v4.9.3） |
 | L0-17 | 单测 | `python3 -m unittest discover -s references/scripts -p 'test_*.py'`（或 CI） | 全绿 |
 | L0-18 | 记忆系统 | `memory.py init/log/recall/correct/status/distilled/clear`（沙箱目录） | init 幂等不覆盖已有文件；log 兜底初始化并追加；recall 命中相似历史、纠错后旧问答标 ⚠️；correct 拒绝非法 type；status 达阈值报 suggestDistill；clear 无 --yes 拒绝、有 --yes 先备份再清空 |
 | L0-19 | 数据集直学 | `learn_dataset.py <dsId...> -o <目录>`（数据集直通模式） | datasets-raw.json 含字段清单/计算字段/列画像，`_meta.dsFormulas` 与 cards-raw 同构；check_formulas/check_dims 种子自动回退读它；全部失败 exit 2 哨兵 |

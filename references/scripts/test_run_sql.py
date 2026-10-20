@@ -33,6 +33,8 @@ class ScopeGuardTest(unittest.TestCase):
         with mock.patch.object(run_sql.subprocess, "run") as m_run, \
              mock.patch.object(run_sql.scope_mod, "load_scope", return_value=scope_obj):
             m_run.return_value.returncode = 0
+            m_run.return_value.stdout = ""
+            m_run.return_value.stderr = ""
             try:
                 run_sql.main()
             except SystemExit as e:
@@ -118,6 +120,55 @@ class ReadOnlyValidationTest(unittest.TestCase):
 
     def test_insert_blocked(self):
         self.assertIn("INSERT", run_sql.validate("INSERT INTO t VALUES (1)"))
+
+
+class CjkTableQuoteTest(unittest.TestCase):
+    """v4.9.3 回归：裸中文表名自动补反引号（v4.3.0 遗留 P2）"""
+
+    def test_bare_cjk_table_quoted(self):
+        sql, added = run_sql.quote_cjk_tables("SELECT count(*) FROM 销售明细")
+        self.assertIn("FROM `销售明细`", sql)
+        self.assertEqual(added, ["销售明细"])
+
+    def test_join_cjk_table_quoted(self):
+        sql, added = run_sql.quote_cjk_tables("SELECT * FROM orders a JOIN 门店维表 b ON a.id=b.id")
+        self.assertIn("JOIN `门店维表` b", sql)
+
+    def test_already_backticked_untouched(self):
+        sql, added = run_sql.quote_cjk_tables("SELECT * FROM `销售明细`")
+        self.assertEqual(sql, "SELECT * FROM `销售明细`")
+        self.assertEqual(added, [])
+
+    def test_english_table_untouched(self):
+        sql, added = run_sql.quote_cjk_tables("SELECT * FROM fact_sales")
+        self.assertEqual(added, [])
+
+    def test_string_literal_segment_untouched(self):
+        sql, added = run_sql.quote_cjk_tables("SELECT * FROM t WHERE note='看 FROM 报表A 就行'")
+        self.assertEqual(added, [])
+        self.assertIn("'看 FROM 报表A 就行'", sql)
+
+
+class FriendlyErrorTest(unittest.TestCase):
+    """v4.9.3 回归：平台 500 堆栈提炼为可行动结论（v4.8.0 挂账 P2）"""
+
+    STACK = ('{"code":"INTERNAL","details":"org.apache.spark.sql.AnalysisException: '
+             'TABLE_OR_VIEW_NOT_FOUND: 门店明细; line 1 pos 14; at java.base/Thread.run(…500 行堆栈…)"}')
+
+    def test_table_not_found_extracted(self):
+        msg = run_sql.friendly_error(self.STACK, "SELECT * FROM 门店明细", "ds1")
+        self.assertIn("表或视图不存在", msg)
+        self.assertIn("门店明细", msg)
+        self.assertIn("ds get", msg)
+        self.assertNotIn("java.base", msg)  # 堆栈不倒给用户
+
+    def test_message_field_extracted(self):
+        msg = run_sql.friendly_error('error message=权限不足, code=403', "SELECT 1", "ds1")
+        self.assertEqual(msg, "❌ SQL 执行失败: 权限不足")
+
+    def test_fallback_truncates(self):
+        msg = run_sql.friendly_error("x" * 500, "SELECT 1", "ds1")
+        self.assertLess(len(msg), 340)
 
 
 if __name__ == "__main__":

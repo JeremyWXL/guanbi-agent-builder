@@ -8,9 +8,9 @@ SKILL.md 本体由模板机械填充——缺节、漏节、CLI 凭记忆写错�
 manifest 字段（* 必填）:
   *slug             agent 标识（frontmatter name = agent-<slug>）
   *scenario         业务场景名（如：业财经营分析）
-  *keywords         description 触发关键词（如：收入/毛利/费用、达成率、归因）
+  *keywords         description 触发关键词（如：收入/毛利/费用、达成率、归因；字符串或数组，数组按「、」连接）
   *dashboards       看板清单（"》《"连接；build_package 从 cards-raw 自动带入；直通模式填数据集名，
-                    build_package 从 datasets-raw 自动带入）
+                    build_package 从 datasets-raw 自动带入；也可传数组，自动转为 《A》《B》 形式）
   *typicalQuestions 4 个典型问题 [问数, 归因, 异常, 洞察]（build_package 从 examples.json 自动带入）
   date              搭建日期（缺省今天）
   mode              dashboard（默认）| dataset（数据集直通：保留「数据探索型变体」节）
@@ -71,11 +71,19 @@ def render(manifest):
     with open(template_path(), encoding="utf-8") as f:
         text = f.read()
 
+    def _text(v):
+        # 字符串槽位宽容归一：数组按「、」连接（v4.9.3：keywords 传数组曾在 replace 处 TypeError）
+        return "、".join(str(x) for x in v) if isinstance(v, list) else str(v)
+
+    dashboards = manifest["dashboards"]
+    if isinstance(dashboards, list):
+        dashboards = "《" + "》《".join(str(d) for d in dashboards) + "》"
+
     repl = {
-        "{场景名}": manifest["slug"],
-        "{业务场景}": manifest["scenario"],
-        "{看板清单}": manifest["dashboards"],
-        "{典型问题关键词列表}": manifest["keywords"],
+        "{场景名}": _text(manifest["slug"]),
+        "{业务场景}": _text(manifest["scenario"]),
+        "{看板清单}": dashboards,
+        "{典型问题关键词列表}": _text(manifest["keywords"]),
         "{日期}": manifest.get("date") or datetime.now().strftime("%Y-%m-%d"),
     }
     for i, q in enumerate(tq, 1):

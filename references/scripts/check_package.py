@@ -19,7 +19,7 @@
 import importlib.util, json, os, re, subprocess, sys
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.9.2"
+BUILDER_VERSION = "4.9.3"
 
 # 复制进交付包的脚本清单（(文件名, 看板模式必需, 直通模式必需, 引入版本)）
 SCRIPT_LIST = [
@@ -106,6 +106,7 @@ class PackageCheck:
         self.refs = os.path.join(self.pkg, "references")
         self.errors = []
         self.warns = []
+        self.oks = []  # L3 冒烟逐项通过记录（体检通过时逐条展示，不再是干巴巴一句"通过"）
         self.mode = None
         self.pkg_version = "0"
         self.scope = None  # L3 冒烟提取的白名单
@@ -115,6 +116,9 @@ class PackageCheck:
 
     def warn(self, msg):
         self.warns.append(msg)
+
+    def ok(self, msg):
+        self.oks.append(msg)
 
     # ---------- L1 结构层 ----------
     def check_structure(self):
@@ -354,11 +358,17 @@ class PackageCheck:
         if not self.scope.get("dsIds"):
             self.err("scope 白名单 dsIds 为空——run_sql 将拦截全部数据集（SQL 直查瘫痪）；"
                      "检查 cards.json 各页 dsUsage 是否丢失")
+        else:
+            self.ok(f"scope 白名单 dsIds 非空（{len(self.scope['dsIds'])} 个数据集）")
         if self.mode == "dashboard" and not self.scope.get("cdIds"):
             self.err("scope 白名单 cdIds 为空——sample_cards --scope 将整批拒绝；"
                      "检查 cards.json 卡片条目是否被裁成纯名字")
+        elif self.mode == "dashboard":
+            self.ok(f"scope 白名单 cdIds 非空（{len(self.scope['cdIds'])} 张卡片）")
         if not self.scope.get("pgIds") and self.mode == "dashboard":
             self.err("scope 白名单 pgIds 为空——检查 cards.json._meta.pages")
+        elif self.mode == "dashboard":
+            self.ok(f"scope 白名单 pgIds 非空（{len(self.scope['pgIds'])} 张看板）")
 
         # run_sql --check-scope 双向断言：白名单内放行、白名单外拦截。
         # --check-scope 自 builder 4.7.0 引入——包版本过旧或包内脚本源码无该 flag 字面量时
@@ -371,11 +381,14 @@ class PackageCheck:
             if version_ok and has_flag:
                 good = sorted(self.scope["dsIds"])[0]
                 code, out = run_cmd([sys.executable, run_sql, "--check-scope", good])
-                if code != 0:
+                in_ok = code == 0
+                if not in_ok:
                     self.err(f"run_sql --check-scope 误拦白名单内数据集 {good}（exit {code}）: {out.strip()[:200]}")
                 code, _ = run_cmd([sys.executable, run_sql, "--check-scope", OUT_OF_SCOPE_PROBE])
                 if code != 3:
                     self.err(f"run_sql --check-scope 未拦截白名单外数据集（exit {code}，应为 3）——范围守卫失效")
+                elif in_ok:
+                    self.ok("run_sql --check-scope 双向断言通过（白名单内放行 / 白名单外拦截）")
             else:
                 reasons = []
                 if not version_ok:
@@ -392,12 +405,15 @@ class PackageCheck:
         if os.path.isfile(run_metric) and metric_ids:
             good = sorted(metric_ids)[0]
             code, out = run_cmd([sys.executable, run_metric, "--check-scope", good])
-            if code != 0:
+            in_ok = code == 0
+            if not in_ok:
                 self.err(f"run_metric --check-scope 误拦白名单内指标 {good}（exit {code}）: {out.strip()[:200]}")
             code, _ = run_cmd([sys.executable, run_metric, "--check-scope", OUT_OF_SCOPE_PROBE])
             if code != 3:
                 self.err(f"run_metric --check-scope 未拦截白名单外指标（exit {code}，应为 3）——"
                          "指标中心口径白名单失效")
+            elif in_ok:
+                self.ok("run_metric --check-scope 双向断言通过（governedRef 白名单内放行 / 外拦截）")
 
         # make_link --list：至少一张看板有可用筛选器（看板模式）
         if self.mode == "dashboard":
@@ -418,6 +434,8 @@ class PackageCheck:
                 if titles and usable_total == 0:
                     self.warn("所有看板都没有可用筛选器——直达链接功能不可用"
                               "（若 cards.json 筛选器字段完整仍如此，属页面本身无联动筛选器）")
+                elif titles:
+                    self.ok(f"make_link 找到 {usable_total} 个可用筛选器（{len(titles)} 张看板）")
 
         # eval_examples 回归：交付即带 broken 基准是不允许的
         eval_py = os.path.join(self.refs, "eval_examples.py")
@@ -428,6 +446,8 @@ class PackageCheck:
                 self.err(f"eval_examples 回归存在数据层失败（exit 1）:\n{tail}")
             elif code not in (0, 1):
                 self.err(f"eval_examples 执行异常（exit {code}）: {out.strip()[:200]}")
+            else:
+                self.ok("eval_examples 回归无数据层失败")
 
         # memory status：记忆系统脚本可用
         mem_py = os.path.join(self.refs, "memory.py")
@@ -435,6 +455,8 @@ class PackageCheck:
             code, out = run_cmd([sys.executable, mem_py, "status", self.pkg])
             if code != 0:
                 self.err(f"memory.py status 执行失败（exit {code}）: {out.strip()[:200]}")
+            else:
+                self.ok("memory status 正常（记忆系统可用）")
 
     def run(self):
         self.check_structure()
@@ -458,13 +480,15 @@ def main():
     if as_json:
         print(json.dumps({
             "package": chk.pkg, "mode": chk.mode, "builderVersion": chk.pkg_version,
-            "result": result, "errors": chk.errors, "warnings": chk.warns,
+            "result": result, "passed": chk.oks, "errors": chk.errors, "warnings": chk.warns,
         }, ensure_ascii=False, indent=1))
     else:
         mode_label = {"dashboard": "看板模式", "dataset": "数据集直通模式"}.get(chk.mode, "未知")
         print(f"\n交付包体检（{chk.pkg}）")
         print("=" * 60)
         print(f"模式: {mode_label}｜包搭建于 builder {chk.pkg_version}｜当前 builder {BUILDER_VERSION}")
+        for o in chk.oks:
+            print(f"  ✓ {o}")
         for e in chk.errors:
             print(f"  ❌ {e}")
         for w in chk.warns:
@@ -472,7 +496,8 @@ def main():
         if chk.errors:
             print(f"\n{len(chk.errors)} 个 ❌ 未清零——禁止交付；修复后重跑本脚本")
         else:
-            print(f"\n✅ 体检通过" + (f"（{len(chk.warns)} 条 ⚠️ 需告知用户）" if chk.warns else ""))
+            print(f"\n✅ 体检通过（{len(chk.oks)} 项冒烟逐项通过"
+                  + (f"，{len(chk.warns)} 条 ⚠️ 需告知用户）" if chk.warns else "）"))
     sys.exit(1 if chk.errors else 0)
 
 

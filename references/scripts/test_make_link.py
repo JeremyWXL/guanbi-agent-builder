@@ -146,6 +146,27 @@ class TestMainCLI(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("/page/pg123?", r.stdout)
 
+    def test_list_flag_after_page_name(self):
+        # v4.9.3 回归：`<看板名> --list`（旗标在尾）此前 IndexError 崩溃
+        r = run_cli(self.dir, "销售看板", "--list")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("月份（筛选器「月份筛选」）", r.stdout)
+
+    def test_list_without_page_name_clean_exit(self):
+        r = run_cli(self.dir, "--list")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_filter_missing_value_clean_exit(self):
+        r = run_cli(self.dir, "销售看板", "--filter")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--filter 缺参数值", r.stderr)
+
+    def test_anchor_missing_value_clean_exit(self):
+        r = run_cli(self.dir, "销售看板", "--anchor")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--anchor 缺参数值", r.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

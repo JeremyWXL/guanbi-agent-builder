@@ -3,6 +3,7 @@
 筛选直达链接生成器：把筛选条件拼进 BI 看板 URL——用户点开就是筛好条件的视图
 用法: python3 make_link.py <工作目录> <看板名> --filter "字段=值" [--filter ...] [--anchor 卡片名]
   python3 make_link.py <工作目录> --list <看板名>     # 列出该看板可用的筛选器（字段名 → 可带值）
+    （--list 为旗标，看板名也可放它前面：`<工作目录> <看板名> --list`，两种写法等价）
 原理: 观远 BI 页面 URL 原生支持查询参数筛选（官方文档"页面URL添加条件参数"，已实机验证）：
   {biBaseUrl}/page/{pgId}?<筛选器ID>=<值>      多值重复传参: ?id=值1&id=值2
   树状筛选器带路径: id=["浙江","杭州"]；&anchor=<cdId> 定位到具体卡片
@@ -85,26 +86,32 @@ def main():
         sys.exit(__doc__)
     workdir = args[0]
     filters, anchor = [], None
-    rest = []
+    list_mode = False
+    names = []
     i = 1
     while i < len(args):
         if args[i] == "--filter":
+            if i + 1 >= len(args):
+                sys.exit('--filter 缺参数值，用法：--filter "字段=值"')
             filters.append(args[i + 1]); i += 2
         elif args[i] == "--anchor":
+            if i + 1 >= len(args):
+                sys.exit("--anchor 缺参数值，用法：--anchor 卡片名")
             anchor = args[i + 1]; i += 2
         elif args[i] == "--list":
-            rest.append(("list", args[i + 1])); i += 2
+            # 旗标形式：看板名走位置参数——`--list <看板名>` 与 `<看板名> --list` 两种写法都支持
+            list_mode = True; i += 1
         else:
-            rest.append(("page", args[i])); i += 1
+            names.append(args[i]); i += 1
     pages, meta = load_pages(workdir)
+    page_name = names[0] if names else ""
 
-    if rest and rest[0][0] == "list":
-        name = rest[0][1]
-        page = pages.get(name) or next((v for k, v in pages.items() if name in k), None)
+    if list_mode:
+        page = pages.get(page_name) or next((v for k, v in pages.items() if page_name and page_name in k), None)
         if not page:
-            sys.exit(f"找不到看板「{name}」，已有看板：{'、'.join(pages)}")
+            sys.exit(f"找不到看板「{page_name}」，已有看板：{'、'.join(pages)}")
         sels = selectors_of(page)
-        print(f"《{name}》可用筛选器：")
+        print(f"《{page_name}》可用筛选器：")
         for nm, cdid, field, usable, note in sels:
             if usable:
                 print(f"  {field or nm}（筛选器「{nm}」）")
@@ -116,7 +123,6 @@ def main():
             print(warn, file=sys.stderr)
         return
 
-    page_name = rest[0][1] if rest else ""
     page = pages.get(page_name) or next((v for k, v in pages.items() if page_name and page_name in k), None)
     if not page:
         sys.exit(f"找不到看板「{page_name}」，已有看板：{'、'.join(pages)}")

@@ -125,6 +125,15 @@ class ValidPackageTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("体检通过", r.stdout)
 
+    def test_pass_output_shows_smoke_items(self):
+        # v4.9.3：体检通过时逐条展示 L3 冒烟项，不再只有一句"通过"
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("scope 白名单 dsIds 非空", r.stdout)
+        self.assertIn("run_sql --check-scope 双向断言通过", r.stdout)
+        self.assertIn("eval_examples 回归无数据层失败", r.stdout)
+        self.assertIn("memory status 正常", r.stdout)
+
     def test_json_output(self):
         r = run(self.dir, "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

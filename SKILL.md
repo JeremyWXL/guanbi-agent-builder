@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.9.2"
+version: "4.9.3"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -190,7 +190,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    - **口径候选条目**（candidateRules）：带出来源卡片与卡片的隐藏筛选（口径上下文，如"时间维度=月累计"），直接作为第 4 步逐条确认的素材
    - 追加 `--seed-metrics` 可同时生成 `metrics-seed.json`：共识指标预填公式/safety/维度成稿，冲突指标标 `pending`——这是第 4 步产出机器可读口径档案（metrics.json）的起草底稿
    - 维度种子另跑 `python3 references/scripts/check_dims.py <工作目录> --seed-dims`：从卡片行维度/筛选器关联字段/指标 dims 收割维度清单，从采样列画像合并成员枚举值（values），名称互为包含的维度自动标 similarTo 易混建议——这是第 4 步产出机器可读维度档案（dimensions.json）的起草底稿
-5. 生成看板资产目录（模板：`references/templates/learningResult.md`）：每张看板的核心价值、筛选器、核心数据模块、使用场景；核心指标标注口径来源（详见 formulas.json）
+5. 生成看板资产目录（模板：`references/templates/learningResult.md`）：每张看板的核心价值、筛选器、核心数据模块、使用场景；核心指标标注口径来源（详见 formulas.json）。**资产目录同时登记能力边界**（v4.9.3，实机教训：交付 agent 对答不了的问题硬答）：① 无时间筛选/时间参数的卡片（如全周期累计 KPI 卡）——标注"只能给全周期累计，答不了单月"；② 问题面覆盖缺口（某维度没有对应卡片、某区域数据不全）——标注"此类问题需增量接入"；③ 期间/取值表述以采样与枚举值为准，禁止凭印象写年份范围（写出来的范围与实际数据矛盾会误导期间归一）
 6. **SQL 直查能力探查**：cards-raw.json 已记录每张卡片所属的数据集 ID（dsId），用 `guancli ds get <数据集ID> --brief` 探查数据集字段，判断是否有 SQL 直查能力（数据集级 SQL 查询，见 `references/sql-guide.md`）。若可用，记入资产目录——这决定了助手后续能否补充"卡片粒度不够"的查询（如单月指标、自定义时间段、卡片没拆的维度）。同时**留意数据集体量**（采样索引 `_sample_index.json` 的原始行数、ds 详情的行数信息）：行数大的数据集在资产目录标注"大数据集"，并用业务语言向用户说明——CLI 取数有行数上限（卡片 preview 图表默认最多 1 万行，超上限即截断），这类数据集的问答会优先走聚合口径，确实要取明细时需要分批取数（流程长、性能与 token 消耗大，纪律见 sql-guide.md「行数上限与分批取数纪律」）
 7. **建立基础认知**：完成看板学习后，AI 已经对客户场景有了初步理解——知道这是什么业务、有哪些指标、看板能回答什么问题。这是后续一切分析的基础。
 
@@ -498,7 +498,7 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 10. **SQL 直查公式纪律（实测踩坑）**：
     - 禁止 `AVG(明细比率)`——换维度后结果错得不多、最难察觉（实测 105% vs 103.6%）；比率型指标必须内联公式"分子分母分别求和再相除"
     - 禁止按名引用数据集计算字段（SQL 引擎只认物理列，直接报 UNRESOLVED_COLUMN）——必须内联展开公式原文
-    - 禁止内联含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）——SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）；这类指标走卡片取数 `guancli card preview <cdId> --dynamic-param "参数名=值"`，卡片声明的参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数（传未声明的参数静默无效）
+    - 禁止内联含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）——SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）；这类指标走卡片取数 `guancli card preview <cdId> --dynamic-param "参数名=值"`，卡片声明的参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数（传未声明的参数 guancli 会显式报错；DRILL 下钻卡不支持传参，改用其主卡或页面筛选器联动）
     - SQL 必须显式复写卡片的隐藏筛选条件（如 `时间维度='月累计'`）——漏掉就是数量级错误（实测差 259 倍）
 11. **归因算术禁止口算**：贡献额/贡献率/乘法因子拆解一律走 attribute.py，LLM 只负责解释脚本输出（LLM 口算贡献占比是"归因必须量化"最大的可靠性漏洞）
 12. **快速模式可裁确认深度，三条底线不破**：适检评分的提醒义务、口径冲突逐条裁决、验收实测（见 lite 分支「三条不破底线」）；第 4、7 步命门在 lite 下同样禁止 skipped

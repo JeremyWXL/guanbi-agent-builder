@@ -16,6 +16,10 @@ prompt 红线靠自觉，本脚本提供脚本层强制：只允许单条 SELECT
   4. 范围守卫：数据集 ID 必须在 scope 白名单内（看板模式从 cards.json 的 dsUsage 派生，
      数据集直通模式从 datasets.json 已学条目派生；
      找不到 scope 文件时跳过本校验，不阻断脱离交付包的独立使用）
+执行层辅助:
+  - 裸中文表名自动补反引号（字符串字面量段不动；已带引号的不重复补）
+  - 平台报错提炼友好文案（TABLE_OR_VIEW_NOT_FOUND 等 500 堆栈 → 可行动结论），
+    成功时 stdout/stderr 原样透传
 """
 import os, re, subprocess, sys
 
@@ -28,6 +32,43 @@ except ImportError:
 BLOCKED = ('INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 'TRUNCATE',
            'GRANT', 'REVOKE', 'MERGE', 'REPLACE', 'CALL', 'EXEC', 'EXECUTE',
            'SET', 'USE', 'SHOW', 'DESCRIBE', 'EXPLAIN')
+
+CJK_TABLE_RE = re.compile(r'(?i)\b(FROM|JOIN)\s+(?![`"\'])([一-鿿][\w一-鿿.\-]*)')
+_STRING_SEG_RE = re.compile(r"('(?:[^'\\]|\\.|'')*')")
+
+
+def quote_cjk_tables(sql):
+    """裸中文表名自动补反引号（平台要求中文表名加反引号，v4.3.0 遗留 P2）。
+    已带反引号/引号的不动；字符串字面量段（如 WHERE col='FROM 表X'）不动。
+    返回 (改写后 SQL, [补了反引号的表名])"""
+    added = []
+
+    def _wrap(m):
+        added.append(m.group(2))
+        return f"{m.group(1)} `{m.group(2)}`"
+
+    parts = _STRING_SEG_RE.split(sql)
+    for i, part in enumerate(parts):
+        if i % 2 == 1:  # 奇数段是字符串字面量
+            continue
+        parts[i] = CJK_TABLE_RE.sub(_wrap, part)
+    return "".join(parts), added
+
+
+def friendly_error(raw, sql, ds_id):
+    """平台报错提炼：把 500 堆栈里可行动的结论挖出来，而不是整段 stack trace 倒给用户
+    （v4.8.0 挂账 P2：TABLE_OR_VIEW_NOT_FOUND 埋在 details 里）"""
+    text = raw or ""
+    if "TABLE_OR_VIEW_NOT_FOUND" in text:
+        tables = re.findall(r'(?i)\b(?:FROM|JOIN)\s+`?([^\s,`()]+)`?', sql)
+        hint = f"——SQL 引用的表：{'、'.join(tables)}" if tables else ""
+        return (f"❌ 表或视图不存在{hint}\n"
+                f"  用 `guancli ds get {ds_id} --brief` 核对数据集实际表名；"
+                f"中文表名需反引号包裹（本脚本已自动补，仍失败则表名本身不对）")
+    m = re.search(r'"?message"?\s*[=:]\s*"?([^,}\n"]+)', text)
+    if m:
+        return f"❌ SQL 执行失败: {m.group(1).strip()}"
+    return f"❌ SQL 执行失败（平台报错摘录）: {text.strip()[:300]}"
 
 
 def strip_literals_and_comments(sql):
@@ -100,9 +141,19 @@ def main():
         print(f"❌ SQL 被只读校验拦截: {err}", file=sys.stderr)
         print("SQL 直查仅支持单条 SELECT 查询；如需写操作请改用 BI 平台。", file=sys.stderr)
         sys.exit(3)
+    sql, quoted = quote_cjk_tables(sql)
+    if quoted:
+        print(f"ℹ️ 已自动为中文表名补反引号：{'、'.join(quoted)}", file=sys.stderr)
     r = subprocess.run(["guancli", "ds", "execute-sql", "-inputs", ds_id,
-                        "-sql", sql, "-f", fmt], timeout=180)
-    sys.exit(r.returncode)
+                        "-sql", sql, "-f", fmt], capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        print(friendly_error(r.stderr or r.stdout or "", sql, ds_id), file=sys.stderr)
+        sys.exit(r.returncode)
+    if r.stdout:
+        sys.stdout.write(r.stdout)
+    if r.stderr:
+        sys.stderr.write(r.stderr)
+    sys.exit(0)
 
 
 if __name__ == '__main__':

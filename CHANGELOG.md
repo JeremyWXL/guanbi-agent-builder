@@ -1,5 +1,21 @@
 # 变更日志
 
+## v4.9.3（2026-10-20）P2 积压清零：8 个脚本 bug 修复 + 文档/模板表述纠偏（v4.9.1 回归与历史挂账）
+
+解决的问题：v4.9.1 基线回归新发现 P2 ×8 与历史沿用 P2 ×6（v4.8.0 ×4、v4.4.0 ×2）。本版本把其中 9 个脚本/基建问题全部修复，4 个表述类问题在模板与向导文档纠偏；「停更页采样失败」经调查确认为设计如此（失败卡片已索引、整批不中断，引用前重新采样即可），维持 tracking 不改码。
+
+- **make_link.py 参数解析**：`--list` 改旗标（看板名走位置参数，`--list <看板名>` 与 `<看板名> --list` 两种写法等价）——此前 `<看板名> --list` 直接 IndexError 崩溃（L2 答题代理实抓）；`--filter`/`--anchor` 缺值给明确报错而非 traceback
+- **workbench.py --check**：cards.json 缺失不再抛 FileNotFoundError——直通模式明确说明"体检不适用"，其余目录提示原因（此前对直通包/任意目录跑体检直接 traceback）
+- **render_agent_skill.py 槽位宽容归一**：keywords/dashboards 等字符串槽位接受数组（keywords 按「、」连接、dashboards 自动转 《A》《B》）——此前 keywords 传数组在 replace 处 TypeError traceback
+- **check_package.py 通过时逐项展示**：L3 冒烟各通过点全部记录（scope 白名单三组计数/run_sql 与 run_metric 双向断言/make_link 筛选器数/eval 回归/memory status），体检通过时逐条 ✓ 打印，--json 新增 passed 数组——不再是干巴巴一句"体检通过"（v4.8.0 挂账）
+- **run_sql.py 双修**：① 裸中文表名自动补反引号（字符串字面量段不动、已带引号不重复补，补时 stderr 告知——v4.3.0 遗留）；② 平台报错提炼 friendly_error：TABLE_OR_VIEW_NOT_FOUND 等 500 堆栈 → "表或视图不存在 + SQL 引用的表 + ds get 核对指引"，message= 字段提取，其余截断 300 字——不再把整段 stack trace 倒给用户（v4.8.0 挂账）；成功时 stdout/stderr 原样透传
+- **eval_examples.py 支持 fetch.type=metric**（v4.8.0 挂账：指标中心链路无自动化回归覆盖）：fetch.metricId 必填、fetch.params 经 -- 透传 guancli metric query；经 run_metric.py 白名单重跑核验（不可用记 skip），--record 防幻觉校验同步支持；取数路径统计加"指标中心直查"计数
+- **diff_baselines.py**：旧版 l2.score=null 但新版有成绩时，展示新版成绩并注明"旧版未测评"——不再误报"本次未测评"（v4.8.0 挂账）；fmt_delta 浮点噪声修掉（▼2.5999… → ▼2.6）
+- **表述纠偏（实机校准）**：交付模板与红线 10 的"传未声明参数静默无效"改为实测行为"guancli 显式报错"；补"DRILL 下钻卡不支持 --dynamic-param（改用主卡或筛选器联动）"；交付模板取数纪律补"card preview 返回显示格式化值（一位小数精度），归因计算须声明精度限制"
+- **builder SKILL.md 第 2 步资产目录登记能力边界**（L2 答题代理实抓 ×3）：无时间筛选/时间参数的卡片（只能给全周期累计）、问题面覆盖缺口、期间/取值表述以采样枚举为准禁止凭印象——防交付 agent 对答不了的问题硬答
+- **测试**：test_make_link +4、test_workbench +2、test_render_agent_skill +2、test_check_package +1、test_run_sql +7、test_eval_examples +6（eval_metric 六例）；单测 366 → 389 例全绿
+- **版本一致性**：4.9.2 → 4.9.3（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric 的 BUILDER_VERSION 九处；merge_cards.py 按惯例不动）
+
 ## v4.9.2（2026-10-20）v4.9.1 回归两个 P1 修复：check_pages ⛔ 误报 + eval_examples 中文量词解析
 
 解决的问题：v4.9.1 基线回归（mxbc 全矩阵）发现的两个主流程 P1——① check_pages 把「数据集 API 无权限」当「看板不可用」：mxbc 全部数据卡 `isDsReadable=false` 即判 ⛔，但 card preview 实际可取数、62/62 卡学习全链路实测可用，无可换看板的环境被硬阻断；② eval_examples 数值提取不剥中文量词后缀：「4,334.3万元」「10.6万杯」「6.34元」整体解析为空，--suggest 无候选、--record 连真实数字都拒收，带单位的 KPI 卡无法走第 7 步机械回填（62 张中 44 张受影响）。

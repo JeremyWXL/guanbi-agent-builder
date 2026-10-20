@@ -25,6 +25,7 @@ def load(path):
 
 
 def fmt_delta(d):
+    d = round(d, 1)
     if d > 0:
         return f"▲{d}"
     if d < 0:
@@ -58,12 +59,16 @@ def main():
     o2, n2 = old.get("l2", {}), new.get("l2", {})
     print("\n## L2 交付 agent 回答质量\n")
     dropped_questions = []
-    if "score" in o2 and "score" in n2 and o2["score"] is not None and n2["score"] is not None:
+    if o2.get("score") is not None and n2.get("score") is not None:
         print(f"- 总分：{o2['score']} → {n2['score']}（{fmt_delta(n2['score'] - o2['score'])}）｜ "
               f"等级 {o2.get('grade', '?')} → {n2.get('grade', '?')} ｜ "
               f"红线 {o2.get('redlines', '?')} → {n2.get('redlines', '?')}")
-    elif n2.get("note"):
-        print(f"- 本次未测评：{n2['note']}")
+    elif n2.get("score") is not None:
+        # 旧版未测评但新版有成绩：展示新版成绩，不得误报「本次未测评」（v4.8.0 挂账缺陷）
+        print(f"- 新版总分：{n2['score']}｜等级 {n2.get('grade', '?')}｜红线 {n2.get('redlines', '?')}"
+              f"（旧版未测评 L2，无法对比）")
+    else:
+        print(f"- 本次未测评：{n2.get('note') or '（无说明）'}")
     oq = {q.get("id"): q for q in o2.get("questions", [])}
     nq = {q.get("id"): q for q in n2.get("questions", [])}
     if nq:

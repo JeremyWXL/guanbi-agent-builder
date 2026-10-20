@@ -123,6 +123,19 @@ class TestCheckStaleness(unittest.TestCase):
         self.assertEqual(ac["filteredCards"], 1)
         self.assertEqual(ac["datasetLevelCards"], 2)
 
+    def test_missing_cards_json_no_traceback(self):
+        # v4.9.3 回归：cards.json 缺失时 --check 抛 FileNotFoundError traceback
+        r = wb.check_staleness(self.dir)
+        self.assertEqual(r["pages"], [])
+        self.assertIn("未找到 cards.json", r["note"])
+
+    def test_dataset_mode_note(self):
+        # 直通模式交付包：明确说明体检不适用，不抛异常
+        write_json(self.dir, "datasets.json", {"数据集一": {"dsId": "ds1", "columns": []}})
+        r = wb.check_staleness(self.dir)
+        self.assertEqual(r["pages"], [])
+        self.assertIn("直通模式", r["note"])
+
     def test_accel_stats_legacy_without_filtered(self):
         # 旧档案无 filtered 字段：分级记 None（提示重新学习补齐），复用率照算
         doc = {"看板A": {"cards": [{"cdId": "c1", "type": "PIE", "dsId": "ds1"},

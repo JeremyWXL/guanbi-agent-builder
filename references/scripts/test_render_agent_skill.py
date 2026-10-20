@@ -116,6 +116,18 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("typicalQuestions", r.stderr)
 
+    def test_keywords_list_coerced(self):
+        # v4.9.3 回归：keywords 传数组曾在 replace 处 TypeError traceback
+        r = self.render(make_manifest(keywords=["收入/毛利", "达成率", "归因"]))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("收入/毛利、达成率、归因", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_dashboards_list_coerced(self):
+        r = self.render(make_manifest(dashboards=["管报洞察", "集团报表"]))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("《管报洞察》《集团报表》", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

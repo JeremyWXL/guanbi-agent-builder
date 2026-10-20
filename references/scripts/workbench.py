@@ -21,7 +21,7 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.9.2"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.9.3"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
 
 COMMON_CSS = r"""
@@ -1539,6 +1539,15 @@ def _print_diagnostics(workdir):
 def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     """体检：mtime + 卡片结构指纹双信号对比，附复核阈值与 builder 版本升级提示。"""
     cj = os.path.join(workdir, "cards.json")
+    if not os.path.exists(cj):
+        # cards.json 缺失不再抛 FileNotFoundError（v4.9.3）：直通模式给明确说明，其余提示原因
+        note = ("数据集直通模式交付包：资产是 datasets.json，看板结构指纹体检不适用"
+                if os.path.exists(os.path.join(workdir, "datasets.json"))
+                else "未找到 cards.json——该目录不是看板模式交付包/工作目录，无法体检")
+        return {"pages": [], "checkedAt": time.strftime("%Y-%m-%d %H:%M"),
+                "builtAt": "", "ageDays": None, "freshDays": fresh_days, "overdue": False,
+                "builderVersion": "", "builderCurrent": BUILDER_VERSION,
+                "upgradeAvailable": False, "accel": None, "note": note}
     with open(cj, encoding="utf-8") as f:
         cards_doc = json.load(f)
     meta = cards_doc.get("_meta") or {}
@@ -1831,6 +1840,8 @@ def main():
         r = check_staleness(workdir, fresh_days)
         print(f"资产体检（{r['checkedAt']}）· 复核阈值 {r['freshDays']} 天")
         _print_diagnostics(workdir)
+        if r.get("note"):
+            print(f"  ℹ️  {r['note']}")
         for p in r["pages"]:
             if p["error"]:
                 print(f"  ❌ {p['title']}：看板不存在或无权访问")

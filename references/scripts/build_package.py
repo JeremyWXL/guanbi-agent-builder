@@ -30,7 +30,7 @@ import json, os, shutil, subprocess, sys, tempfile
 from datetime import date, datetime
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.9.2"
+BUILDER_VERSION = "4.9.3"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 复制进交付包 references/ 的脚本（维护期自检/取数/回归全靠它们；check_package 的

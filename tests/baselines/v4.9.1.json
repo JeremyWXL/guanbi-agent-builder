@@ -92,78 +92,91 @@
   {
    "severity": "P2",
    "title": "workbench --check 在 cards.json 缺失时抛未捕获 FileNotFoundError traceback",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "manifest keywords 传数组时 render_agent_skill TypeError（SKILL.md 未注明须字符串）",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "DRILL 卡不支持 --dynamic-param；传未声明参数 guancli 显式报错与交付包 SKILL.md「静默无效」表述不符",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "make_link.py --list 不带看板名参数时 IndexError 崩溃（参数解析缺边界检查）",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "新老品 KPI 卡无时间筛选/时间参数（全周期累计口径），资产目录与 businessKnowledge 未登记该边界",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "资产目录未提示大区覆盖缺口（饮品无大区×营业额卡、周边大区数据仅华东片区）",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "businessKnowledge「期间取值 2025 年各月」与 examples/趋势卡含 2026 年数据矛盾（搭建期表述不准）",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "card preview 只返回格式化显示值（4.5万 1 位小数），贡献额按显示值计算有舍入误差（工具限制登记）",
-   "status": "open"
+   "status": "fixed",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "examples.json fetch 不支持 type=metric，指标中心取数链路无自动化回归覆盖",
-   "status": "open",
-   "note": "沿用 v4.8.0 open 项，本版模板仍仅 card/sql，未修"
+   "status": "fixed",
+   "note": "沿用 v4.8.0 open 项，本版模板仍仅 card/sql，未修",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "run_sql 表名报错不友好（平台 500 堆栈，TABLE_OR_VIEW_NOT_FOUND 埋在 details）",
-   "status": "open",
-   "note": "沿用 v4.8.0 open 项，mxbc SQL 不可用未复测"
+   "status": "fixed",
+   "note": "沿用 v4.8.0 open 项，mxbc SQL 不可用未复测",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "check_package 通过时输出过简，不展示 L3 各冒烟项逐项结果",
-   "status": "open",
-   "note": "沿用 v4.8.0 open 项，本轮 build_package [4/5] 仍一行带过，复测仍在"
+   "status": "fixed",
+   "note": "沿用 v4.8.0 open 项，本轮 build_package [4/5] 仍一行带过，复测仍在",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "diff_baselines 旧版 l2.score=null 时把新版成绩误报为「本次未测评」",
-   "status": "open",
-   "note": "沿用 v4.8.0 差异节所记 P2"
+   "status": "fixed",
+   "note": "沿用 v4.8.0 差异节所记 P2",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "run_sql 裸中文表名反引号",
-   "status": "open",
-   "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
+   "status": "fixed",
+   "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用",
+   "fixedIn": "4.9.3"
   },
   {
    "severity": "P2",
    "title": "停更页采样失败",
-   "status": "open",
-   "note": "v4.4.0 遗留，v4.8.0 基线注明仍未解决，本轮沿用"
+   "status": "tracking",
+   "note": "v4.9.3 调查结论：设计如此——失败卡片已索引（_sample_index.json error 条目）、整批不中断，引用前重新采样即可，非代码缺陷"
   }
  ]
 }
