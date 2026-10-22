@@ -2,10 +2,10 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.9.3"
-summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，免费使用。
+version: "4.10.0"
+summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，并能诊断 1-N 张看板对观远洞察Agent 的就绪度、给出整合与调整建议，免费使用。
 license: MIT
-description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
+description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。仅在用户**明确点名「洞察Agent」并要求配置/评估其看板**时（如"这几张看板适不适合洞察Agent"、"洞察Agent 的看板怎么整合/改造"、"洞察Agent 数据范围怎么选"），才走「洞察Agent 看板就绪诊断」通道；用户只说"看板体检/看板优化/搭建助手"等未点名洞察Agent 的请求，一律走八步 data agent 向导，不得主动切入诊断。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
 agent_created: true
 ---
 
@@ -14,6 +14,29 @@ agent_created: true
 把用户熟悉的 BI 看板变成 WorkBuddy 里的专属 data agent。全程对话引导，AI 自动生成配置，用户只做确认与纠偏。本技能为**开源免费版**（MIT License）。
 
 > **署名声明**：本 Skill 为个人开发者作品（作者：Jeremy），与观远数据（Guandata）官方无关；"观远 BI"等字样仅表示本工具面向该平台的数据看板使用。
+
+## 能力路由（先判断用户要哪一个）
+
+本 Skill 有两条并列通道，开场先分清，禁止混着做：
+
+| 用户想做什么 | 走哪条 | 产出 |
+|---|---|---|
+| 搭建/更新自己的 WorkBuddy data agent；把看板变成能问数、归因、出报告的助手 | **八步向导**（完整/快速/增量） | 可直接使用的 data agent 交付包 |
+| 评估 1–N 张看板适不适合观远**洞察Agent**；要整合/拆分/补筛选器/补层的建议 | **洞察Agent 看板就绪诊断（audit）** | 诊断报告 + 调整清单 + 配置衔接建议 |
+
+**默认走八步向导。** 只有用户**明确说出「洞察Agent」或「配置洞察Agent」**时才走 audit。用户只说"看板体检 / 看板优化 / 看板整合 / 帮我看看这些看板"但没点名洞察Agent 时，先问一句：
+
+> "您是想把这些看板搭成 WorkBuddy 里能问数的 data agent，还是在评估它们能不能配观远洞察Agent？"
+
+用户没答之前，按 data agent 搭建准备，不切诊断；用户明确说"洞察Agent"后才进入 audit。禁止因为"看板体检"四个字就主动切到诊断通道。
+
+边界澄清（用户提到以下词时先说明，不要混做）：
+
+- **观远洞察Agent**：Data Agent > 洞察智能体 > 仪表板智能体，跨看板动态规划、深度归因。本 Skill 只做它的**看板就绪诊断**，不创建/发布智能体。
+- **ChatBI**：自然语言问数，不是洞察Agent；问数场景不要套用本诊断。
+- **DecideX**：经营决策/会议产品，不是洞察Agent。
+- **仪表板洞察**：单看板自动解读，不是跨看板洞察Agent；不要用本诊断的跨页标准去要求它。
+- **本 Skill 八步向导产出的 data agent**：WorkBuddy 里的助手，不是观远洞察Agent；两者可以前后衔接，但不能混称。
 
 ## 角色与语气
 
@@ -484,6 +507,92 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 - **memory/ 永不在覆盖范围**（红线）；交付包 SKILL.md 仅更新既有字段（数据源清单、典型问题），不整体覆盖
 - 交付话术：报本次增量（新增/删除/改版卡片数、新裁决口径数、回归通过率）
 
+## 洞察Agent 看板就绪诊断通道（audit）
+
+**触发门控**：仅当用户**明确点名「洞察Agent」或要求配置洞察Agent**时进入本通道。用户没有点名、只是说"看板体检/看板优化/帮我看看看板"时，回到八步向导，禁止主动切诊断——这是为了不影响原有的 WorkBuddy data agent 搭建流程。
+
+用户不是要搭 WorkBuddy data agent，而是想知道"我这几张看板适不适合观远洞察Agent、该怎么整合/改造"时走本通道。四步，约 20–40 分钟；只读诊断，不改客户 BI。
+
+**规则依据**：`references/insight-agent-readiness.md`（官方硬要求 R-01…R-06 + 项目方法论 R-07…R-16 + 五模式 + 评分 + 失败模式）。所有结论必须引用规则编号与证据；机械判定、推断、待确认三类分开写。
+
+**输入**：1–10 张看板（官方数据范围上限 10 张）+ 1–3 个目标业务问题 + 谁发起/谁看结论/谁负责行动。
+
+**进度播报**："第 N 步/共 4 步（看板诊断）· 这一步是 XX，大约还需要 X 分钟"：A1 选定看板与场景 → A2 学习与结构体检 → A3 整合与调整建议 → A4 报告输出。
+
+### A1 选定看板与场景
+
+1. 先确认环境前提：BI 8.1+、仪表板洞察可用、洞察Agent License 已开通。CLI 不能完整验证，问用户一句；不确定就标注"环境前提待确认"，不要假装通过。
+2. 用 `list_pages.py --dirs` / `--dir "<目录>"` / `--keyword` 呈现候选，勾选 1–N 张（超过 10 张时明确说"官方上限 10 张，需要取舍或拆成第二个智能体"）。也支持报看板名（`guancli search`）或贴链接（`guancli url`）。
+3. 收集三件事：目标业务问题 1–3 个（例："为什么华东单店业绩下滑"）；谁发起/谁看结论/谁负责行动；当前人工分析从哪里开始、到哪里结束。
+4. 运行适检并先拦不可用页：
+   ```bash
+   python3 references/scripts/check_pages.py <pageId1> <pageId2> ... -o <工作目录>
+   python3 references/scripts/wizard_state.py init <工作目录> --mode audit
+   python3 references/scripts/wizard_state.py set <工作目录> --state audit --step 1 --status in_progress
+   ```
+5. **确认点**：看板清单（带 BI 链接）+ 目标问题 + 业务范围。用户确认后：
+   ```bash
+   python3 references/scripts/wizard_state.py confirm <工作目录> --state audit --step 1
+   ```
+
+### A2 学习与结构体检
+
+按顺序静默执行，只汇报结论：
+
+```bash
+python3 references/scripts/parse_page.py <pageId1> <pageId2> ... -o <工作目录>
+python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
+python3 references/scripts/validate_cards.py <工作目录>/card-data
+python3 references/scripts/check_formulas.py <工作目录>
+python3 references/scripts/audit_insight_pages.py <工作目录> --scenario "<目标业务问题>" --seed-advice
+python3 references/scripts/insight_audit_report.py <工作目录> --draft
+```
+
+- 采样是"推荐但可跳过"：不采样时行数标记"未实测"，不能当通过；报告会明示上下文风险未实测。
+- `audit_insight_pages.py` 产出 `insight-audit.json` + `insight-advice.seed.json`；`--draft` 产出 `insight-audit-draft.html`，供用户边看边纠偏。
+- **AI 必须先用业务语言复述**：每张看板"在回答什么问题、关键指标是什么、粒度到哪一层"；阻断项与 P0 按影响排序；哪些是机械判定、哪些是推断、哪些需要用户确认。禁止只丢一份 JSON 或长表格给用户。
+- **确认点**：用户纠正业务理解、确认体检事实。确认后 `confirm --state audit --step 2`（前置产物 `insight-audit.json`）。
+
+### A3 整合与调整建议
+
+复制 `insight-advice.seed.json` 为 `insight-advice.json`，在其基础上补业务判断（底稿已填好 pgId/verdict/priority/evidence/联动筛选器，AI 不重写结构）。必须包含：
+
+1. **推荐模式**：一张宽表 / 多层下钻 / 主从Agent / 批量分治 / 链路复盘，主模式唯一 + 备选 + 理由；
+2. **目标架构**：总览 / 定位 / 明细各由哪张看板承担，新页还是改造；
+3. **逐页动作**：保留 / 改造 / 拆分 / 合并 / 新建 / 移出，P0/P1/P2，每条带 evidence（finding id）与预期效果；
+4. **跨页动作**：合并重复卡、统一公共维度、补联动筛选器、统一口径、10 页预算取舍；
+5. **配置衔接**：每页建议的联动筛选器（名称 + 字段 + cdId）、建议业务范围、默认分析思路骨架、输出要求、业务知识缺口、是否拆分析专家；
+6. **路线图**：P0 先做什么、P1/P2 是什么、预估工作量（人天/周，给区间）；
+7. **待确认问题**：业务链路、责任部门映射、异常阈值等看板推不出的内容。
+
+校验（不通过禁止进入 A4）：
+
+```bash
+python3 references/scripts/insight_audit_report.py <工作目录> --check
+```
+
+**确认点**：用户确认建议清单。确认后 `confirm --state audit --step 3`（前置产物 `insight-advice.json`）。
+
+### A4 报告输出
+
+```bash
+python3 references/scripts/insight_audit_report.py <工作目录>
+```
+
+产出 `insight-audit.html`（一页式，可点看板名跳 BI）、`insight-audit.md`（贴文档/PPT）、`insight-audit.json`（机器可读基线）。报告九节：结论摘要 / 目标场景 / 体检总表 / 关键发现 / 整合建议 / 逐页调整 / 配置衔接 / 路线图 / 附录。
+
+交付话术："这是诊断与建议，不是已改造完成；按 P0 改完可以回来复检，复检会和这次基线对比。要直接搭一个 WorkBuddy data agent 的话，我们走另一条八步向导。"
+
+确认后 `confirm --state audit --step 4`（前置产物 `insight-audit.md` + `insight-audit.html`）。
+
+### 看板诊断五条底线
+
+1. **只读**：不改客户看板、不建/不发洞察Agent、不写数据集；只输出诊断与建议。
+2. **阻断不绕过**：R-01（>10 页）与 R-02（无联动筛选器）是官方硬要求，必须优先解决；不能靠"其他页分高"平均掉。
+3. **每条建议有证据**：卡片名/cdId、筛选器字段、行数、公式原文、mtime；禁止"建议优化/建议合并"这类无证据结论。
+4. **机械判定 ≠ 业务判断**：结构问题脚本可复算；业务链路、责任映射、异常阈值必须请用户确认，标注"待确认"。
+5. **不混产品**：洞察Agent ≠ ChatBI ≠ DecideX ≠ 仪表板洞察 ≠ 本工具的 data agent；用户提及时先澄清。
+
 ## 全程红线
 
 1. **禁止跳过确认点**：第 1、3（若补充认知）、4、5、7 步必须等用户明确确认才能继续（快速模式的确认点见 lite 分支：L1 清单核对、L3 冲突裁决、L4 场景确认、L5 验收）
@@ -508,3 +617,4 @@ python3 references/scripts/check_dims.py <工作目录> --seed-dims
 16. **交付三条**（v4.7 工程化，实机 review 教训）：交付包必须经 `build_package.py` 机械组装 + `check_package.py` 体检通过——禁止手工拼装、禁止裁剪 cards.json（裁剪 = run_sql/make_link/sample_cards 连锁瘫痪）；交付助手 SKILL.md 必须 `render_agent_skill.py` 模板渲染，禁止自由撰写（自由撰写 = 缺节 + CLI 凭记忆写错）；examples.json 验收回填必须走 `eval_examples.py --record/--confirm`——过不了取数源校验的数字进不了基准
 17. **指标中心三条**（v4.8）：指标中心对齐只做引用已发布同口径指标 / 顺手创建原子指标（≤10 条）/ 一次性推荐——指标体系建设、批量迁移归并、复合/派生批量梳理一律路由专项流程，不在本向导展开；指标中心取数必经 `run_metric.py` 白名单校验，禁止裸调 `guancli metric query`；指标中心口径与看板口径不一致时列入拍板组请用户裁决，禁止 AI 自行二选一
 18. **数据量三条**（v4.8.2，行数上限）：CLI 取数有行数上限（卡片 preview 图表默认最多 1 万行，超上限即截断）——搭建时留意数据集体量并在资产目录标注大数据集、向用户说明上限风险；用户问题可能触及上限时**优先**提醒缩小取数范围（收窄时间段/加筛选）或按维度聚合，确实需要大量明细才按维度拆分分批取数再拼接，且动手前必须告知用户该流程长、性能与 token 消耗大；截断结果禁止当全量使用，必须声明"只是前 N 行"。交付包已内置该纪律（模板「数据红线 · 行数上限纪律」+ sql-guide.md「行数上限与分批取数纪律」节），机械渲染自动带入
+19. **洞察Agent 诊断五条**（v4.10）：只读不改看板；R-01（>10 页）/R-02（无联动筛选器）阻断不绕过；每条建议必须引用 finding 证据；机械判定/推断/待确认分开标注；不把 ChatBI、DecideX、仪表板洞察、WorkBuddy data agent 与观远洞察Agent 混称

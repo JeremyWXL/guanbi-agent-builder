@@ -1,13 +1,13 @@
 {
   "name": "guanbi-agent-builder",
-  "version": "4.9.3",
-  "description": "Data Agent 搭建向导：把观远 BI 看板变成 AI data agent 的引导式 skill（开源免费 · MIT）",
+  "version": "4.10.0",
+  "description": "Data Agent 搭建向导 + 洞察Agent 看板诊断：把观远 BI 看板变成 AI data agent，并评估 1-N 张看板对洞察Agent 的就绪度（开源免费 · MIT）",
   "license": "MIT",
   "author": "Jeremy",
   "homepage": "https://github.com/JeremyWXL/guanbi-agent-builder",
   "interface": {
     "displayName": "Data Agent 搭建向导（观远 BI）",
-    "shortDescription": "把 BI 看板变成专属 data agent 的开源引导式搭建向导",
-    "longDescription": "个人开发者作品，与观远数据官方无关。以对话方式引导不懂技术的业务用户在 WorkBuddy 中一步步搭建自己的 data agent：勾选式看板选择、校验工作台、资产体检、多 agent 总览。依赖 guancli 与 python3。"
+    "shortDescription": "把 BI 看板变成专属 data agent，并诊断洞察Agent 看板就绪度",
+    "longDescription": "个人开发者作品，与观远数据官方无关。以对话方式引导不懂技术的业务用户在 WorkBuddy 中一步步搭建自己的 data agent：勾选式看板选择、校验工作台、资产体检、多 agent 总览。v4.10 起新增洞察Agent 看板就绪诊断：仅在用户明确点名洞察Agent 时触发，指定 1-10 张看板，按官方要求做结构体检，给出整合/拆分/补筛选器建议与配置衔接草案。默认仍是 WorkBuddy data agent 搭建。依赖 guancli 与 python3。"
   }
 }

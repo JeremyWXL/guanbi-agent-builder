@@ -1,5 +1,22 @@
 # 变更日志
 
+## v4.10.0（2026-10-22）新增「洞察Agent 看板就绪诊断」通道：1–N 张看板的整合 / 调整建议
+
+解决的问题：此前 Skill 只覆盖 WorkBuddy data agent 的搭建，用户拿着 1–N 张现有看板问「适不适合观远洞察Agent、该怎么整合/改造」时没有入口。洞察Agent 不是 ChatBI、不是 DecideX、也不是仪表板洞察——它靠看板 Schema 约束分析边界，要求数据范围 ≤10 页、每页配置联动筛选器、指标口径由看板固化、上下文可控、分层可下钻。本版本把这些要求变成可执行诊断，而不是靠模型自由发挥。
+
+- **规则大脑**（`references/insight-agent-readiness.md`）：官方硬要求 R-01…R-06（≤10 页 / 每页联动筛选器 / 环境前提 / 业务范围 / 口径固化 / 上下文可控）+ 项目方法论 R-07…R-16（一页一问题 / 指标前置 / 时间范围 / 卡名可理解 / 下钻筛选承接 / 分层 / 跨页共享维度 / 批量分治 / 禁止项 / 真实数据验证），含五模式决策树、页级+组合级六维评分、常见失败模式→调整动作；案例已脱敏，不出现客户真名
+- **机械体检器**（`references/scripts/audit_insight_pages.py`）：读 `cards-raw.json` / `page-check.json` / `formulas.json` / `card-data/_sample_index.json`，输出 `insight-audit.json`；每条 finding 带规则编号、级别、scope、具体证据（卡片/cdId/筛选器/字段/行数/公式）、要求、来源、动作；跨页重叠/共享联动维度/口径冲突/层级混页；`--seed-advice` 生成建议底稿（pgId 引用、联动筛选器 cdId、候选动作已填）
+- **等级收敛**：页级 P0/阻断或组合级 P0 → 展示分封顶 64（需改造），避免「91 分但 3 个 P0」；>10 页且未取舍或可用页为 0 → 封顶 49；R-02 不绕过
+- **层级推断**：一张大页同时含总览/定位/明细不再算「三层齐全」，而是「层级混在一页」；按各页实际层级与是否拆页给分，避免大页占满三层
+- **建议校验 + 报告渲染**（`references/scripts/insight_audit_report.py`）：校验 `auditBuiltAt`、pgId、finding 引用、阻断项 P0 覆盖、联动筛选器 cdId、五模式、NEW 页完整性；`--draft` 结构草稿、`--check` 只校验、默认输出 `insight-audit.md` + `insight-audit.html`（单文件、内联 CSS、看板名可跳 BI、HTML 转义）；所有校验错误一次性列出，不写半成品
+- **状态机**（`wizard_state.py`）：新增 `audit` 模式与独立 `wizard-state-audit.json`，四步 A1 选定看板与场景 → A2 学习与结构体检 → A3 整合与调整建议 → A4 报告输出；四步均禁止 skipped；confirm 第 2/3/4 步分别验 `insight-audit.json` / `insight-advice.json` / `insight-audit.md`+`insight-audit.html`；`preflight.py` 同步检测诊断断点
+- **SKILL.md**：新增「能力路由」区分 WorkBuddy data agent / 观远洞察Agent / ChatBI / DecideX / 仪表板洞察；新增 A1–A4 整节与「看板诊断五条底线」；红线补第 19 条
+- **触发门控**：默认仍走八步 data agent 搭建；只有用户明确点名「洞察Agent」或要求配置洞察Agent 时才进入 audit。用户只说"看板体检/看板优化/帮我看看看板"未点名时，先问清是搭 data agent 还是评估洞察Agent，禁止主动切诊断——不影响原有 WorkBuddy data agent 搭建流程
+- **模板**：`references/templates/insight-advice.json`（建议 schema + 占位符）、`references/templates/insight-audit.md`（报告章节骨架）
+- **测试**：新增 `test_audit_insight_pages.py` 34 例、`test_insight_audit_report.py` 28 例，`test_wizard_state.py` +11、`test_preflight.py` +5；单测 389 → 468 全绿。真实夹具 `_preview/_sandbox-v4.9.1`（2 页 / 62 张数据卡）跑通：识别 8 条发现（3 P0），总分 64/需改造，建议校验通过，报告正常生成；P0 收敛、层级混页、cdId 严格校验均实测
+- **独立测试 Agent**：agent-tester v1.8.0 → v1.9.0，新增 L0-28/29/30（体检器/报告/诊断状态机）与 L1-audit 四步 E2E
+- **版本一致性**：4.9.3 → 4.10.0（SKILL.md frontmatter / kimi.plugin.json / parse_page / learn_dataset / workbench / wizard_state / build_package / check_package / run_metric / audit_insight_pages 十处；merge_cards.py 按惯例不动）
+
 ## v4.9.3（2026-10-20）P2 积压清零：8 个脚本 bug 修复 + 文档/模板表述纠偏（v4.9.1 回归与历史挂账）
 
 解决的问题：v4.9.1 基线回归新发现 P2 ×8 与历史沿用 P2 ×6（v4.8.0 ×4、v4.4.0 ×2）。本版本把其中 9 个脚本/基建问题全部修复，4 个表述类问题在模板与向导文档纠偏；「停更页采样失败」经调查确认为设计如此（失败卡片已索引、整批不中断，引用前重新采样即可），维持 tracking 不改码。

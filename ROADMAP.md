@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-10-20（v4.9.1 文档与测试基建补齐：本文件与 README 同步至当前版本、CI 版本检查扩面、check_package 补 fill_dim_values 体检、agent-tester 补 v4.8/v4.9 检查点；前序 v4.9.0 全局参数全链路）
+> 最近更新：2026-10-22（v4.10.0 新增「洞察Agent 看板就绪诊断」通道：1–10 张看板的规则体检、五模式整合建议、配置衔接与 HTML/Markdown 报告；前序 v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.0 全局参数全链路）
 
 ## 当前状态快照
 
-- **版本**：v4.9.3（P2 积压清零：make_link 参数解析 / workbench --check 崩溃 / render 槽位归一 / check_package 逐项展示 / run_sql 中文表名+报错提炼 / eval fetch type=metric / diff_baselines 误报，8 修 + 4 表述纠偏；v4.9.1 基线 P2 全部处置，仅停更页采样维持 tracking 设计如此。前序：v4.9.2 回归 P1 修复（check_pages 探针 / eval 中文量词）/ v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 + 数据出身行升级 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.8.0；L0 脚本矩阵 25+ 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.9.1：mxbc 全矩阵回归 L2 97.4/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 全程红线 18 条）+ references/scripts（27 个脚本 + 24 个测试文件 357 例单测）+ references/templates（8 个模板）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 九处版本一致性）
-- **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr 三模式 + confirm 第 7/8 步产物门）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
+- **版本**：v4.10.0（新增洞察Agent 看板就绪诊断通道：规则 R-01…R-16、六维评分、五模式建议、audit 四步状态机、HTML/Markdown 报告；前序 v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.1 文档与测试基建 / v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.9.0；L0 脚本矩阵 30 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 + L1-audit 四步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.9.1：mxbc 全矩阵回归 L2 97.4/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 洞察Agent 诊断四步 + 全程红线 19 条）+ references/scripts（29 个脚本 + 28 个测试文件 468 例单测）+ references/templates（10 个模板）+ references/insight-agent-readiness.md（v4.10 规则/评分/五模式）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 十处版本一致性）
+- **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr/audit 四模式 + confirm 产物门，含 audit 第 2/3/4 步）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `audit_insight_pages.py`（洞察Agent 看板机械体检：六维评分 + 跨页重叠/共享维度/口径冲突/层级 + `--seed-advice`）/ `insight_audit_report.py`（建议校验 + Markdown/HTML 报告，`--draft/--check`）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -112,6 +112,17 @@ feedback.py 双通道（GitHub issue / SkillHub 评论 ≤500 字硬校验）：
 
 观远看板大量用全局参数做动态筛选与指标切换，此前零感知——参数化公式被 SQL 内联必报错或静默算错，agent 取数只能拿参数默认值。本版本全链路支持：parse_page/learn_dataset 收割 `dynamicParams`（dpId/名称/类型/默认值，跨层去重）带入 cards.json；check_formulas 新增 PARAM_DEPENDENT 最高优先分类（含参公式禁止 SQL 内联，走 `card preview --dynamic-param` 传参取数）；红线 10 与 sql-guide 同步；交付模板加参数化卡片取数纪律（只传声明过的参数/回显不等于生效/空结果先怀疑默认参数范围）与出身行参数声明。实机验证：mxbc 页面识别参数化卡 22/34、v370 沙箱 3 个参数化指标正确归类。详见 CHANGELOG。
 
+## v4.10（洞察Agent 看板就绪诊断）——✅ 已完成（2026-10-22，v4.10.0）
+
+用户拿 1–N 张现有看板问"适不适合观远洞察Agent、该怎么整合/改造"时，之前没有入口。本版本新增 audit 通道（与八步向导并列），把官方硬要求与项目方法论变成可执行诊断：
+
+- **规则**：R-01…R-06（≤10 页 / 每页联动筛选器 / 8.1+ 与环境 / 业务范围 / 口径固化 / 上下文可控）+ R-07…R-16（一页一问题 / 指标前置 / 时间范围 / 卡名可理解 / 下钻筛选承接 / 分层 / 跨页共享维度 / 批量分治 / 禁止项 / 真实数据验证）；五模式决策树；页级+组合级六维评分；案例脱敏
+- **脚本**：`audit_insight_pages.py` 读 cards-raw/page-check/formulas/采样索引，输出 insight-audit.json 与 seed 建议；P0/阻断收敛（展示分封顶 64，>10 页/无可用页封顶 49）；层级混页单独识别；`insight_audit_report.py` 校验建议引用（pgId/finding/阻断 P0 覆盖/联动筛选器 cdId）并渲染 Markdown/HTML
+- **交互**：audit 四步（选看板与场景 → 学习与体检 → 整合建议 → 报告），独立 `wizard-state-audit.json`；四步禁止 skipped；第 2/3/4 步产物门；preflight 检测断点
+- **边界**：只读诊断，不改看板、不建洞察Agent；不覆盖 ChatBI/DecideX/仪表板洞察；报告里的配置衔接只是草案，实际配置仍在 BI 管理端
+- **验证**：真实夹具 2 页 / 62 张数据卡跑通（8 条发现 / 3 P0 / 64 分需改造 / 建议校验通过 / 报告生成）；单测 389 → 468 全绿
+- **后续**：复检 diff（与上次 insight-audit.json 对比）、看板 Schema YAML 导出、把诊断结论自动转成洞察Agent 默认思路/业务知识草稿，列入待办
+
 ## 看板角色迁移——规划中（原"v4.4"规划；版本号 v4.4.0 已被增量学习通道占用，本项递延，实施时另取版本号）
 
 > 来源：同上讨论（推演原文第二节）。知识抽象出来后看板不消失，角色迁移为：agent 的**训练语料 + 漂移检测基准 + 呈现模板库**。失去价值的只是"看板作为人与数据唯一界面"这一定位。
@@ -144,3 +155,4 @@ feedback.py 双通道（GitHub issue / SkillHub 评论 ≤500 字硬校验）：
 - SQL 直查探查结论会过期：数据集学习时可用不代表验收时可用（演示域文件型数据集实测中途失效）；第 7 步必须先探活再测，失效降级卡片间交叉验证，交付能力标注以第 7 步实测为准
 - 靠 prompt 约束模型自觉的环节（手工转写/组装/回填）正是低配模型最容易偷工减料的地方：v4.7 实机 review 发现 cards.json 被"精简"重构导致三功能连锁瘫痪——一切结构性产物要么脚本生成、要么脚本验收（correct by construction），LLM 只产出需要判断力的语义内容
 - 参数化公式（含 `[DYNAMIC_PARAMS.xxx]`）不是普通公式：SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）——PARAM_DEPENDENT 分类最高优先，走 card preview 传参取数（v4.9 实机验证）
+- 洞察Agent 的看板要求不是"人能看就行"：每张看板必须有可被选中的联动筛选器（R-02），数据范围最多 10 页（R-01），单页 40 卡会上下文爆掉（R-06）；P0 不能被其他页高分平均掉（展示分封顶 64）；一张大页同时含总览/定位/明细不等于"三层齐全"，而是"层级混页"（v4.10 实机夹具校准）

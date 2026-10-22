@@ -26,6 +26,6 @@ jobs:
         run: |
           V=$(grep -oP '^version: "\K[^"]+' SKILL.md)
           grep -q "\"version\": \"$V\"" kimi.plugin.json || { echo "kimi.plugin.json 版本漂移"; exit 1; }
-          for f in references/scripts/parse_page.py references/scripts/learn_dataset.py references/scripts/workbench.py references/scripts/wizard_state.py references/scripts/build_package.py references/scripts/check_package.py references/scripts/run_metric.py; do
+          for f in references/scripts/parse_page.py references/scripts/learn_dataset.py references/scripts/workbench.py references/scripts/wizard_state.py references/scripts/build_package.py references/scripts/check_package.py references/scripts/run_metric.py references/scripts/audit_insight_pages.py; do
             grep -q "BUILDER_VERSION = \"$V\"" "$f" || { echo "$f BUILDER_VERSION 漂移"; exit 1; }
           done

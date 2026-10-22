@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""wizard_state.py 单测：--mode 字段、lite 轨道约束与旧档案兼容"""
+"""wizard_state.py 单测：--mode 字段、lite/incr/audit 轨道约束、产物门与旧档案兼容"""
 import json, os, subprocess, sys, tempfile, unittest
 
 SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wizard_state.py")
@@ -215,6 +215,137 @@ class WizardStateConfirmGateTest(unittest.TestCase):
             json.dump({"package": self.dir, "result": "pass", "errors": []}, f)
         r = run("confirm", self.dir, "--step", "8")
         self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class WizardStateAuditTest(unittest.TestCase):
+    """audit 看板诊断模式：独立状态文件、四步、全步禁跳过、产物门、话术不串台"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.audit_path = os.path.join(self.dir, "wizard-state-audit.json")
+
+    def audit_state(self):
+        with open(self.audit_path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def write_audit_state(self, state):
+        with open(self.audit_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False)
+
+    def write_file(self, name, content=""):
+        with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def test_init_audit_writes_separate_four_step_file(self):
+        r = run("init", self.dir, "--mode", "audit", "--name", "月度经营分析")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "wizard-state.json")))
+        state = self.audit_state()
+        self.assertEqual(state["mode"], "audit")
+        self.assertEqual(sorted(state["steps"].keys()), ["1", "2", "3", "4"])
+        self.assertEqual({s["status"] for s in state["steps"].values()}, {"pending"})
+        self.assertIn("看板诊断（四步）", r.stdout)
+
+    def test_init_audit_duplicate_rejected(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("init", self.dir, "--mode", "audit")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("已存在", r.stderr)
+
+    def test_audit_show_uses_four_steps_without_eight_step_wording(self):
+        run("init", self.dir, "--mode", "audit", "--name", "月度经营分析")
+        r = run("show", self.dir, "--state", "audit")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("看板诊断模式", r.stdout)
+        self.assertIn("选定看板与场景", r.stdout)
+        self.assertIn("报告输出", r.stdout)
+        self.assertNotIn("八步", r.stdout)
+        self.assertNotIn("搭建进度", r.stdout)
+        self.assertNotIn("业务认知补充", r.stdout)
+
+    def test_audit_next_resumes_from_first_step(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("next", self.dir, "--state", "audit")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("第 1 步", r.stdout)
+        self.assertIn("选定看板与场景", r.stdout)
+        self.assertIn("看板诊断", r.stdout)
+        self.assertNotIn("八步", r.stdout)
+
+    def test_audit_next_completed_message(self):
+        run("init", self.dir, "--mode", "audit")
+        state = self.audit_state()
+        for n in ("1", "2", "3", "4"):
+            state["steps"][n]["status"] = "confirmed"
+        self.write_audit_state(state)
+        r = run("next", self.dir, "--state", "audit")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("诊断报告已生成", r.stdout)
+        self.assertNotIn("八步", r.stdout)
+        self.assertNotIn("搭建已交付", r.stdout)
+
+    def test_audit_all_four_steps_not_skippable(self):
+        run("init", self.dir, "--mode", "audit")
+        for step in ("1", "2", "3", "4"):
+            r = run("set", self.dir, "--state", "audit", "--step", step, "--status", "skipped")
+            self.assertEqual(r.returncode, 3,
+                             f"audit 第 {step} 步 skipped 应被拒绝: {r.stdout}{r.stderr}")
+            self.assertIn("不允许跳过", r.stderr)
+
+    def test_build_step3_still_skippable(self):
+        """build 侧既有行为不回归：第 3 步仍可 skipped"""
+        run("init", self.dir)
+        r = run("set", self.dir, "--step", "3", "--status", "skipped")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_confirm_step1_has_no_artifact_gate(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_confirm_step2_requires_insight_audit(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "2")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("insight-audit.json", r.stderr)
+        self.assertIn("audit_insight_pages.py", r.stderr)
+        self.write_file("insight-audit.json", "{}")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_confirm_step3_requires_advice(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "3")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("insight-advice.json", r.stderr)
+        self.assertIn("--seed-advice", r.stderr)
+        self.write_file("insight-advice.json", "{}")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "3")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_confirm_step4_requires_both_reports(self):
+        run("init", self.dir, "--mode", "audit")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("insight_audit_report.py", r.stderr)
+        self.write_file("insight-audit.md", "# 报告")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("insight-audit.html", r.stderr)
+        self.write_file("insight-audit.html", "<html></html>")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_does_not_touch_build_state(self):
+        run("init", self.dir, "--name", "搭建档案", "--mode", "full")
+        build_path = os.path.join(self.dir, "wizard-state.json")
+        with open(build_path, encoding="utf-8") as f:
+            before = f.read()
+        r = run("init", self.dir, "--name", "诊断对象", "--mode", "audit")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(build_path, encoding="utf-8") as f:
+            after = f.read()
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

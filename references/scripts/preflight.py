@@ -5,7 +5,8 @@
   --json 输出纯 JSON（人类可读行不混排，可直接管道解析）：{"ok": bool, "checks": [...]}
 检查项:
   0. 断点续建检测（仅当传入工作目录时）：存在 wizard-state.json 则提示续建进度；
-     存在 wizard-state-incr.json 则提示增量学习会话进度（搭建完成后可发起增量学习）
+     存在 wizard-state-incr.json 则提示增量学习会话进度（搭建完成后可发起增量学习）；
+     存在 wizard-state-audit.json 则提示看板诊断进度（信息性，不影响退出码）
   1. guancli 可执行文件存在
   2. guancli 版本可读取（脚本对其输出格式有隐式依赖，版本异常时给出提醒）
   3. 认证状态有效（guancli auth status）
@@ -56,6 +57,7 @@ STEP_NAMES = {
     5: "分析场景定义", 6: "分析框架与输出模板", 7: "测试验收", 8: "固化交付",
 }
 INCR_STEP_NAMES = {1: "增量选看板", 2: "增量学习", 4: "增量口径裁决", 7: "增量验收", 8: "交付更新"}
+AUDIT_STEP_NAMES = {1: "选定看板与场景", 2: "学习与结构体检", 3: "整合与调整建议", 4: "报告输出"}
 STATUS_LABELS = {
     "pending": "未开始", "in_progress": "进行中", "confirming": "待用户确认",
     "confirmed": "已确认", "skipped": "已跳过",
@@ -135,6 +137,36 @@ def check_incr_resume(workdir):
           f"【{INCR_STEP_NAMES[nxt]}】（状态：{status}）。继续请说「继续增量学习」")
 
 
+def check_audit_resume(workdir):
+    """看板诊断断点检测（独立状态文件 wizard-state-audit.json，信息性检查，永不影响退出码）"""
+    path = os.path.join(workdir, "wizard-state-audit.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        check("断点续建", True, False,
+              f"看板诊断状态文件损坏无法解析（{path}），原文件保留，请人工检查")
+        return
+    steps = state.get("steps", {})
+    nxt, entry = None, {}
+    for n in AUDIT_STEP_NAMES:
+        e = steps.get(str(n), {})
+        if e.get("status", "pending") not in ("confirmed", "skipped"):
+            nxt, entry = n, e
+            break
+    name = state.get("agentName") or "未命名"
+    if nxt is None:
+        check("断点续建", True, False,
+              f"看板诊断「{name}」四步已完成、诊断报告已生成；如需诊断新看板可重新发起看板诊断")
+        return
+    status = STATUS_LABELS.get(entry.get("status", "pending"), entry.get("status", ""))
+    check("断点续建", True, False,
+          f"看板诊断进行到第 {nxt} 步【{AUDIT_STEP_NAMES[nxt]}】（状态：{status}），"
+          f"诊断对象「{name}」。继续请说「继续看板诊断」")
+
+
 def main():
     global _JSON_MODE
     as_json = "--json" in sys.argv
@@ -145,6 +177,7 @@ def main():
     if positional:
         check_resume(positional[0])
         check_incr_resume(positional[0])
+        check_audit_resume(positional[0])
 
     # 1. guancli 存在
     if not shutil.which("guancli"):
@@ -220,7 +253,7 @@ def finish(as_json, base_code):
         print(json.dumps({"ok": code == 0, "checks": results}, ensure_ascii=False, indent=1))
         sys.exit(code)
     if code == 0:
-        print("\n前置检查通过，可以开始搭建。")
+        print("\n前置检查通过，可以开始。")
     else:
         print("\n存在必须修复的问题，修复后重新运行 preflight.py。")
     sys.exit(code)

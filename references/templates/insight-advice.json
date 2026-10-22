@@ -1,0 +1,69 @@
+{
+  "_help": "把本文件复制为 <工作目录>/insight-advice.json 后填写。auditBuiltAt 必须等于 insight-audit.json 的 meta.builtAt；evidence 只能引用 insight-audit.json 里真实存在的 finding id；cdId 必须来自对应页面的联动筛选器。占位符 <...> 全部替换后才能通过校验。",
+  "auditBuiltAt": "<insight-audit.json 的 meta.builtAt>",
+  "scenario": "<目标业务问题，1-3 句>",
+  "businessScope": "<对象 + 场景 + 决策，一句话，例如：连锁零售单店经营异常定位与归因>",
+  "mode": {
+    "primary": "<一张宽表|多层下钻|主从Agent|批量分治|链路复盘>",
+    "alternatives": ["<备选模式，可空>"],
+    "reason": "<为什么选这个模式，必须引用看板结构证据>"
+  },
+  "targetArchitecture": [
+    {
+      "layer": "<总览|定位|明细|单对象|批次汇总>",
+      "pages": ["<pgId 或 NEW>"],
+      "purpose": "<这一层解决什么问题>",
+      "linkageFilters": ["<cdId>"],
+      "newPage": false
+    }
+  ],
+  "pageActions": [
+    {
+      "pgId": "<pgId 或 NEW>",
+      "name": "<看板名；NEW 时写建议的新看板名>",
+      "verdict": "<保留|改造|拆分|合并|新建|移出>",
+      "priority": "<P0|P1|P2>",
+      "actions": ["<具体动作，一条一句>"],
+      "evidence": ["<F-001>"],
+      "expectedEffect": "<改完后 Agent 能多做什么 / 少犯什么错>"
+    }
+  ],
+  "crossPageActions": [
+    {
+      "type": "<合并|拆分|补层|统一口径|补筛选器|移出>",
+      "pages": ["<pgId>"],
+      "priority": "<P0|P1|P2>",
+      "action": "<跨页动作>",
+      "evidence": ["<F-001>"]
+    }
+  ],
+  "configHandoff": {
+    "linkageFilters": [
+      {
+        "pgId": "<pgId>",
+        "name": "<筛选器名称>",
+        "field": "<字段名>",
+        "cdId": "<筛选器 cdId>"
+      }
+    ],
+    "businessScope": "<建议填入洞察Agent「业务范围」的文本>",
+    "defaultThinking": "<建议填入「默认思路」的 4 步骨架>",
+    "outputRequirements": "<建议填入「输出要求」的要点>",
+    "businessKnowledgeGaps": ["<看板推不出、需要用户补的业务知识>"],
+    "expertRoles": [
+      {
+        "name": "<分析专家名称，可空>",
+        "scope": "<负责的业务范围>",
+        "reason": "<为什么需要单独拆专家>"
+      }
+    ]
+  },
+  "roadmap": [
+    {
+      "phase": "<P0|P1|P2>",
+      "items": ["<动作>"],
+      "effort": "<约 X 人天/周，给区间>"
+    }
+  ],
+  "openQuestions": ["<必须请用户确认的业务问题>"]
+}

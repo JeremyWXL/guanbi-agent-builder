@@ -2,9 +2,9 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.8.0"
-summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
-description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L2 交付 agent 对话质量三层测试与评分标准。
+version: "1.9.0"
+summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步 / 洞察Agent 看板诊断四步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
+description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导/洞察Agent 看板诊断或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L1-audit 看板诊断四步、L2 交付 agent 对话质量三层测试与评分标准。
 ---
 
 # guanbi-agent-builder 独立测试 Agent
@@ -51,6 +51,9 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-25 | 交付状态机产物门 | `wizard_state.py confirm --step 7/8` | 无 examples.json 验收回填 confirm 7 exit 3；无 package-check.json（或 result=fail）confirm 8 exit 3；凭证齐全放行 |
 | L0-26 | 指标中心直查 | `run_metric.py <metricId>` / `--check-scope`（v4.8 起） | metricId 须在 metrics.json governedRef 白名单内：越界 exit 3 且**不调 guancli**；无 governedRef 时降级不阻断；--check-scope 双向断言（白名单内 exit 0 / 外 exit 3） |
 | L0-27 | 问题反馈通道 | `feedback.py <目录> --title "..." --description "..." --dry-run`（v4.6 起） | dry-run 打印双通道预览且零发送；正文只含版本/进度/平台等环境信息，**不含业务数据**；SkillHub 通道 >500 字退出 2 |
+| L0-28 | 洞察Agent 看板体检 | `audit_insight_pages.py <夹具目录> --scenario "..." --seed-advice`（v4.10 起） | insight-audit.json 含 pages/cross/findings/portfolio/recommendedMode；有筛选栏联动筛选器的页面不误报 R-02；单页 >20 卡 P0；P0 页展示分封顶 64；层级混页单独报；seed 用 pgId 引用看板 |
+| L0-29 | 诊断报告校验/渲染 | `insight_audit_report.py <目录> --draft` / `--check` / 默认（v4.10 起） | draft 无建议可渲染；未知 pgId/finding、阻断项无 P0、auditBuiltAt 不匹配、联动筛选器 cdId 无效、看板无逐页动作均 exit 2；合法建议生成 insight-audit.md + .html；HTML 动态文本转义 |
+| L0-30 | 诊断状态机产物门 | `wizard_state.py init --mode audit` + `confirm --state audit --step 2/3/4`（v4.10 起） | 独立 wizard-state-audit.json 四步；四步 skipped 均 exit 3；第 2 步缺 insight-audit.json、第 3 步缺 insight-advice.json、第 4 步缺 md/html 均拒绝；show/next 不出现"八步" |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -99,6 +102,19 @@ L1-lite 的决策记录同样显式写出：模式选择、低分看板的去留
 | I5 交付更新 | 内容文件合并进交付包 references/（cards-merged→cards.json）；脚本按升级通道替换；workbench.html 重新生成；builderVersion 更新；**memory/ md5 未变** | memory/ 覆盖 = 失败；能力声明与探活实测一致 |
 
 L1-incr 的决策记录同样显式写出：新看板清单与适检结论、冲突裁决、affectedExamples 处置、验收结论。
+
+## L1-audit · 洞察Agent 看板诊断四步 E2E（builder v4.10.0 起，约 15-25 分钟）
+
+模拟用户发起看板诊断（`wizard_state.py init --mode audit`），按被测 skill 的「洞察Agent 看板就绪诊断通道」执行。状态机四步独立记录在 wizard-state-audit.json，搭建档案 wizard-state.json 不被覆盖。
+
+| audit 步 | 关键检查点 | 红线巡检 |
+|----|-----------|----------|
+| A1 选定看板与场景 | **触发门控：未点名洞察Agent 时不得进入，先问清搭 data agent 还是评估洞察Agent**；1–10 张看板（>10 明确取舍）；收集 1–3 个目标问题与角色；check_pages 先拦 ⛔；环境前提（8.1+/License）请用户确认 | 不把 ChatBI/DecideX/仪表板洞察混进来；不抢原有 data agent 搭建流程 |
+| A2 学习与结构体检 | parse_page 单次传全部 pageId；采样可跳过但行数标"未实测"；audit_insight_pages 产出 insight-audit.json + seed；draft 报告可打开 | 每条 finding 有证据；R-02 不误报；P0 页展示分封顶 64 |
+| A3 整合与调整建议 | 主模式唯一 + 备选；逐页动作覆盖所有看板；阻断项有 P0 动作；联动筛选器 cdId 真实；`--check` exit 0 | 禁止无证据的合并/拆分；NEW 页写清目的/层级/筛选器 |
+| A4 报告输出 | insight-audit.md + .html 生成；报告含结论/发现/架构/逐页/配置衔接/路线图；HTML 可打开、看板名可跳 BI | 只读诊断，不改客户 BI；不把诊断说成"已改造完成" |
+
+L1-audit 的决策记录显式写出：看板清单与目标问题、规则发现（阻断/P0/P1/P2）、推荐模式、逐页动作、配置衔接、待确认问题。
 
 ## L2 · 交付 agent 回答质量测评（约 20 分钟）
 
