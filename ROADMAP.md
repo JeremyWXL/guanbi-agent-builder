@@ -2,13 +2,13 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-10-23（v4.11.0 新增「洞察Agent 分析思路写作指引」：探索型/报告型两套打法、步骤契约、看板路由、上下文传递、报告框架与用户提问示例；前序 v4.10.0 洞察Agent 看板就绪诊断 / v4.9.3 P2 积压清零 / v4.9.0 全局参数全链路）
+> 最近更新：2026-10-23（v4.12.0 新增洞察Agent 看板重建的卡片级复用：只挑卡片用 createCard 重建、不整页另存；新增 extract_card_skeletons.py 抽取骨架；前序 v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零）
 
 ## 当前状态快照
 
-- **版本**：v4.11.0（新增洞察Agent 分析思路写作指引：探索型/报告型两套打法、单步契约、看板路由、上下文传递、报告框架与用户提问示例；前序 v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.1 文档与测试基建 / v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.9.0；L0 脚本矩阵 30 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 + L1-audit 四步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.9.1：mxbc 全矩阵回归 L2 97.4/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 洞察Agent 诊断四步 + 全程红线 19 条）+ references/scripts（29 个脚本 + 28 个测试文件 475 例单测）+ references/templates（11 个模板）+ references/insight-agent-readiness.md（v4.10 规则/评分/五模式）+ references/insight-agent-thinking-guide.md（v4.11 分析思路写作）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 十处版本一致性）
-- **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr/audit 四模式 + confirm 产物门，含 audit 第 2/3/4 步）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `audit_insight_pages.py`（洞察Agent 看板机械体检：六维评分 + 跨页重叠/共享维度/口径冲突/层级 + `--seed-advice`）/ `insight_audit_report.py`（建议校验 + Markdown/HTML 报告，`--draft/--check`）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
+- **版本**：v4.12.0（新增洞察Agent 看板重建的卡片级复用：只挑卡片用 createCard 重建、不整页另存；extract_card_skeletons.py 抽骨架；前序 v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.1 文档与测试基建 / v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.9.1；L0 脚本矩阵 31 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 + L1-audit 四步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.9.1：mxbc 全矩阵回归 L2 97.4/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 洞察Agent 诊断四步 + 全程红线 19 条）+ references/scripts（30 个脚本 + 29 个测试文件 486 例单测）+ references/templates（11 个模板）+ references/insight-agent-readiness.md（v4.10 规则/评分/五模式）+ references/insight-agent-thinking-guide.md（v4.11 分析思路写作）+ references/insight-agent-card-reuse.md（v4.12 卡片级复用/重建）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 十处版本一致性）
+- **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr/audit 四模式 + confirm 产物门，含 audit 第 2/3/4 步）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `audit_insight_pages.py`（洞察Agent 看板机械体检：六维评分 + 跨页重叠/共享维度/口径冲突/层级 + `--seed-advice`）/ `insight_audit_report.py`（建议校验 + Markdown/HTML 报告，`--draft/--check`）/ `extract_card_skeletons.py`（按 cdId 从 cards-raw 抽 createCard 骨架 + 核对清单）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
 ## 设计原则（迭代时不得破坏）
@@ -136,6 +136,17 @@ v4.10 只给了一个 4 步骨架，不能指导用户为已搭建的洞察Agent
 - **A3**：先判断 Agent 类型，再按指引写；不确定时直接问用户“自由提问探索，还是固定场景出报告”
 - **验证**：`test_insight_audit_report` 28 → 35 例；全量 468 → 475 全绿
 - **后续**：把分析思路草稿自动转成洞察Agent 配置的导入格式（若平台提供 API）、用真实问题回归路径合理性
+
+## v4.12（洞察Agent 看板重建：卡片级复用）——✅ 已完成（2026-10-23，v4.12.0）
+
+诊断建议拆分/合并/新建页后，原看板里符合洞察Agent 要求、用户看惯的卡片需要保留。整页 `page save-as` 会把冗余卡片/数据一起带过去；guanvis 0.1.50 又没有单卡 `card save-as`。本版本补卡片级复用：
+
+- **能力边界**：checkout 的 `card_*.js` 是 `attachCard`，依赖源工程 base/manifest，不能搬到 `guanvis init` 新工程；主路径改为 `checkout` 读源卡 → `init` 目标工程 → `createCard()` 重建 → `genid` → `preview/publish`
+- **抽取器**：`extract_card_skeletons.py` 按 `--cdIds` 从 cards-raw 抽选中卡，输出 `card-reuse.json` + `card-skeletons/*.js` + 核对清单；计算字段/未识别聚合以 TODO 标注，不伪造
+- **报告**：新增 `cardReuse`（method 仅 `rebuild`/`keep`，拒绝整页另存），有拆分/合并/新建页时必填；第 6 节展示复用表与命令（checkout → extract → init → genid → preview → publish --dry-run → publish）
+- **A3**：新增“卡片复用与迁移”步骤，要求先抽骨架再重建；诊断只读，发布必须用户确认
+- **验证**：新增 extractor 7 例；报告 35 → 39 例；全量 475 → 486 全绿
+- **后续**：扩展更多图表类型的 JSON→createCard 自动翻译；按目标页批量生成 page.js 布局；发布后源卡/新卡数值自动对账
 
 ## 看板角色迁移——规划中（原"v4.4"规划；版本号 v4.4.0 已被增量学习通道占用，本项递延，实施时另取版本号）
 

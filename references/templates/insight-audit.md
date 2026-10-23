@@ -44,6 +44,10 @@
 
 {{page_actions}}
 
+### 卡片复用与迁移
+
+{{card_reuse}}
+
 ## 7. 洞察Agent 配置衔接
 
 ### Agent 类型与业务范围

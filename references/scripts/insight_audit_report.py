@@ -32,7 +32,7 @@ VERDICTS = ["保留", "改造", "拆分", "合并", "新建", "移出"]
 PRIORITIES = ["P0", "P1", "P2"]
 REQUIRED_KEYS = [
     "auditBuiltAt", "scenario", "businessScope", "mode", "targetArchitecture",
-    "pageActions", "crossPageActions", "configHandoff", "roadmap", "openQuestions",
+    "pageActions", "cardReuse", "crossPageActions", "configHandoff", "roadmap", "openQuestions",
 ]
 
 DIMENSIONS = [
@@ -410,6 +410,42 @@ def validate(audit, advice):
         errors.append("以下看板没有逐页动作（保留/改造/拆分/合并/移出）：{}——每个入选看板都要有结论".format(
             "、".join(missing_pages)))
 
+    card_reuse = [a for a in as_list(advice.get("cardReuse")) if isinstance(a, dict)]
+    restructure = any(s(a.get("verdict")) in ("拆分", "合并", "新建") for a in page_actions) \
+        or bool(arch_new_layers)
+    if restructure and not card_reuse:
+        errors.append("存在拆分/合并/新建页，但 cardReuse 为空——必须给出卡片复用/重建方案"
+                      "（只挑需要的卡片 rebuild；不整页另存）")
+    for index, item in enumerate(card_reuse):
+        where = "cardReuse[{}]".format(index)
+        source = s(item.get("sourcePgId"))
+        target = s(item.get("target"))
+        method = s(item.get("method"))
+        if not source:
+            errors.append("{} 缺少 sourcePgId".format(where))
+        elif source not in page_by_id:
+            errors.append("{} 的 sourcePgId={!r} 不在体检的看板里".format(where, source))
+        if not target:
+            errors.append("{} 缺少 target（现有 pgId 或 NEW）".format(where))
+        elif target != "NEW" and target not in page_by_id:
+            errors.append("{} 的 target={!r} 不在体检的看板里".format(where, target))
+        if target == "NEW" and not s(item.get("targetName")):
+            errors.append("{} 的 target=NEW，必须写 targetName（新看板名）".format(where))
+        if method not in ("rebuild", "keep"):
+            errors.append("{} 的 method={!r} 不在 rebuild/keep 内（不整页另存）".format(where, method))
+        keep = [s(x) for x in as_list(item.get("keepCards")) if s(x)]
+        rebuild = [s(x) for x in as_list(item.get("rebuildCards")) if s(x)]
+        if not keep and not rebuild:
+            errors.append("{} 的 keepCards 与 rebuildCards 不能同时为空".format(where))
+        if not s(item.get("reason")):
+            errors.append("{} 缺少 reason（为什么这样复用）".format(where))
+        if method == "rebuild" and not rebuild:
+            errors.append("{} 的 method=rebuild，必须写 rebuildCards（要重建哪几张）".format(where))
+        if method == "keep" and not keep:
+            errors.append("{} 的 method=keep，必须写 keepCards（留在原页的卡片）".format(where))
+        if method == "keep" and target == "NEW":
+            warnings.append("{} 的 method=keep 表示卡片留在原页，target 不应为 NEW".format(where))
+
     cross_actions = [a for a in as_list(advice.get("crossPageActions")) if isinstance(a, dict)]
     p0_evidence = set()
     for index, action in enumerate(page_actions):
@@ -723,6 +759,26 @@ def build_view(audit, advice, draft, base_url):
             "evidence": refs(action.get("evidence")),
         })
 
+    card_reuse_view = []
+    for item in as_list(advice.get("cardReuse")):
+        item = as_dict(item)
+        source = s(item.get("sourcePgId"))
+        target = s(item.get("target"))
+        card_reuse_view.append({
+            "sourcePgId": source,
+            "sourceName": page_name(source),
+            "sourceUrl": page_link(source),
+            "target": target,
+            "targetName": s(item.get("targetName")) or (page_name(target) if target else ""),
+            "targetUrl": page_link(target) if target and target != "NEW" else "",
+            "method": s(item.get("method")),
+            "keepCards": [s(x) for x in as_list(item.get("keepCards")) if s(x)],
+            "dropCards": [s(x) for x in as_list(item.get("dropCards")) if s(x)],
+            "rebuildCards": [s(x) for x in as_list(item.get("rebuildCards")) if s(x)],
+            "reason": s(item.get("reason")),
+            "commands": [s(x) for x in as_list(item.get("commands")) if s(x)],
+        })
+
     config = as_dict(advice.get("configHandoff"))
     linkage_view = []
     for item in as_list(config.get("linkageFilters")):
@@ -838,6 +894,7 @@ def build_view(audit, advice, draft, base_url):
         "mode": mode_view,
         "arch": arch_view,
         "crossActions": cross_view,
+        "cardReuse": card_reuse_view,
         "pageActions": page_actions_view,
         "config": {
             "linkage": linkage_view,
@@ -1046,6 +1103,56 @@ def render_markdown(view):
                 add("- 预期效果：{}".format(md_text(action["expectedEffect"])))
             add("")
 
+    add("### 卡片复用与迁移")
+    add("")
+    if view["draft"]:
+        add("尚未生成整合建议。存在拆分/合并/新建页时，这里会给出卡片复用方案"
+            "（只挑需要的卡片用 `createCard` 重建；不整页另存）。")
+    elif view["cardReuse"]:
+        add("> 原则：只挑需要的卡片在新工程用 createCard 重建；不整页另存，避免把冗余卡片带过去。诊断阶段只读，发布前必须确认。")
+        add("")
+        add("| 源看板 | 目标 | 方式 | 保留卡 | 删除卡 | 重建卡 | 依据 |")
+        add("|---|---|---|---|---|---|---|")
+        for item in view["cardReuse"]:
+            source = "[{}]({})".format(md_cell(item["sourceName"]), item["sourceUrl"]) \
+                if item["sourceUrl"] else md_cell(item["sourceName"])
+            target = "[{}]({})".format(md_cell(item["targetName"]), item["targetUrl"]) \
+                if item["targetUrl"] else md_cell(item["targetName"])
+            method = "留在原页" if item["method"] == "keep" else "卡片重建"
+            add("| {} | {} | {} | {} | {} | {} | {} |".format(
+                source, target or "—", method,
+                "、".join(md_cell(x) for x in item["keepCards"]) or "—",
+                "、".join(md_cell(x) for x in item["dropCards"]) or "—",
+                "、".join(md_cell(x) for x in item["rebuildCards"]) or "—",
+                md_cell(item["reason"]) or "—"))
+        add("")
+        for item in view["cardReuse"]:
+            commands = list(item["commands"])
+            if not commands and item["method"] == "rebuild":
+                commands = [
+                    "guanvis checkout {} -d ./src".format(item["sourcePgId"]),
+                    "python3 references/scripts/extract_card_skeletons.py <工作目录> "
+                    "--cdIds <源cdId...> -o ./card-reuse",
+                    "guanvis init <目标dsId> -d ./dst",
+                    "cp card-reuse/card-skeletons/*.js ./dst/",
+                    "guanvis genid",
+                    "guanvis preview ./dst",
+                    "guanvis publish ./dst --dry-run",
+                    "guanvis publish ./dst",
+                ]
+            if not commands:
+                continue
+            add("**{} → {} 建议命令**".format(
+                md_text(item["sourceName"]), md_text(item["targetName"]) or "副本"))
+            add("")
+            add("```bash")
+            for command in commands:
+                add(command)
+            add("```")
+            add("")
+    else:
+        add("- 未填写卡片复用方案；存在拆分/合并/新建页时应补 `cardReuse`。")
+    add("")
     add("## 7. 洞察Agent 配置衔接")
     add("")
     if view["draft"]:
@@ -1409,6 +1516,52 @@ def _html_page_actions(view):
     return "".join(blocks)
 
 
+def _html_card_reuse(view):
+    if view["draft"]:
+        return ('<h3>卡片复用与迁移</h3><p class="empty">尚未生成整合建议。存在拆分/合并/新建页时，'
+                '这里会给出卡片复用方案（只挑需要的卡片用 createCard 重建；不整页另存）。</p>')
+    if not view["cardReuse"]:
+        return '<h3>卡片复用与迁移</h3><p class="empty">未填写卡片复用方案；存在拆分/合并/新建页时应补 cardReuse。</p>'
+    parts = ["<h3>卡片复用与迁移</h3>",
+             '<p class="src">原则：只挑需要的卡片在新工程用 createCard 重建；不整页另存，避免把冗余卡片带过去。'
+             '诊断阶段只读，发布前必须确认。</p>']
+    rows = []
+    for item in view["cardReuse"]:
+        source = _link(item["sourceName"], item["sourceUrl"]) if item["sourceUrl"] else _h(item["sourceName"])
+        target = _link(item["targetName"], item["targetUrl"]) if item["targetUrl"] else _h(item["targetName"])
+        method = "留在原页" if item["method"] == "keep" else "卡片重建"
+        rows.append("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+            source, target or "—", _h(method),
+            _h("、".join(item["keepCards"])) or "—",
+            _h("、".join(item["dropCards"])) or "—",
+            _h("、".join(item["rebuildCards"])) or "—",
+            _h(item["reason"]) or "—"))
+    parts.append("<table><thead><tr><th>源看板</th><th>目标</th><th>方式</th><th>保留卡</th>"
+                 "<th>删除卡</th><th>重建卡</th><th>依据</th></tr></thead><tbody>{}</tbody></table>".format(
+                     "".join(rows)))
+    for item in view["cardReuse"]:
+        commands = list(item["commands"])
+        if not commands and item["method"] == "rebuild":
+            commands = [
+                "guanvis checkout {} -d ./src".format(item["sourcePgId"]),
+                "python3 references/scripts/extract_card_skeletons.py <工作目录> "
+                "--cdIds <源cdId...> -o ./card-reuse",
+                "guanvis init <目标dsId> -d ./dst",
+                "cp card-reuse/card-skeletons/*.js ./dst/",
+                "guanvis genid",
+                "guanvis preview ./dst",
+                "guanvis publish ./dst --dry-run",
+                "guanvis publish ./dst",
+            ]
+        if not commands:
+            continue
+        parts.append("<h4>{} → {} 建议命令</h4>".format(
+            _h(item["sourceName"]), _h(item["targetName"]) or "副本"))
+        parts.append('<pre class="mono" style="white-space:pre-wrap">{}</pre>'.format(
+            _h("\n".join(commands))))
+    return "".join(parts)
+
+
 def _html_config(view):
     if view["draft"]:
         return ('<p class="empty">尚未生成整合建议。Agent 类型、分析思路、步骤计划、报告框架、'
@@ -1591,7 +1744,7 @@ def render_html(view):
          + '<p class="src">含 P0/阻断的看板，总分按规则封顶 64（维度分是原始得分；原始总分见 insight-audit.json 的 rawTotal）。</p>'),
         ("4. 关键发现", _html_findings(view)),
         ("5. 整合建议", _html_advice(view)),
-        ("6. 逐页调整清单", _html_page_actions(view)),
+        ("6. 逐页调整清单", _html_page_actions(view) + _html_card_reuse(view)),
         ("7. 洞察Agent 配置衔接", _html_config(view)),
         ("8. 落地路线图", _html_roadmap(view)),
         ("9. 待确认问题", _html_questions(view)),

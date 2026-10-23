@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.11.0"
+version: "4.12.0"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，并能诊断 1-N 张看板对观远洞察Agent 的就绪度、给出整合与调整建议，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。仅在用户**明确点名「洞察Agent」并要求配置/评估其看板**时（如"这几张看板适不适合洞察Agent"、"洞察Agent 的看板怎么整合/改造"、"洞察Agent 数据范围怎么选"），才走「洞察Agent 看板就绪诊断」通道；用户只说"看板体检/看板优化/搭建助手"等未点名洞察Agent 的请求，一律走八步 data agent 向导，不得主动切入诊断。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -562,15 +562,20 @@ python3 references/scripts/insight_audit_report.py <工作目录> --draft
 3. **目标架构**：总览 / 定位 / 明细各由哪张看板承担，新页还是改造；
 4. **逐页动作**：保留 / 改造 / 拆分 / 合并 / 新建 / 移出，P0/P1/P2，每条带 evidence（finding id）与预期效果；
 5. **跨页动作**：合并重复卡、统一公共维度、补联动筛选器、统一口径、10 页预算取舍；
-6. **配置衔接**（`configHandoff`）：
+6. **卡片复用与迁移**（`cardReuse`，有拆分/合并/新建页时必填）：
+   - 只挑符合洞察Agent 要求、用户看惯的卡片；**不整页另存**，避免把冗余卡片/数据一起带过去。
+   - `method=rebuild`：在新工程用 `createCard()` 重建；`method=keep`：卡片留在原页，新页通过跨页联动使用。
+   - 重建前先抽骨架：`python3 references/scripts/extract_card_skeletons.py <工作目录> --cdIds <cdId...> -o ./card-reuse`，再 `guanvis init <目标dsId> -d ./dst` → 复制骨架 → 补计算字段/格式/联动 → `guanvis preview` → `publish --dry-run` → `publish`。
+   - 写法与红线见 `references/insight-agent-card-reuse.md`；诊断阶段只读，发布必须用户确认。
+7. **配置衔接**（`configHandoff`）：
    - 每页联动筛选器（名称 + 字段 + cdId）、业务范围；
    - `agentType` + `defaultThinking`：探索型写路径原则（看板路由、下钻/回退、终止条件、弹性边界），**不写死唯一流程**；报告型写 Step 1…N 的步骤序列；
    - `stepPlan`：每步写清 goal / dashboards / coreQuestions / filters / output / nextIf / stopIf；下一步只带结论 + 筛选条件 + 待验证假设，不带全量明细；
    - `exploratoryRules`：探索型至少 2 条路径原则；
    - `reportFramework` + `questionExamples`：报告型至少 3 章交付框架、至少 3 个“对象+期间+问题+决策”的用户提问示例；
    - `outputRequirements`、`businessKnowledgeGaps`、`expertRoles`（单域不硬拆专家）；
-7. **路线图**：P0 先做什么、P1/P2 是什么、预估工作量（人天/周，给区间）；
-8. **待确认问题**：业务链路、责任部门映射、异常阈值等看板推不出的内容。
+8. **路线图**：P0 先做什么、P1/P2 是什么、预估工作量（人天/周，给区间）；
+9. **待确认问题**：业务链路、责任部门映射、异常阈值等看板推不出的内容。
 
 校验（不通过禁止进入 A4）：
 
@@ -626,3 +631,4 @@ python3 references/scripts/insight_audit_report.py <工作目录>
 17. **指标中心三条**（v4.8）：指标中心对齐只做引用已发布同口径指标 / 顺手创建原子指标（≤10 条）/ 一次性推荐——指标体系建设、批量迁移归并、复合/派生批量梳理一律路由专项流程，不在本向导展开；指标中心取数必经 `run_metric.py` 白名单校验，禁止裸调 `guancli metric query`；指标中心口径与看板口径不一致时列入拍板组请用户裁决，禁止 AI 自行二选一
 18. **数据量三条**（v4.8.2，行数上限）：CLI 取数有行数上限（卡片 preview 图表默认最多 1 万行，超上限即截断）——搭建时留意数据集体量并在资产目录标注大数据集、向用户说明上限风险；用户问题可能触及上限时**优先**提醒缩小取数范围（收窄时间段/加筛选）或按维度聚合，确实需要大量明细才按维度拆分分批取数再拼接，且动手前必须告知用户该流程长、性能与 token 消耗大；截断结果禁止当全量使用，必须声明"只是前 N 行"。交付包已内置该纪律（模板「数据红线 · 行数上限纪律」+ sql-guide.md「行数上限与分批取数纪律」节），机械渲染自动带入
 19. **洞察Agent 诊断五条**（v4.10）：只读不改看板；R-01（>10 页）/R-02（无联动筛选器）阻断不绕过；每条建议必须引用 finding 证据；机械判定/推断/待确认分开标注；不把 ChatBI、DecideX、仪表板洞察、WorkBuddy data agent 与观远洞察Agent 混称
+20. **卡片复用三条**（v4.12）：不整页另存（会把冗余卡片/数据带过去）；checkout 的 `attachCard` card JS 不能直接搬到 `guanvis init` 新工程；重建必须先用 `extract_card_skeletons.py` 抽骨架 → `preview`/`diff`/`publish --dry-run` → 用户确认后发布，禁止把 TODO 计算字段当已还原

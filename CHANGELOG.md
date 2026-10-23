@@ -1,5 +1,18 @@
 # 变更日志
 
+## v4.12.0（2026-10-23）洞察Agent 看板重建：卡片级复用与 createCard 骨架
+
+解决的问题：诊断建议“拆分/合并/新建页”后，原看板里符合洞察Agent 要求、用户已经看惯的卡片怎么保留？整页 `page save-as` 会把冗余卡片/数据一起带过去；单张卡片又没有 `card save-as`。本版本补上“只挑卡片、在新工程用 createCard 重建”的完整路径。
+
+- **新增配置指引**（`references/insight-agent-card-reuse.md`）：明确 guanvis 0.1.50 能力边界——无单卡另存、整页另存会带冗余、checkout 的 `card_*.js` 是 `attachCard` 不能直接搬到 `init` 新工程；主流程改为 `checkout` 读源卡 → `init` 目标工程 → `createCard()` 重建 → `genid` → `preview/publish`；含选卡标准、报告写法、验收清单与常见错误
+- **新增抽取器**（`references/scripts/extract_card_skeletons.py`）：从 `cards-raw.json` 按 `--cdIds` 抽选中卡，输出 `card-reuse.json` + `card-skeletons/card_XX_<cdId>.js`（`createCard` 骨架）+ `card-reuse-checklist.md`；覆盖图表类型/数据集/维度/度量/描述，显式 `.setId()` 生成 24 位新 ID（不复用源 cdId），计算字段与未识别聚合以 TODO 标注；清单提示目标 dsId 必须暴露同名字段，不伪造
+- **报告 schema 扩展**：`cardReuse`（sourcePgId/target/targetName/method/keepCards/dropCards/rebuildCards/reason/commands）；`method` 只允许 `rebuild`（createCard 重建）与 `keep`（留在原页跨页使用），**拒绝整页另存**；有拆分/合并/新建页时 `cardReuse` 必填
+- **报告第 6 节**：新增“卡片复用与迁移”表与建议命令（checkout → extract → init → genid → preview → publish --dry-run → publish）；诊断阶段只读，发布必须用户确认
+- **SKILL.md A3**：新增“卡片复用与迁移”步骤，要求不整页另存、先抽骨架再重建；A3 由 8 项扩为 9 项
+- **测试**：新增 `test_extract_card_skeletons.py` 7 例（PIE/公式 TODO/数据集别名/缺 cdId/缺 cards-raw/未知看板/真实夹具）；`test_insight_audit_report.py` 35 → 39 例（cardReuse 必填、拒绝 page_save_as、rebuild/keep 卡片清单）；全量 475 → 486 全绿
+- **独立测试 Agent**：v1.9.0 → v1.9.1，新增 L0-31（卡片骨架抽取），L1-audit A3 补 cardReuse/不整页另存检查点
+- **版本一致性**：4.11.0 → 4.12.0（SKILL.md / kimi.plugin.json / 8 个脚本 BUILDER_VERSION 共十处）
+
 ## v4.11.0（2026-10-23）洞察Agent 分析思路写作指引：探索型 / 报告型两套打法
 
 解决的问题：v4.10 只在诊断报告里给了一个「总览定位 → 维度拆解 → 对象下钻 → 归因建议」的 4 步骨架，不能指导用户为已搭建的洞察Agent 写清「每一步看哪张看板、从这张看板核心分析什么、带什么结论和筛选参数进下一步」。本版本把分析思路补成完整写作指引，并区分探索型与报告型两种 Agent。

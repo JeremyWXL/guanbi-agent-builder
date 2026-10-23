@@ -43,7 +43,7 @@ import re
 import sys
 from datetime import date, datetime
 
-BUILDER_VERSION = "4.11.0"  # 发布时与 SKILL.md frontmatter version 同步
+BUILDER_VERSION = "4.12.0"  # 发布时与 SKILL.md frontmatter version 同步
 DEFAULT_MAX_PAGES = 10
 STALE_DAYS = 90
 
@@ -1058,13 +1058,16 @@ def build_seed(audit, ctxs, refs, mode, overlap_pages):
                  "业务判断（scenario/businessScope/targetArchitecture/expectedEffect/roadmap/openQuestions）"
                  "由 AI 与用户确认后补全。configHandoff 先定 agentType，再按 "
                  "references/insight-agent-thinking-guide.md 写 defaultThinking/stepPlan/"
-                 "exploratoryRules/reportFramework/questionExamples，最后另存为 insight-advice.json。",
+                 "exploratoryRules/reportFramework/questionExamples；有拆分/合并/新建页时按 "
+                 "references/insight-agent-card-reuse.md 补 cardReuse（只挑卡片 rebuild，不整页另存；留在原页用 keep），"
+                 "最后另存为 insight-advice.json。",
         "auditBuiltAt": audit["meta"]["builtAt"],
         "scenario": audit["meta"]["scenario"],
         "businessScope": "",
         "mode": dict(mode),
         "targetArchitecture": [],
         "pageActions": page_actions,
+        "cardReuse": [],
         "crossPageActions": cross_actions,
         "configHandoff": {
             "linkageFilters": linkage_filters,

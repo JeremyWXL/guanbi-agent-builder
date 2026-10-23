@@ -240,9 +240,10 @@
 
 ### 6.3 配置衔接（诊断报告必须带）
 
-写法细则见 `references/insight-agent-thinking-guide.md`（探索型 / 报告型两套模板）。
+写法细则见 `references/insight-agent-thinking-guide.md`（探索型 / 报告型两套模板）与 `references/insight-agent-card-reuse.md`（卡片级复用/重建）。
 
 - **联动筛选器**：每页给出「筛选器名 + 字段 + cdId」，只选 `inFilterBar=true` 且 `linkedCardCount>0` 的；优先跨页共用字段。
+- **卡片复用（cardReuse）**：有拆分/合并/新建页时必填。只挑符合洞察Agent 要求、用户看惯的卡片在新工程用 `createCard()` 重建（`method=rebuild`），或留在原页跨页使用（`method=keep`）；**不整页另存**，避免把冗余卡片/数据带过去。先用 `extract_card_skeletons.py` 抽骨架，再 `guanvis init`/`preview`/`publish`。
 - **业务范围**：一句话，写“对象 + 场景 + 决策”，不写泛词。
 - **Agent 类型**：先判断探索型 / 报告型 / 混合型。探索型偏发散提问、动态规划；报告型偏固定场景、固定交付。
 - **默认分析思路**：

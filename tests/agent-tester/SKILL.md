@@ -2,7 +2,7 @@
 name: guanbi-agent-tester
 slug: guanbi-agent-tester
 displayName: guanbi-agent-builder 独立测试 Agent
-version: "1.9.0"
+version: "1.9.1"
 summary: guanbi-agent-builder 的独立回归测试 agent：沙箱内完整模拟用户走完八步搭建向导（或快速模式五步 / 洞察Agent 看板诊断四步），再对交付的 data agent 做回答质量测评。每次 skill 迭代后用本 agent 验证迭代效果。
 description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建向导/洞察Agent 看板诊断或测评交付 data agent 回答质量时使用。包含 L0 脚本层冒烟、L1 八步向导 E2E（含快速模式五步变体）、L1-audit 看板诊断四步、L2 交付 agent 对话质量三层测试与评分标准。
 ---
@@ -54,6 +54,7 @@ description: 当需要验证 guanbi-agent-builder 新版本、回归测试搭建
 | L0-28 | 洞察Agent 看板体检 | `audit_insight_pages.py <夹具目录> --scenario "..." --seed-advice`（v4.10 起） | insight-audit.json 含 pages/cross/findings/portfolio/recommendedMode；有筛选栏联动筛选器的页面不误报 R-02；单页 >20 卡 P0；P0 页展示分封顶 64；层级混页单独报；seed 用 pgId 引用看板 |
 | L0-29 | 诊断报告校验/渲染 | `insight_audit_report.py <目录> --draft` / `--check` / 默认（v4.10 起） | draft 无建议可渲染；未知 pgId/finding、阻断项无 P0、auditBuiltAt 不匹配、联动筛选器 cdId 无效、看板无逐页动作均 exit 2；合法建议生成 insight-audit.md + .html；HTML 动态文本转义 |
 | L0-30 | 诊断状态机产物门 | `wizard_state.py init --mode audit` + `confirm --state audit --step 2/3/4`（v4.10 起） | 独立 wizard-state-audit.json 四步；四步 skipped 均 exit 3；第 2 步缺 insight-audit.json、第 3 步缺 insight-advice.json、第 4 步缺 md/html 均拒绝；show/next 不出现"八步" |
+| L0-31 | 卡片骨架抽取 | `extract_card_skeletons.py <夹具目录> --cdIds <cdId...> -o <目录>`（v4.12 起） | card-reuse.json/card-skeletons/checklist 三产物齐全；PIE 骨架含 createCard/addRow/addMetric；公式度量只出 TODO 不伪造 addMetric；缺 cdId/缺 cards-raw exit 2 |
 
 ## L1 · 八步向导 E2E（约 30-60 分钟）
 
@@ -111,7 +112,7 @@ L1-incr 的决策记录同样显式写出：新看板清单与适检结论、冲
 |----|-----------|----------|
 | A1 选定看板与场景 | **触发门控：未点名洞察Agent 时不得进入，先问清搭 data agent 还是评估洞察Agent**；1–10 张看板（>10 明确取舍）；收集 1–3 个目标问题与角色；check_pages 先拦 ⛔；环境前提（8.1+/License）请用户确认 | 不把 ChatBI/DecideX/仪表板洞察混进来；不抢原有 data agent 搭建流程 |
 | A2 学习与结构体检 | parse_page 单次传全部 pageId；采样可跳过但行数标"未实测"；audit_insight_pages 产出 insight-audit.json + seed；draft 报告可打开 | 每条 finding 有证据；R-02 不误报；P0 页展示分封顶 64 |
-| A3 整合与调整建议 | 主模式唯一 + 备选；逐页动作覆盖所有看板；阻断项有 P0 动作；联动筛选器 cdId 真实；**判断探索型/报告型/混合型并按 thinking guide 写 agentType/defaultThinking/stepPlan/exploratoryRules/reportFramework/questionExamples**；报告型 ≥2 步 + ≥3 章 + ≥3 个提问示例，探索型 ≥2 条路径原则；`--check` exit 0 | 禁止无证据的合并/拆分；NEW 页写清目的/层级/筛选器；下一步只带结论+筛选条件，不带全量明细 |
+| A3 整合与调整建议 | 主模式唯一 + 备选；逐页动作覆盖所有看板；阻断项有 P0 动作；联动筛选器 cdId 真实；**判断探索型/报告型/混合型并按 thinking guide 写 agentType/defaultThinking/stepPlan/exploratoryRules/reportFramework/questionExamples**；报告型 ≥2 步 + ≥3 章 + ≥3 个提问示例，探索型 ≥2 条路径原则；**拆分/合并/新建页必须有 cardReuse（rebuild 用 extract_card_skeletons.py 抽骨架，不整页另存；keep 写清留在原页的卡）**；`--check` exit 0 | 禁止无证据的合并/拆分；NEW 页写清目的/层级/筛选器；下一步只带结论+筛选条件，不带全量明细；诊断阶段不发布 |
 | A4 报告输出 | insight-audit.md + .html 生成；报告含结论/发现/架构/逐页/配置衔接/路线图；HTML 可打开、看板名可跳 BI | 只读诊断，不改客户 BI；不把诊断说成"已改造完成" |
 
 L1-audit 的决策记录显式写出：看板清单与目标问题、规则发现（阻断/P0/P1/P2）、推荐模式、逐页动作、配置衔接、待确认问题。

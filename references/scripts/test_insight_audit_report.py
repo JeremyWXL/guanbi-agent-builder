@@ -112,6 +112,11 @@ def advice_doc():
              "actions": ["新建门店粒度明细页，含区域/门店筛选器与销售额、客流两列"],
              "evidence": ["F-002"], "expectedEffect": "结论可落到具体门店"},
         ],
+        "cardReuse": [
+            {"sourcePgId": "pgA", "target": "NEW", "targetName": "经营总览_洞察版",
+             "method": "rebuild", "keepCards": [], "dropCards": ["装饰卡"],
+             "rebuildCards": ["销售额趋势"], "reason": "只重建核心趋势卡，拆掉装饰卡", "commands": []},
+        ],
         "crossPageActions": [
             {"type": "补筛选器", "pages": ["pgA", "pgB"], "priority": "P0",
              "action": "两页统一区域联动筛选器并保持字段名一致", "evidence": ["F-001"]},
@@ -240,6 +245,36 @@ class TestValidation(ReportTestBase):
         r = self.check(doc)
         self.assertEqual(r.returncode, 2)
         self.assertIn("至少 3 个", r.stderr)
+
+    def test_card_reuse_required_for_restructure(self):
+        doc = advice_doc()
+        doc["cardReuse"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("cardReuse 为空", r.stderr)
+
+    def test_card_reuse_rejects_page_save_as(self):
+        doc = advice_doc()
+        doc["cardReuse"][0]["method"] = "page_save_as"
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("不在 rebuild/keep 内", r.stderr)
+
+    def test_card_reuse_rebuild_requires_cards(self):
+        doc = advice_doc()
+        doc["cardReuse"][0]["rebuildCards"] = []
+        doc["cardReuse"][0]["keepCards"] = ["旧卡"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("必须写 rebuildCards", r.stderr)
+
+    def test_card_reuse_keep_requires_cards(self):
+        doc = advice_doc()
+        doc["cardReuse"][0]["method"] = "keep"
+        doc["cardReuse"][0]["keepCards"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("必须写 keepCards", r.stderr)
 
     def test_exploratory_requires_rules(self):
         doc = advice_doc()

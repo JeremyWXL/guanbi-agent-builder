@@ -651,7 +651,7 @@ class TestRealFixture(AuditCase):
                     os.path.join(self.tmp, "card-data", "_sample_index.json"))
         audit = self.run_ok("--scenario", "月度经营分析")
         self.assertEqual(audit["meta"]["pageCount"], 2)
-        self.assertEqual(audit["meta"]["builderVersion"], "4.11.0")
+        self.assertEqual(audit["meta"]["builderVersion"], "4.12.0")
         self.assertEqual(audit["meta"]["inputs"],
                          {"pageCheck": False, "formulas": True, "samples": True})
         cards = {p["name"]: p["facts"]["dataCards"] for p in audit["pages"]}
