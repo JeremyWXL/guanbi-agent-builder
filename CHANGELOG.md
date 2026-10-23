@@ -1,5 +1,18 @@
 # 变更日志
 
+## v4.11.0（2026-10-23）洞察Agent 分析思路写作指引：探索型 / 报告型两套打法
+
+解决的问题：v4.10 只在诊断报告里给了一个「总览定位 → 维度拆解 → 对象下钻 → 归因建议」的 4 步骨架，不能指导用户为已搭建的洞察Agent 写清「每一步看哪张看板、从这张看板核心分析什么、带什么结论和筛选参数进下一步」。本版本把分析思路补成完整写作指引，并区分探索型与报告型两种 Agent。
+
+- **新增指引**（`references/insight-agent-thinking-guide.md`）：核心循环「用户目标 → 选看板 → 核心问题 → 筛选参数 → 结论 → 下一步」；先判断探索型/报告型/混合型；两种类型共用的六块内容（角色边界、看板地图、单步契约、上下文传递、证据口径、输出禁止项）；探索型写路径原则/看板路由/下钻回退/终止条件/弹性边界；报告型写 Step 1…N/交付框架/用户提问示例；另含分析专家边界、官方字段映射、上线检查清单与反例
+- **新增模板**（`references/templates/insight-thinking.md`）：探索型与报告型两套可直接复制的分析思路模板
+- **建议 schema 扩展**（`insight-advice.json` + `insight_audit_report.py`）：`configHandoff` 新增 `agentType`、`stepPlan`（每步 goal/dashboards/coreQuestions/cards/filters/output/nextIf/stopIf）、`exploratoryRules`、`reportFramework`、`questionExamples`；校验按类型收敛——报告型至少 2 步 + 3 章报告框架 + 3 个提问示例，探索型至少 2 条路径原则，混合型两者都要；stepPlan 的看板必须真实存在、每步必须有 output/nextIf/stopIf
+- **报告第 7 节升级**：新增 Agent 类型、分析思路、步骤计划（逐步展示看板/核心问题/筛选/输出/进入/终止）、探索型路径原则、报告交付框架、用户提问示例；HTML 与 Markdown 同源
+- **A3 升级**（`SKILL.md`）：先判断 Agent 类型，再按指引写 `configHandoff`；不确定时直接问用户「自由提问探索，还是固定场景出报告」；阶段任务由 7 项扩为 8 项
+- **种子与模板**：`audit_insight_pages.py --seed-advice` 预置新字段空位；`insight-advice.json` / `insight-audit.md` 模板同步
+- **测试**：`test_insight_audit_report.py` 28 → 35 例（新增强制步骤/框架/提问示例、探索型规则、混合型、未知看板、缺 nextIf）；全量单测 468 → 475 全绿
+- **版本一致性**：4.10.0 → 4.11.0（SKILL.md / kimi.plugin.json / 8 个脚本 BUILDER_VERSION 共十处）
+
 ## v4.10.0（2026-10-22）新增「洞察Agent 看板就绪诊断」通道：1–N 张看板的整合 / 调整建议
 
 解决的问题：此前 Skill 只覆盖 WorkBuddy data agent 的搭建，用户拿着 1–N 张现有看板问「适不适合观远洞察Agent、该怎么整合/改造」时没有入口。洞察Agent 不是 ChatBI、不是 DecideX、也不是仪表板洞察——它靠看板 Schema 约束分析边界，要求数据范围 ≤10 页、每页配置联动筛选器、指标口径由看板固化、上下文可控、分层可下钻。本版本把这些要求变成可执行诊断，而不是靠模型自由发挥。

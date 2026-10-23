@@ -27,6 +27,7 @@ import subprocess
 import sys
 
 MODES = ["一张宽表", "多层下钻", "主从Agent", "批量分治", "链路复盘"]
+AGENT_TYPES = ["探索型", "报告型", "混合型"]
 VERDICTS = ["保留", "改造", "拆分", "合并", "新建", "移出"]
 PRIORITIES = ["P0", "P1", "P2"]
 REQUIRED_KEYS = [
@@ -473,6 +474,73 @@ def validate(audit, advice):
                 "{}：《{}》体检产物只有联动筛选器数量（{} 个）没有 cdId 清单，"
                 "已跳过 cdId 机械校验，请人工核对 {!r}".format(where, page_label, count, cd_id))
 
+    agent_type = s(config.get("agentType"))
+    if not agent_type:
+        errors.append("configHandoff.agentType 不能为空（探索型/报告型/混合型）——"
+                      "先按 references/insight-agent-thinking-guide.md 判断 Agent 类型")
+    elif agent_type not in AGENT_TYPES:
+        errors.append("configHandoff.agentType={!r} 不在 {} 内".format(
+            agent_type, " / ".join(AGENT_TYPES)))
+    if not s(config.get("defaultThinking")):
+        errors.append("configHandoff.defaultThinking 不能为空——写探索型路径原则或报告型步骤序列")
+    if not s(config.get("outputRequirements")):
+        errors.append("configHandoff.outputRequirements 不能为空——写证据、格式、语言风格要求")
+
+    step_plan = [as_dict(x) for x in as_list(config.get("stepPlan"))]
+    exploratory_rules = [s(x) for x in as_list(config.get("exploratoryRules")) if s(x)]
+    report_framework = [s(x) for x in as_list(config.get("reportFramework")) if s(x)]
+    question_examples = [s(x) for x in as_list(config.get("questionExamples")) if s(x)]
+
+    if agent_type == "报告型":
+        if len(step_plan) < 2:
+            errors.append("报告型 Agent 的 stepPlan 至少 2 步（当前 {} 步）".format(len(step_plan)))
+        if len(report_framework) < 3:
+            errors.append("报告型 Agent 的 reportFramework 至少 3 章（当前 {} 章）".format(
+                len(report_framework)))
+        if len(question_examples) < 3:
+            errors.append("报告型 Agent 的 questionExamples 至少 3 个（当前 {} 个）".format(
+                len(question_examples)))
+    elif agent_type == "探索型":
+        if len(exploratory_rules) < 2:
+            errors.append("探索型 Agent 的 exploratoryRules 至少 2 条路径原则（当前 {} 条）".format(
+                len(exploratory_rules)))
+    elif agent_type == "混合型":
+        if not exploratory_rules:
+            errors.append("混合型 Agent 至少需要 1 条 exploratoryRules")
+        if not step_plan:
+            errors.append("混合型 Agent 至少需要 1 步 stepPlan（报告型专家用）")
+        if not report_framework:
+            errors.append("混合型 Agent 至少需要 1 章 reportFramework")
+        if not question_examples:
+            errors.append("混合型 Agent 至少需要 1 个 questionExamples")
+
+    seen_steps = set()
+    for index, step in enumerate(step_plan):
+        where = "configHandoff.stepPlan[{}]".format(index)
+        step_no = num(step.get("step"))
+        if not step_no or step_no <= 0:
+            errors.append("{} 的 step 必须是正整数".format(where))
+        elif step_no in seen_steps:
+            errors.append("{} 的 step={} 重复".format(where, step_no))
+        else:
+            seen_steps.add(step_no)
+        if not s(step.get("goal")):
+            errors.append("{} 缺少 goal（这一步解决什么问题）".format(where))
+        if not s(step.get("output")):
+            errors.append("{} 缺少 output（本步结论 + 数据范围 + 证据）".format(where))
+        if not s(step.get("nextIf")):
+            errors.append("{} 缺少 nextIf（进入下一步的条件）".format(where))
+        if not s(step.get("stopIf")):
+            errors.append("{} 缺少 stopIf（终止条件）".format(where))
+        dashboards = [s(x) for x in as_list(step.get("dashboards")) if s(x)]
+        if not dashboards:
+            errors.append("{} 缺少 dashboards（这一步看哪张看板）".format(where))
+        for pg_id in dashboards:
+            if pg_id != "NEW" and pg_id not in page_by_id:
+                errors.append("{} 的 dashboards 引用了体检里没有的看板：{}".format(where, pg_id))
+        if not [s(x) for x in as_list(step.get("coreQuestions")) if s(x)]:
+            warnings.append("{} 没有 coreQuestions（建议写 2-3 个本步核心问题）".format(where))
+
     page_count = num(audit_meta.get("pageCount")) or len(pages)
     max_pages = num(audit_meta.get("maxPages")) or 10
     if page_count > max_pages:
@@ -669,6 +737,23 @@ def build_view(audit, advice, draft, base_url):
             "url": page_link(pg_id) if pg_id != "NEW" else "",
         })
 
+    step_plan_view = []
+    for step in as_list(config.get("stepPlan")):
+        step = as_dict(step)
+        dashboards = [{"pgId": s(x), "name": page_name(x), "url": page_link(x)}
+                      for x in as_list(step.get("dashboards")) if s(x)]
+        step_plan_view.append({
+            "step": num(step.get("step")),
+            "goal": s(step.get("goal")),
+            "dashboards": dashboards,
+            "coreQuestions": [s(x) for x in as_list(step.get("coreQuestions")) if s(x)],
+            "cards": [s(x) for x in as_list(step.get("cards")) if s(x)],
+            "filters": [s(x) for x in as_list(step.get("filters")) if s(x)],
+            "output": s(step.get("output")),
+            "nextIf": s(step.get("nextIf")),
+            "stopIf": s(step.get("stopIf")),
+        })
+
     experts = []
     for role in as_list(config.get("expertRoles")):
         role = as_dict(role)
@@ -757,7 +842,13 @@ def build_view(audit, advice, draft, base_url):
         "config": {
             "linkage": linkage_view,
             "businessScope": s(config.get("businessScope")),
+            "agentType": s(config.get("agentType")),
             "defaultThinking": s(config.get("defaultThinking")),
+            "stepPlan": step_plan_view,
+            "exploratoryRules": [s(x) for x in as_list(config.get("exploratoryRules")) if s(x)],
+            "reportFramework": [re.sub(r"^\s*(?:\d+[.、]|[-*])\s*", "", s(x))
+                                for x in as_list(config.get("reportFramework")) if s(x)],
+            "questionExamples": [s(x) for x in as_list(config.get("questionExamples")) if s(x)],
             "outputRequirements": s(config.get("outputRequirements")),
             "knowledgeGaps": [s(x) for x in as_list(config.get("businessKnowledgeGaps")) if s(x)],
             "expertRoles": experts,
@@ -958,10 +1049,17 @@ def render_markdown(view):
     add("## 7. 洞察Agent 配置衔接")
     add("")
     if view["draft"]:
-        add("**尚未生成整合建议。** 联动筛选器、业务范围、默认思路、输出要求、知识缺口与专家角色都需要在建议文件中给出。")
+        add("**尚未生成整合建议。** Agent 类型、分析思路、步骤计划、报告框架、用户提问示例、"
+            "联动筛选器、业务范围、输出要求、知识缺口与专家角色都需要在建议文件中给出。")
         add("")
     else:
         config = view["config"]
+        add("### Agent 类型与业务范围")
+        add("")
+        add("- Agent 类型：{}".format(md_text(config["agentType"]) or "未填写"))
+        add("")
+        add(md_text(config["businessScope"]) or "- 业务范围未填写。")
+        add("")
         add("### 联动筛选器")
         add("")
         if config["linkage"]:
@@ -975,14 +1073,55 @@ def render_markdown(view):
         else:
             add("- 未填写联动筛选器（每张看板至少需要一个，R-02）。")
         add("")
-        add("### 业务范围")
+        add("### 分析思路")
         add("")
-        add(md_text(config["businessScope"]) or "- 未填写。")
+        add("**默认思路（可直接粘贴到 BI）：**")
         add("")
-        add("### 默认思路与输出要求")
+        add(md_text(config["defaultThinking"]) or "未填写")
         add("")
-        add("- 默认思路：{}".format(md_text(config["defaultThinking"]) or "未填写"))
-        add("- 输出要求：{}".format(md_text(config["outputRequirements"]) or "未填写"))
+        if config["stepPlan"]:
+            add("#### 步骤计划")
+            add("")
+            for step in config["stepPlan"]:
+                add("**Step {}：{}**".format(step["step"], md_text(step["goal"]) or "（未写目标）"))
+                add("")
+                if step["dashboards"]:
+                    boards = []
+                    for board in step["dashboards"]:
+                        boards.append("[{}]({})".format(md_cell(board["name"]), board["url"])
+                                      if board["url"] else md_cell(board["name"]))
+                    add("- 看板：{}".format("、".join(boards)))
+                if step["coreQuestions"]:
+                    add("- 核心问题：{}".format("；".join(md_text(x) for x in step["coreQuestions"])))
+                if step["cards"]:
+                    add("- 核心卡片：{}".format("、".join(md_text(x) for x in step["cards"])))
+                if step["filters"]:
+                    add("- 筛选参数：{}".format("、".join(md_text(x) for x in step["filters"])))
+                add("- 本步输出：{}".format(md_text(step["output"]) or "未填写"))
+                add("- 进入下一步：{}".format(md_text(step["nextIf"]) or "未填写"))
+                add("- 终止条件：{}".format(md_text(step["stopIf"]) or "未填写"))
+                add("")
+        if config["exploratoryRules"]:
+            add("#### 探索型路径原则")
+            add("")
+            for rule in config["exploratoryRules"]:
+                add("- {}".format(md_text(rule)))
+            add("")
+        if config["reportFramework"]:
+            add("### 报告交付框架")
+            add("")
+            for index, chapter in enumerate(config["reportFramework"], 1):
+                add("{}. {}".format(index, md_text(chapter)))
+            add("")
+        if config["questionExamples"]:
+            add("### 用户提问示例")
+            add("")
+            for example in config["questionExamples"]:
+                add("- {}".format(md_text(example)))
+            add("")
+        add("### 输出要求")
+        add("")
+        add(md_text(config["outputRequirements"]) or "- 未填写。")
         add("")
         add("### 业务知识缺口")
         add("")
@@ -1272,10 +1411,14 @@ def _html_page_actions(view):
 
 def _html_config(view):
     if view["draft"]:
-        return ('<p class="empty">尚未生成整合建议。联动筛选器、业务范围、默认思路、输出要求、'
-                '知识缺口与专家角色都需要在建议文件中给出。</p>')
+        return ('<p class="empty">尚未生成整合建议。Agent 类型、分析思路、步骤计划、报告框架、'
+                '用户提问示例、联动筛选器、业务范围、输出要求、知识缺口与专家角色都需要在建议文件中给出。</p>')
     config = view["config"]
-    parts = ["<h3>联动筛选器</h3>"]
+    parts = ["<h3>Agent 类型与业务范围</h3>"]
+    parts.append('<p class="kv"><b>Agent 类型：</b>{}</p>'.format(_h(config["agentType"]) or "未填写"))
+    parts.append("<p>{}</p>".format(_h(config["businessScope"]) or "未填写"))
+
+    parts.append("<h3>联动筛选器</h3>")
     if config["linkage"]:
         rows = []
         for item in config["linkage"]:
@@ -1287,10 +1430,48 @@ def _html_config(view):
     else:
         parts.append('<p class="empty">未填写联动筛选器（每张看板至少需要一个，R-02）。</p>')
 
-    parts.append("<h3>业务范围</h3><p>{}</p>".format(_h(config["businessScope"]) or "未填写"))
-    parts.append("<h3>默认思路与输出要求</h3>")
-    parts.append('<p class="kv"><b>默认思路：</b>{}</p>'.format(_h(config["defaultThinking"]) or "未填写"))
-    parts.append('<p class="kv"><b>输出要求：</b>{}</p>'.format(_h(config["outputRequirements"]) or "未填写"))
+    parts.append("<h3>分析思路</h3>")
+    parts.append('<p class="kv"><b>默认思路（可直接粘贴到 BI）：</b>{}</p>'.format(
+        _h(config["defaultThinking"]) or "未填写"))
+
+    if config["stepPlan"]:
+        parts.append("<h4>步骤计划</h4>")
+        for step in config["stepPlan"]:
+            parts.append('<div class="fd">')
+            parts.append('<h4 style="margin:0 0 6px">Step {}：{}</h4>'.format(
+                _h(step["step"]), _h(step["goal"]) or "（未写目标）"))
+            items = []
+            if step["dashboards"]:
+                boards = []
+                for board in step["dashboards"]:
+                    boards.append(_link(board["name"], board["url"]) if board["url"] else _h(board["name"]))
+                items.append("<li><b>看板：</b>{}</li>".format("、".join(boards)))
+            if step["coreQuestions"]:
+                items.append("<li><b>核心问题：</b>{}</li>".format(
+                    _h("；".join(step["coreQuestions"]))))
+            if step["cards"]:
+                items.append("<li><b>核心卡片：</b>{}</li>".format(_h("、".join(step["cards"]))))
+            if step["filters"]:
+                items.append("<li><b>筛选参数：</b>{}</li>".format(_h("、".join(step["filters"]))))
+            items.append("<li><b>本步输出：</b>{}</li>".format(_h(step["output"]) or "未填写"))
+            items.append("<li><b>进入下一步：</b>{}</li>".format(_h(step["nextIf"]) or "未填写"))
+            items.append("<li><b>终止条件：</b>{}</li>".format(_h(step["stopIf"]) or "未填写"))
+            parts.append("<ul>{}</ul></div>".format("".join(items)))
+
+    if config["exploratoryRules"]:
+        parts.append("<h4>探索型路径原则</h4>")
+        parts.append("<ul>{}</ul>".format("".join(
+            "<li>{}</li>".format(_h(x)) for x in config["exploratoryRules"])))
+    if config["reportFramework"]:
+        parts.append("<h4>报告交付框架</h4>")
+        parts.append("<ol>{}</ol>".format("".join(
+            "<li>{}</li>".format(_h(x)) for x in config["reportFramework"])))
+    if config["questionExamples"]:
+        parts.append("<h4>用户提问示例</h4>")
+        parts.append("<ul>{}</ul>".format("".join(
+            "<li>{}</li>".format(_h(x)) for x in config["questionExamples"])))
+
+    parts.append("<h3>输出要求</h3><p>{}</p>".format(_h(config["outputRequirements"]) or "未填写"))
 
     parts.append("<h3>业务知识缺口</h3>")
     if config["knowledgeGaps"]:

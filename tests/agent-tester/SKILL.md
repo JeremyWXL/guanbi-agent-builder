@@ -111,7 +111,7 @@ L1-incr 的决策记录同样显式写出：新看板清单与适检结论、冲
 |----|-----------|----------|
 | A1 选定看板与场景 | **触发门控：未点名洞察Agent 时不得进入，先问清搭 data agent 还是评估洞察Agent**；1–10 张看板（>10 明确取舍）；收集 1–3 个目标问题与角色；check_pages 先拦 ⛔；环境前提（8.1+/License）请用户确认 | 不把 ChatBI/DecideX/仪表板洞察混进来；不抢原有 data agent 搭建流程 |
 | A2 学习与结构体检 | parse_page 单次传全部 pageId；采样可跳过但行数标"未实测"；audit_insight_pages 产出 insight-audit.json + seed；draft 报告可打开 | 每条 finding 有证据；R-02 不误报；P0 页展示分封顶 64 |
-| A3 整合与调整建议 | 主模式唯一 + 备选；逐页动作覆盖所有看板；阻断项有 P0 动作；联动筛选器 cdId 真实；`--check` exit 0 | 禁止无证据的合并/拆分；NEW 页写清目的/层级/筛选器 |
+| A3 整合与调整建议 | 主模式唯一 + 备选；逐页动作覆盖所有看板；阻断项有 P0 动作；联动筛选器 cdId 真实；**判断探索型/报告型/混合型并按 thinking guide 写 agentType/defaultThinking/stepPlan/exploratoryRules/reportFramework/questionExamples**；报告型 ≥2 步 + ≥3 章 + ≥3 个提问示例，探索型 ≥2 条路径原则；`--check` exit 0 | 禁止无证据的合并/拆分；NEW 页写清目的/层级/筛选器；下一步只带结论+筛选条件，不带全量明细 |
 | A4 报告输出 | insight-audit.md + .html 生成；报告含结论/发现/架构/逐页/配置衔接/路线图；HTML 可打开、看板名可跳 BI | 只读诊断，不改客户 BI；不把诊断说成"已改造完成" |
 
 L1-audit 的决策记录显式写出：看板清单与目标问题、规则发现（阻断/P0/P1/P2）、推荐模式、逐页动作、配置衔接、待确认问题。

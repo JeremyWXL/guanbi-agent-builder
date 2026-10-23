@@ -43,7 +43,7 @@ import re
 import sys
 from datetime import date, datetime
 
-BUILDER_VERSION = "4.10.0"  # 发布时与 SKILL.md frontmatter version 同步
+BUILDER_VERSION = "4.11.0"  # 发布时与 SKILL.md frontmatter version 同步
 DEFAULT_MAX_PAGES = 10
 STALE_DAYS = 90
 
@@ -1056,7 +1056,9 @@ def build_seed(audit, ctxs, refs, mode, overlap_pages):
     return {
         "_help": "体检器生成的建议底稿：pgId/verdict/priority/evidence 与联动筛选器已按结构候选填好，"
                  "业务判断（scenario/businessScope/targetArchitecture/expectedEffect/roadmap/openQuestions）"
-                 "由 AI 与用户确认后补全，再另存为 insight-advice.json。",
+                 "由 AI 与用户确认后补全。configHandoff 先定 agentType，再按 "
+                 "references/insight-agent-thinking-guide.md 写 defaultThinking/stepPlan/"
+                 "exploratoryRules/reportFramework/questionExamples，最后另存为 insight-advice.json。",
         "auditBuiltAt": audit["meta"]["builtAt"],
         "scenario": audit["meta"]["scenario"],
         "businessScope": "",
@@ -1067,7 +1069,12 @@ def build_seed(audit, ctxs, refs, mode, overlap_pages):
         "configHandoff": {
             "linkageFilters": linkage_filters,
             "businessScope": "",
+            "agentType": "",
             "defaultThinking": "",
+            "stepPlan": [],
+            "exploratoryRules": [],
+            "reportFramework": [],
+            "questionExamples": [],
             "outputRequirements": "",
             "businessKnowledgeGaps": business_gaps,
             "expertRoles": [],

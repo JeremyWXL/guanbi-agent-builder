@@ -121,7 +121,27 @@ def advice_doc():
                 {"pgId": "pgB", "name": "区域", "field": "区域", "cdId": "cd-9"},
             ],
             "businessScope": "连锁零售单店经营异常定位与归因",
-            "defaultThinking": "总览定位 → 维度拆解 → 对象下钻 → 归因与建议",
+            "agentType": "报告型",
+            "defaultThinking": "Step 1 总览定位 → Step 2 区域拆解 → Step 3 门店下钻 → Step 4 归因建议",
+            "stepPlan": [
+                {"step": 1, "goal": "判断整体是否异常", "dashboards": ["pgA"],
+                 "coreQuestions": ["哪些核心指标偏离？", "偏离幅度多大？"],
+                 "cards": ["销售额趋势"], "filters": ["时间"],
+                 "output": "一句话定调 + 核心指标偏离清单",
+                 "nextIf": "存在明显偏离则进入 Step 2", "stopIf": "无显著偏离则输出结论并结束"},
+                {"step": 2, "goal": "定位异常区域并下钻到门店", "dashboards": ["pgB"],
+                 "coreQuestions": ["哪个区域贡献最大？", "哪些门店需要处理？"],
+                 "cards": ["门店销售额"], "filters": ["时间", "区域"],
+                 "output": "异常区域与门店清单（带贡献额）",
+                 "nextIf": "需要归因则进入 Step 3", "stopIf": "已能给出建议则结束"},
+            ],
+            "exploratoryRules": ["先总览再下钻，允许回退", "筛选参数必须来自看板已声明筛选器"],
+            "reportFramework": ["1. 结论摘要", "2. 核心指标", "3. 异常清单", "4. 原因与建议"],
+            "questionExamples": [
+                "出一份 2026 年 9 月华东区域单店经营诊断报告。",
+                "对比 9 月和 8 月，找出下滑最严重的 20 家门店并给出原因。",
+                "本周经营例会：输出需要重点讨论的 5 个门店问题。",
+            ],
             "outputRequirements": "结论必须带数据范围与口径，建议绑定到具体门店",
             "businessKnowledgeGaps": ["异常阈值由业务定义", "责任部门映射缺失"],
             "expertRoles": [{"name": "门店经营专家", "scope": "门店经营",
@@ -199,6 +219,62 @@ class TestValidation(ReportTestBase):
         r = self.check(advice_doc())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("建议校验通过", r.stdout)
+
+    def test_report_type_requires_step_plan(self):
+        doc = advice_doc()
+        doc["configHandoff"]["stepPlan"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("至少 2 步", r.stderr)
+
+    def test_report_type_requires_framework(self):
+        doc = advice_doc()
+        doc["configHandoff"]["reportFramework"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("至少 3 章", r.stderr)
+
+    def test_report_type_requires_question_examples(self):
+        doc = advice_doc()
+        doc["configHandoff"]["questionExamples"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("至少 3 个", r.stderr)
+
+    def test_exploratory_requires_rules(self):
+        doc = advice_doc()
+        doc["configHandoff"]["agentType"] = "探索型"
+        doc["configHandoff"]["exploratoryRules"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("exploratoryRules 至少 2 条", r.stderr)
+
+    def test_mixed_requires_both_tracks(self):
+        doc = advice_doc()
+        doc["configHandoff"]["agentType"] = "混合型"
+        doc["configHandoff"]["stepPlan"] = []
+        doc["configHandoff"]["exploratoryRules"] = []
+        doc["configHandoff"]["reportFramework"] = []
+        doc["configHandoff"]["questionExamples"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("混合型", r.stderr)
+        self.assertIn("stepPlan", r.stderr)
+        self.assertIn("reportFramework", r.stderr)
+
+    def test_step_plan_unknown_dashboard_exits_2(self):
+        doc = advice_doc()
+        doc["configHandoff"]["stepPlan"][0]["dashboards"] = ["pgZ"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("pgZ", r.stderr)
+
+    def test_step_plan_missing_next_if_exits_2(self):
+        doc = advice_doc()
+        doc["configHandoff"]["stepPlan"][0]["nextIf"] = ""
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("nextIf", r.stderr)
 
     def test_unknown_pgid_exits_2(self):
         doc = advice_doc()

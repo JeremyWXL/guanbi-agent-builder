@@ -531,6 +531,11 @@ class TestSeedAdvice(AuditCase):
             self.assertIn(action["verdict"], {"保留", "改造", "拆分", "合并", "新建", "移出"})
             for fid in action["evidence"]:
                 self.assertIn(fid, {f["id"] for f in audit["findings"]})
+        for key in ("agentType", "defaultThinking", "stepPlan", "exploratoryRules",
+                    "reportFramework", "questionExamples", "outputRequirements"):
+            self.assertIn(key, seed["configHandoff"])
+        self.assertEqual(seed["configHandoff"]["agentType"], "")
+        self.assertEqual(seed["configHandoff"]["stepPlan"], [])
         links = seed["configHandoff"]["linkageFilters"]
         self.assertTrue(links)
         # 每条联动筛选器必须真实存在且 linkedCardCount>0
@@ -646,7 +651,7 @@ class TestRealFixture(AuditCase):
                     os.path.join(self.tmp, "card-data", "_sample_index.json"))
         audit = self.run_ok("--scenario", "月度经营分析")
         self.assertEqual(audit["meta"]["pageCount"], 2)
-        self.assertEqual(audit["meta"]["builderVersion"], "4.10.0")
+        self.assertEqual(audit["meta"]["builderVersion"], "4.11.0")
         self.assertEqual(audit["meta"]["inputs"],
                          {"pageCheck": False, "formulas": True, "samples": True})
         cards = {p["name"]: p["facts"]["dataCards"] for p in audit["pages"]}

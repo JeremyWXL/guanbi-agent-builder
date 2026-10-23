@@ -1,5 +1,5 @@
 {
-  "_help": "把本文件复制为 <工作目录>/insight-advice.json 后填写。auditBuiltAt 必须等于 insight-audit.json 的 meta.builtAt；evidence 只能引用 insight-audit.json 里真实存在的 finding id；cdId 必须来自对应页面的联动筛选器。占位符 <...> 全部替换后才能通过校验。",
+  "_help": "把本文件复制为 <工作目录>/insight-advice.json 后填写。auditBuiltAt 必须等于 insight-audit.json 的 meta.builtAt；evidence 只能引用 insight-audit.json 里真实存在的 finding id；cdId 必须来自对应页面的联动筛选器。configHandoff 先定 agentType：探索型必须有 exploratoryRules（≥2 条），报告型必须有 stepPlan（≥2 步）+ reportFramework（≥3 章）+ questionExamples（≥3 个），混合型两者都要。写法见 references/insight-agent-thinking-guide.md。占位符 <...> 全部替换后才能通过校验。",
   "auditBuiltAt": "<insight-audit.json 的 meta.builtAt>",
   "scenario": "<目标业务问题，1-3 句>",
   "businessScope": "<对象 + 场景 + 决策，一句话，例如：连锁零售单店经营异常定位与归因>",
@@ -47,7 +47,24 @@
       }
     ],
     "businessScope": "<建议填入洞察Agent「业务范围」的文本>",
-    "defaultThinking": "<建议填入「默认思路」的 4 步骨架>",
+    "agentType": "<探索型|报告型|混合型>",
+    "defaultThinking": "<建议填入「默认思路」的文本；探索型写路径原则，报告型写步骤序列>",
+    "stepPlan": [
+      {
+        "step": 1,
+        "goal": "<这一步解决什么问题>",
+        "dashboards": ["<pgId 或 NEW>"],
+        "coreQuestions": ["<本步 2-3 个核心问题>"],
+        "cards": ["<核心卡片名，可空>"],
+        "filters": ["<必带筛选字段，可空>"],
+        "output": "<本步结论 + 数据范围 + 证据>",
+        "nextIf": "<进入下一步的条件，带什么结论/参数>",
+        "stopIf": "<什么情况下停止>"
+      }
+    ],
+    "exploratoryRules": ["<探索型路径原则；报告型可空>"],
+    "reportFramework": ["<报告型交付章节；探索型可空>"],
+    "questionExamples": ["<报告型用户提问示例，≥3 个>"],
     "outputRequirements": "<建议填入「输出要求」的要点>",
     "businessKnowledgeGaps": ["<看板推不出、需要用户补的业务知识>"],
     "expertRoles": [

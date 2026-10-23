@@ -46,17 +46,29 @@
 
 ## 7. 洞察Agent 配置衔接
 
+### Agent 类型与业务范围
+
+{{agent_type_and_scope}}
+
 ### 联动筛选器
 
 {{linkage_filters}}
 
-### 业务范围
+### 分析思路
 
-{{business_scope}}
+{{analysis_thinking}}
 
-### 默认思路与输出要求
+### 报告交付框架
 
-{{thinking_and_output}}
+{{report_framework}}
+
+### 用户提问示例
+
+{{question_examples}}
+
+### 输出要求
+
+{{output_requirements}}
 
 ### 业务知识缺口
 
