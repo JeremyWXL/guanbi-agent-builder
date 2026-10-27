@@ -18,7 +18,7 @@ load_scope 返回:
                                     #   旧档案无 metrics.json / 无 governedRef → 空集，降级不报错）
    "titles": [看板名, ...],         # 超范围话术列举已学看板用
    "source": 路径}
-找不到 scope 文件返回 None——调用方降级跳过校验（脱离交付包单独运行不阻断）。
+找不到 scope 文件返回 None——交付取数默认拒绝；独立调试由调用方显式 --no-scope。
 """
 import json, os
 
@@ -26,9 +26,13 @@ import json, os
 DEFAULT_CANDIDATES = (
     os.path.join("{here}", "..", "cards.json"),
     os.path.join("{here}", "cards.json"),
+    os.path.join("{here}", "..", "cards-raw.json"),
+    os.path.join("{here}", "cards-raw.json"),
     os.path.join("{here}", "..", "cards-merged.json"),
     os.path.join("{here}", "datasets.json"),
     os.path.join("{here}", "..", "datasets.json"),
+    os.path.join("{here}", "..", "datasets-raw.json"),
+    os.path.join("{here}", "datasets-raw.json"),
 )
 
 
@@ -71,10 +75,17 @@ def load_scope(candidates=None):
         return None
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
-    scope = {"pgIds": {}, "dsIds": set(), "cdIds": {}, "metricIds": set(),
-             "titles": [], "source": path}
+    scope = {"pgIds": {}, "dsIds": set(), "cdIds": {}, "cardsById": {},
+             "metricIds": set(), "metricsValid": True, "titles": [], "source": path}
+    metrics_path = os.path.join(os.path.dirname(path), "metrics.json")
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path, encoding="utf-8") as f:
+                json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            scope["metricsValid"] = False
     scope["metricIds"] = _load_metric_ids(os.path.dirname(path))
-    if os.path.basename(path) == "datasets.json":
+    if os.path.basename(path) in ("datasets.json", "datasets-raw.json"):
         # 数据集直通模式：无卡片层，白名单 = 已学数据集的 dsId
         for k, v in doc.items():
             if k.startswith("_") or not isinstance(v, dict):
@@ -97,4 +108,5 @@ def load_scope(candidates=None):
         for c in cards:
             if isinstance(c, dict) and c.get("cdId"):
                 scope["cdIds"][c["cdId"]] = f"{k}__{c.get('name', '')}"
+                scope["cardsById"][c["cdId"]] = c
     return scope

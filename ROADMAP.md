@@ -2,12 +2,12 @@
 
 > 本文档是跨 session 的接力棒：记录当前状态、下一步计划与必须守住的设计原则。
 > 历史变更看 [CHANGELOG.md](CHANGELOG.md)；评审原文（对照 GitHub 20+ 个 data agent 项目的分析）见 v2.5 当次会话结论，要点已融入本文。
-> 最近更新：2026-10-23（v4.12.0 新增洞察Agent 看板重建的卡片级复用：只挑卡片用 createCard 重建、不整页另存；新增 extract_card_skeletons.py 抽取骨架；前序 v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零）
+> 最近更新：2026-10-23（v4.12.1 修复 v4.10–v4.12 一致性/健壮性问题：预算不能绕过 R-01、骨架多数据集别名与多行公式、cardReuse 命令校验、audit 确认门跑 --check；前序 v4.12.0 卡片级复用 / v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断）
 
 ## 当前状态快照
 
-- **版本**：v4.12.0（新增洞察Agent 看板重建的卡片级复用：只挑卡片用 createCard 重建、不整页另存；extract_card_skeletons.py 抽骨架；前序 v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.1 文档与测试基建 / v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.9.1；L0 脚本矩阵 31 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 + L1-audit 四步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.9.1：mxbc 全矩阵回归 L2 97.4/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
-- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 洞察Agent 诊断四步 + 全程红线 19 条）+ references/scripts（30 个脚本 + 29 个测试文件 486 例单测）+ references/templates（11 个模板）+ references/insight-agent-readiness.md（v4.10 规则/评分/五模式）+ references/insight-agent-thinking-guide.md（v4.11 分析思路写作）+ references/insight-agent-card-reuse.md（v4.12 卡片级复用/重建）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 十处版本一致性）
+- **版本**：v4.12.1（v4.12.1 修复 v4.10–v4.12 一致性/健壮性：预算不能绕过 R-01、骨架多数据集别名/多行公式/残留清理、cardReuse 命令校验、audit 确认门跑 --check；v4.12.0 新增洞察Agent 看板重建的卡片级复用；前序 v4.11.0 分析思路写作指引 / v4.10.0 看板就绪诊断 / v4.9.3 P2 积压清零 / v4.9.2 回归 P1 修复 / v4.9.1 文档与测试基建 / v4.9.0 全局参数 DYNAMIC_PARAMS 全链路 / v4.8.x 指标中心轻量集成 / v4.7.x 交付工程化 / v4.6.0 问题反馈通道 / v4.5.0 范围守卫 / v4.4.0 增量学习通道 / v4.3.0 快速模式），独立测试 Agent 在 `tests/agent-tester/`（v1.9.3；L0 脚本矩阵 32 检查点 / L1 八步 E2E + L1-lite 五步 + L1-incr 五步 + L1-audit 四步 / L2 交付答题评分），基线 `tests/baselines/` 双写 .md+.json（最新归档 v4.12.1：full/lite/incr/audit 全矩阵回归，L2 100/A 零红线），`diff_baselines.py` 一键版本对比，发布走 `~/.agents/skills/publishing-skills/`
+- **架构**：SKILL.md（八步向导 + 快速/增量双通道 + 洞察Agent 诊断四步 + 全程红线 20 条）+ references/scripts（31 个脚本 + 30 个测试文件 545 例单测）+ references/templates（11 个模板）+ references/insight-agent-readiness.md（v4.10 规则/评分/五模式）+ references/insight-agent-thinking-guide.md（v4.11 分析思路写作）+ references/insight-agent-card-reuse.md（v4.12 卡片级复用/重建）+ references/cognitive-foundation.md + sql-guide.md + dashboard-knowledge-rationale.md（v4.1–v4.3 设计推演）+ metric-center-integration.md（v4.8 方案全文）；CI 在 .github/workflows/ci.yml（py_compile + 单测 + frontmatter lint + 十处版本一致性）
 - **脚本现状**：`list_pages.py`（看板扫描+BI 链接）/ `check_pages.py`（适检三档 + agent-ready 评分，governed 指标中心映射随 page-check.json 落盘）/ `selection_page.py`（第 1 步核对页）/ `parse_page.py`（raw JSON 主解析+文本回退+哨兵+公式收割+结构指纹+filtered/dsUsage 取数分级+dynamicParams 参数收割）/ `learn_dataset.py`（数据集直学，_meta.dsFormulas 与 cards-raw 同构）/ `check_formulas.py`（口径字典 + `--seed-metrics`，PARAM_DEPENDENT 最高优先分类；回退链 cards-merged→cards-raw→datasets-raw→cards.json）/ `check_metrics.py` / `check_dims.py`（双闸门 + 双种子）/ `fill_dim_values.py`（维度枚举机械回填，`--full` 全量）/ `sample_cards.py`（截断+列画像+`--scope` 白名单+`--only-cdIds`/`--prune-keys` 定向刷新）/ `validate_cards.py` / `run_sql.py`（只读强制 + dsId 白名单 + `--check-scope`）/ `run_metric.py`（指标中心直查，governedRef 白名单）/ `preflight.py`（前置检查+断点检测，--json 纯 JSON）/ `wizard_state.py`（状态机 + full/lite/incr/audit 四模式 + confirm 产物门，含 audit 第 2/3/4 步）/ `attribute.py`（归因引擎）/ `eval_examples.py`（回归评测 + `--suggest/--record/--confirm` 验收回填）/ `memory.py`（记忆系统 7 子命令）/ `workbench.py`（校验工作台+体检+多 agent 总览，单文件是交付硬约束勿拆）/ `make_link.py`（筛选直达链接）/ `merge_cards.py`（增量合并 + cardHash diff）/ `scope.py` + `scope_audit.py`（范围守卫白名单 + 事后审计）/ `feedback.py`（问题反馈 GitHub/SkillHub 双通道）/ `audit_insight_pages.py`（洞察Agent 看板机械体检：六维评分 + 跨页重叠/共享维度/口径冲突/层级 + `--seed-advice`）/ `insight_audit_report.py`（建议校验 + Markdown/HTML 报告，`--draft/--check`）/ `extract_card_skeletons.py`（按 cdId 从 cards-raw 抽 createCard 骨架 + 核对清单）/ `build_package.py` + `render_agent_skill.py` + `check_package.py`（交付机械组装 + 模板渲染 + 三层体检总闸门）
 - **发布方式**：见 `~/.agents/skills/publishing-skills/`（git push 不通时 `scripts/gh_api_push.py` 精确重放；SkillHub 用 `scripts/stage_skill.py` 构建 staging 后 publish，LICENSE/.gitignore 不入包）
 
@@ -147,6 +147,19 @@ v4.10 只给了一个 4 步骨架，不能指导用户为已搭建的洞察Agent
 - **A3**：新增“卡片复用与迁移”步骤，要求先抽骨架再重建；诊断只读，发布必须用户确认
 - **验证**：新增 extractor 7 例；报告 35 → 39 例；全量 475 → 486 全绿
 - **后续**：扩展更多图表类型的 JSON→createCard 自动翻译；按目标页批量生成 page.js 布局；发布后源卡/新卡数值自动对账
+
+## v4.12.1（回归修复：一致性/健壮性收口）——✅ 已完成（2026-10-23，v4.12.1）
+
+v4.10–v4.12 三个版本的 review 发现 5 个 P1 + 一批一致性欠账，本版本全部收口：
+
+- **R-01 不可绕过**：`--max-pages` 只允许 ≤10（更严格的自定预算），超过即 exit 2；报告用 `officialMaxPages` 标注官方上限，预算覆盖值单独显示（此前 11 页 + `--max-pages 12` 会得 85 分/可直接配置，报告还写"官方上限 12 张"）
+- **骨架抽取**：多数据集选卡按 `dsId` 生成 `DS1…DSn` 别名并在清单给出 `init --alias` 命令；多行公式/卡名压成单行（此前会截断注释生成语法错误的 JS）；重跑清空旧 `card_*.js`；重复 `--cdIds` 去重；地图类无度量补 colorBy TODO
+- **cardReuse 校验**：`cardReuse` 改为条件必填（无拆分/合并/新建页时不必出现）；`commands` 命中 `page save-as` 即 exit 2，非 dry-run 的 `publish` 给告警；报告命令块注明发布需用户确认
+- **audit 确认门**：`confirm --state audit --step 3` 实际运行 `insight_audit_report.py --check`；第 4 步拒绝早于建议文件的旧报告
+- **R-02 候选收敛**：只有隐藏筛选器时页面展示分封顶 79（小改后配置），不再出现"81 分/可直接配置"与 R-02 未满足并存
+- **文档与死代码**：SKILL 报告章节/红线 19/交付树、ROADMAP 红线数、模板标注、`merge_cards` 过期版本常量、未使用导入等
+- **复审加固**：增量合并改用语义内容指纹并拦截改名覆盖，保留 dynamicParams/inPool、清理失效 dsFormulas；采样失败不再沿用旧文件，定向采样保留索引；普通别名与未知公式恢复保守口径；多数据集骨架字段显式归属；audit 硬规则与状态门全量复核；SQL 只读解析、交付固定备份中断恢复、工作台控制文件保护、单卡取数白名单与 fail-closed 范围策略
+- **验证**：单测 486 → 502 → 545 全绿；full/lite/incr/audit L1 全通过，独立 L2 100/A 零红线，基线 tests/baselines/v4.12.1.* 已归档；真实 guanvis preview/diff/publish --dry-run 通过，未正式 publish。agent-tester 升 v1.9.3 同步检查点
 
 ## 看板角色迁移——规划中（原"v4.4"规划；版本号 v4.4.0 已被增量学习通道占用，本项递延，实施时另取版本号）
 

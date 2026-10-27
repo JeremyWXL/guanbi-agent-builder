@@ -2,7 +2,7 @@
 name: guanbi-agent-builder
 slug: guanbi-agent-builder
 displayName: Data Agent 搭建向导（个人作品 · 面向观远 BI）
-version: "4.12.0"
+version: "4.12.1"
 summary: 个人开发者作品，与观远数据官方无关。把 BI 看板变成专属 data agent 的开源引导式搭建向导，并能诊断 1-N 张看板对观远洞察Agent 的就绪度、给出整合与调整建议，免费使用。
 license: MIT
 description: 引导业务用户（WorkBuddy 新手，但熟悉自己的 BI 看板）在 WorkBuddy 中一步步搭建自己的 data agent——以观远 BI 仪表板为数据来源，覆盖问数查询、指标归因、异常识别、综合洞察四类场景。当用户说"搭建/创建自己的 data agent"、"把看板变成 AI 助手"、"基于我的仪表板做智能分析/问数"、"搭建经营分析助手"等时使用。支持快速模式（约 15 分钟先跑起来，五步）与完整模式（口径逐条打磨，八步）双轨道，快速模式交付后可随时深化；已交付 agent 支持增量学习通道（加看板/改版重学/移除看板，只学增量不动已有口径与记忆）。参照观远官方 Dashboard Agent 的配置结构（pages/learningResult/businessKnowledge/insightThinking/outputFormat）自动生成配置，关键环节由用户确认纠偏。仅在用户**明确点名「洞察Agent」并要求配置/评估其看板**时（如"这几张看板适不适合洞察Agent"、"洞察Agent 的看板怎么整合/改造"、"洞察Agent 数据范围怎么选"），才走「洞察Agent 看板就绪诊断」通道；用户只说"看板体检/看板优化/搭建助手"等未点名洞察Agent 的请求，一律走八步 data agent 向导，不得主动切入诊断。版本历史见 CHANGELOG.md。内置问题反馈通道：使用过程中遇到 bug 或不符合预期，可经用户同意后一键反馈到本项目 GitHub 仓库（issue）或 SkillHub 评论区，只带环境信息、不带业务数据。
@@ -194,7 +194,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    ```bash
    python3 references/scripts/sample_cards.py <工作目录>/cards-raw.json <工作目录>/card-data
    ```
-   每张卡默认最多落盘 200 行（防大卡片撑爆上下文，原始行数记入索引）；`_sample_index.json` 同时给出每列画像（数值列 min/max、低基数文本列的枚举值——回答筛选取值类问题时以枚举值为准，禁止编造取值）。**参数化卡片（cards-raw.json 该卡 `dynamicParams` 非空）采样按参数默认值执行**——默认值为 `{{{yesterday}}}` 类宏或收窄区间时采样可能 0 行，此时先怀疑默认参数范围而非"没数据"，可用 `guancli card preview <cdId> --dynamic-param "参数名=值"` 手动验证后再下结论
+   每张卡默认最多落盘 200 行（防大卡片撑爆上下文，原始行数记入索引）；`_sample_index.json` 同时给出每列画像（数值列 min/max、低基数文本列的枚举值——回答筛选取值类问题时以枚举值为准，禁止编造取值）。**参数化卡片（cards-raw.json 该卡 `dynamicParams` 非空）采样按参数默认值执行**——默认值为 `{{{yesterday}}}` 类宏或收窄区间时采样可能 0 行，此时先怀疑默认参数范围而非"没数据"，可用 `python3 references/scripts/preview_card.py <cdId> --scope <工作目录>/cards-raw.json --dynamic-param "参数名=值"` 手动验证后再下结论
 3. 强制质量校验：
    ```bash
    python3 references/scripts/validate_cards.py <工作目录>/card-data
@@ -346,7 +346,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
    - 趋势描述与逐期数值一致，禁止错位编造
    - 前后结论不矛盾
    - 归因类回答的贡献额/贡献率必须来自 attribute.py 计算输出，禁止口算
-3. **SQL 直查测试（若启用）**：第 2 步探查过 SQL 能力不代表此时仍可用——测试前先探活（对每个要用的数据集跑一条 `SELECT COUNT(*)` 级轻量查询）：数据集失效（报错/返回 0 行且与卡片矛盾）时，降级为**卡片间交叉验证**（同指标两张卡互核、维度合计≈总计），并在交付时把 SQL 直查标注为"当前不可用"，禁止按第 2 步旧结论宣称可用。探活通过则用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>'` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%）
+3. **SQL 直查测试（若启用）**：第 2 步探查过 SQL 能力不代表此时仍可用——测试前先探活（对每个要用的数据集跑一条 `SELECT COUNT(*)` 级轻量查询）：数据集失效（报错/返回 0 行且与卡片矛盾）时，降级为**卡片间交叉验证**（同指标两张卡互核、维度合计≈总计），并在交付时把 SQL 直查标注为"当前不可用"，禁止按第 2 步旧结论宣称可用。探活通过则用 `python3 references/scripts/run_sql.py <数据集ID> '<SQL>' --scope <工作目录>/cards-raw.json` 测试至少 1 个"卡片粒度不够"的查询（如单月指标、卡片没拆的维度），验证 SQL 结果与卡片结果交叉闭环（误差 <2%；数据集直通模式改传 `--scope <工作目录>/datasets-raw.json`）
 4. 输出测试报告：每个场景的通过/失败及证据
 5. **验收通过的问答汇入 examples.json（机械回填，禁止手填数字）**：
    ```bash
@@ -389,6 +389,7 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── report-insights.md # 历史报告提炼（可选，若客户提供报告）
        ├── conversation-insights.md # 历史对话沉淀（可选，若客户授权）
        ├── sql-guide.md       # SQL 直查指南（若数据集支持）
+       ├── outputFormat.json  # 输出模板（第 6 步确认版；未提供时用 built-in 默认）
        ├── examples.json      # few-shot 示例库（验收通过的问答基准；回答参照语料 + 回归评测题库）
        ├── attribute.py       # 归因计算引擎（复制自本 skill；贡献度计算唯一入口）
        ├── make_link.py       # 筛选直达链接生成器（复制自本 skill；回答附"筛好条件的看板"链接）
@@ -396,7 +397,8 @@ open <工作目录>/selection.html   # macOS 直接打开浏览器
        ├── check_metrics.py   # 口径档案校验器（复制自本 skill；metrics.json 改动后必跑）
        ├── check_dims.py      # 维度档案校验器（复制自本 skill；dimensions.json 改动后必跑）
        ├── eval_examples.py   # 回归评测脚本（复制自本 skill；看板改版重学后一键回归）
-       ├── sample_cards.py    # 取数脚本（软链或复制自本 skill）
+       ├── sample_cards.py    # 批量取数脚本（复制自本 skill）
+       ├── preview_card.py    # 单卡取数白名单包装（cdId + dynamicParams 校验）
        ├── run_sql.py         # 只读 SQL 执行器（复制自本 skill；SQL 直查唯一入口）
        ├── run_metric.py      # 指标中心直查执行器（复制自本 skill；metric query 唯一入口，governedRef 白名单）
        ├── workbench.py       # 工作台脚本（复制自本 skill，维护时用 --serve 编辑）
@@ -549,13 +551,13 @@ python3 references/scripts/insight_audit_report.py <工作目录> --draft
 ```
 
 - 采样是"推荐但可跳过"：不采样时行数标记"未实测"，不能当通过；报告会明示上下文风险未实测。
-- `audit_insight_pages.py` 产出 `insight-audit.json` + `insight-advice.seed.json`；`--draft` 产出 `insight-audit-draft.html`，供用户边看边纠偏。
+- `audit_insight_pages.py` 产出 `insight-audit.json` + `insight-advice.seed.json`；`--draft` 产出 `insight-audit-draft.html` 与 `insight-audit-draft.md`，供用户边看边纠偏。
 - **AI 必须先用业务语言复述**：每张看板"在回答什么问题、关键指标是什么、粒度到哪一层"；阻断项与 P0 按影响排序；哪些是机械判定、哪些是推断、哪些需要用户确认。禁止只丢一份 JSON 或长表格给用户。
 - **确认点**：用户纠正业务理解、确认体检事实。确认后 `confirm --state audit --step 2`（前置产物 `insight-audit.json`）。
 
 ### A3 整合与调整建议
 
-复制 `insight-advice.seed.json` 为 `insight-advice.json`，在其基础上补业务判断（底稿已填好 pgId/verdict/priority/evidence/联动筛选器，AI 不重写结构）。分析思路按 `references/insight-agent-thinking-guide.md` 写，模板见 `references/templates/insight-thinking.md`。必须包含：
+复制 `insight-advice.seed.json` 为 `insight-advice.json`，在其基础上补业务判断（底稿已填好 pgId/verdict/priority/evidence/联动筛选器，AI 不重写结构；完整 schema 见 `references/templates/insight-advice.json`）。分析思路按 `references/insight-agent-thinking-guide.md` 写，模板见 `references/templates/insight-thinking.md`。必须包含：
 
 1. **先判断 Agent 类型**：探索型（发散提问、动态规划）/ 报告型（固定场景、固定交付）/ 混合型（默认探索 + 报告型专家）。不确定时直接问用户："主要是给管理者自由提问、边问边下钻，还是固定场景出报告/播报？"
 2. **推荐模式**：一张宽表 / 多层下钻 / 主从Agent / 批量分治 / 链路复盘，主模式唯一 + 备选 + 理由；
@@ -591,7 +593,7 @@ python3 references/scripts/insight_audit_report.py <工作目录> --check
 python3 references/scripts/insight_audit_report.py <工作目录>
 ```
 
-产出 `insight-audit.html`（一页式，可点看板名跳 BI）、`insight-audit.md`（贴文档/PPT）、`insight-audit.json`（机器可读基线）。报告九节：结论摘要 / 目标场景 / 体检总表 / 关键发现 / 整合建议 / 逐页调整 / 配置衔接 / 路线图 / 附录。
+产出 `insight-audit.html`（一页式，可点看板名跳 BI）、`insight-audit.md`（贴文档/PPT）；`insight-audit.json`（机器可读基线）在 A2 已生成，本步不重写。报告九节 + 附录 A/B/C：结论摘要 / 目标场景与看板组合 / 体检总表 / 关键发现 / 整合建议 / 逐页调整清单 / 配置衔接 / 落地路线图 / 待确认问题。
 
 交付话术："这是诊断与建议，不是已改造完成；按 P0 改完可以回来复检，复检会和这次基线对比。要直接搭一个 WorkBuddy data agent 的话，我们走另一条八步向导。"
 
@@ -620,15 +622,15 @@ python3 references/scripts/insight_audit_report.py <工作目录>
 10. **SQL 直查公式纪律（实测踩坑）**：
     - 禁止 `AVG(明细比率)`——换维度后结果错得不多、最难察觉（实测 105% vs 103.6%）；比率型指标必须内联公式"分子分母分别求和再相除"
     - 禁止按名引用数据集计算字段（SQL 引擎只认物理列，直接报 UNRESOLVED_COLUMN）——必须内联展开公式原文
-    - 禁止内联含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）——SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）；这类指标走卡片取数 `guancli card preview <cdId> --dynamic-param "参数名=值"`，卡片声明的参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数（传未声明的参数 guancli 会显式报错；DRILL 下钻卡不支持传参，改用其主卡或页面筛选器联动）
+    - 禁止内联含 `[DYNAMIC_PARAMS.xxx]` 的公式（PARAM_DEPENDENT）——SQL 引擎没有参数上下文，内联必报错或静默算错（参数名撞物理列名时）；这类指标走卡片取数 `python3 references/scripts/preview_card.py <cdId> --scope <工作目录>/cards-raw.json --dynamic-param "参数名=值"`，卡片声明的参数与默认值见 cards.json 该卡 `dynamicParams`，只传声明过的参数（传未声明的参数 guancli 会显式报错；DRILL 下钻卡不支持传参，改用其主卡或页面筛选器联动）
     - SQL 必须显式复写卡片的隐藏筛选条件（如 `时间维度='月累计'`）——漏掉就是数量级错误（实测差 259 倍）
 11. **归因算术禁止口算**：贡献额/贡献率/乘法因子拆解一律走 attribute.py，LLM 只负责解释脚本输出（LLM 口算贡献占比是"归因必须量化"最大的可靠性漏洞）
 12. **快速模式可裁确认深度，三条底线不破**：适检评分的提醒义务、口径冲突逐条裁决、验收实测（见 lite 分支「三条不破底线」）；第 4、7 步命门在 lite 下同样禁止 skipped
 13. **增量学习三条命门**（incr 模式）：新冲突逐条裁决、禁止 AI 二选一；双闸门 ❌ 清零才放行；验收实测（旧示例全量回归 + 新能力 ≥1 题）——第 4、7 步命门在 incr 下同样禁止 skipped；memory/ 永不在覆盖范围
-14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId）；禁止裸调 `guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
+14. **越界取数三条**（范围守卫）：取数必经包内白名单脚本（run_sql 校验 dsId、preview_card/sample_cards 校验 cdId、run_metric 校验 metricId）；禁止裸调 `guancli card preview`、`guancli page tree/search/get`、`guancli ds tree` 取数；scope 缺失默认拒绝，独立调试须显式 `--no-scope`；qa-log 记 --page/--ds 供 scope_audit.py 事后审计——覆盖外看板/数据集的数据禁止当答案
 15. **问题反馈三条**：未经用户明确同意不发送反馈；反馈正文禁止含业务数据（只有版本/进度/平台与用户亲口描述的现象）；发送失败按脚本引导处理、不静默跳过（通道与话术见「问题反馈通道」节）
 16. **交付三条**（v4.7 工程化，实机 review 教训）：交付包必须经 `build_package.py` 机械组装 + `check_package.py` 体检通过——禁止手工拼装、禁止裁剪 cards.json（裁剪 = run_sql/make_link/sample_cards 连锁瘫痪）；交付助手 SKILL.md 必须 `render_agent_skill.py` 模板渲染，禁止自由撰写（自由撰写 = 缺节 + CLI 凭记忆写错）；examples.json 验收回填必须走 `eval_examples.py --record/--confirm`——过不了取数源校验的数字进不了基准
 17. **指标中心三条**（v4.8）：指标中心对齐只做引用已发布同口径指标 / 顺手创建原子指标（≤10 条）/ 一次性推荐——指标体系建设、批量迁移归并、复合/派生批量梳理一律路由专项流程，不在本向导展开；指标中心取数必经 `run_metric.py` 白名单校验，禁止裸调 `guancli metric query`；指标中心口径与看板口径不一致时列入拍板组请用户裁决，禁止 AI 自行二选一
 18. **数据量三条**（v4.8.2，行数上限）：CLI 取数有行数上限（卡片 preview 图表默认最多 1 万行，超上限即截断）——搭建时留意数据集体量并在资产目录标注大数据集、向用户说明上限风险；用户问题可能触及上限时**优先**提醒缩小取数范围（收窄时间段/加筛选）或按维度聚合，确实需要大量明细才按维度拆分分批取数再拼接，且动手前必须告知用户该流程长、性能与 token 消耗大；截断结果禁止当全量使用，必须声明"只是前 N 行"。交付包已内置该纪律（模板「数据红线 · 行数上限纪律」+ sql-guide.md「行数上限与分批取数纪律」节），机械渲染自动带入
-19. **洞察Agent 诊断五条**（v4.10）：只读不改看板；R-01（>10 页）/R-02（无联动筛选器）阻断不绕过；每条建议必须引用 finding 证据；机械判定/推断/待确认分开标注；不把 ChatBI、DecideX、仪表板洞察、WorkBuddy data agent 与观远洞察Agent 混称
+19. **洞察Agent 诊断六条**（v4.10/v4.11）：只读不改看板；R-01（>10 页）/R-02（无联动筛选器）阻断不绕过（隐藏筛选器只算候选，页面分最高 79）；每条建议必须引用 finding 证据；机械判定/推断/待确认分开标注；分析思路先分探索型/报告型，不得一套固定流程套所有场景；不把 ChatBI、DecideX、仪表板洞察、WorkBuddy data agent 与观远洞察Agent 混称
 20. **卡片复用三条**（v4.12）：不整页另存（会把冗余卡片/数据带过去）；checkout 的 `attachCard` card JS 不能直接搬到 `guanvis init` 新工程；重建必须先用 `extract_card_skeletons.py` 抽骨架 → `preview`/`diff`/`publish --dry-run` → 用户确认后发布，禁止把 TODO 计算字段当已还原

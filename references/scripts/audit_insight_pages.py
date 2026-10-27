@@ -3,7 +3,7 @@
 洞察Agent 看板就绪诊断器：把 parse_page.py / check_pages.py / check_formulas.py / sample_cards.py
 的产物，按 references/insight-agent-readiness.md 的规则做机械体检，输出可复算的结构诊断
 用法:
-  python3 audit_insight_pages.py <工作目录> [--scenario TEXT] [--max-pages N] [--out PATH] [--seed-advice]
+  python3 audit_insight_pages.py <工作目录> [--scenario TEXT] [--max-pages N（≤10）] [--out PATH] [--seed-advice]
 输入（只读，不调用 guancli）:
   <工作目录>/cards-raw.json              必需（parse_page.py 产出）；缺失/损坏 → exit 2
   <工作目录>/page-check.json             可选（适检结论 / agent-ready / dataUtime 停更信号）
@@ -14,8 +14,9 @@
   <工作目录>/insight-advice.seed.json     --seed-advice 时写建议底稿（字段对齐 references/templates/insight-advice.json）
 
 规则口径（references/insight-agent-readiness.md）:
-  R-01 数据范围 >max-pages（默认 10）→ blocker；R-02 筛选栏内无联动筛选器 → blocker，
-        linkedCardCount>0 但不在筛选栏只告警（P2，不算通过）；
+  R-01 数据范围 >max-pages（默认 10，--max-pages 只能收紧不能超过 10）→ blocker；
+  R-02 筛选栏内无联动筛选器 → blocker，linkedCardCount>0 但不在筛选栏只告警
+        （P2，页面分封顶 79，不算通过）；
   R-05 同名指标公式冲突 → P0；R-06 单页数据卡 >20 → P0、13–20 / <5 → P1、
         明细表（type=TABLE）原始行数 >10000 → P0、未采样 → P2“未实测”；
   R-08 参数化指标（PARAM_DEPENDENT）无参数筛选器 → P0；
@@ -43,7 +44,7 @@ import re
 import sys
 from datetime import date, datetime
 
-BUILDER_VERSION = "4.12.0"  # 发布时与 SKILL.md frontmatter version 同步
+BUILDER_VERSION = "4.12.1"  # 发布时与 SKILL.md frontmatter version 同步
 DEFAULT_MAX_PAGES = 10
 STALE_DAYS = 90
 
@@ -260,7 +261,9 @@ def param_dependency_records(formulas):
         if not isinstance(metric, dict) or metric.get("classification") != "PARAM_DEPENDENT":
             continue
         formula = metric.get("formula") or ""
-        params = sorted({p.strip() for p in DYNAMIC_PARAM.findall(formula) if p.strip()})
+        declared = metric.get("params") or []
+        params = sorted({str(p).strip() for p in declared if str(p).strip()} or
+                        {p.strip() for p in DYNAMIC_PARAM.findall(formula) if p.strip()})
         pages, cards = [], []
         for source in metric.get("sources") or []:
             page_name = (source or {}).get("page") or ""
@@ -292,10 +295,15 @@ def sample_maps(samples):
     return rows_by_cd, bool(samples)
 
 
-def param_served(param, has_param_selector, has_time):
+def param_served(param, has_param_selector, has_time, param_labels=()):
     if TIME_HINT.search(param or ""):
         return has_time
-    return has_param_selector
+    if not has_param_selector:
+        return False
+    normalized = (param or "").strip().lower()
+    if normalized.startswith("dynamic_params."):
+        normalized = normalized[len("dynamic_params."):]
+    return any((label or "").strip().lower() == normalized for label in param_labels)
 
 
 # ───────────────────────────── 页级体检 ─────────────────────────────
@@ -485,7 +493,8 @@ def audit_page(name, page, check_page, conflicts, deps, rows_by_cd, samples_avai
     for dep in deps:
         if name not in dep["pages"]:
             continue
-        missing = [p for p in dep["params"] if not param_served(p, bool(param_selectors), has_time)]
+        missing = [p for p in dep["params"]
+                   if not param_served(p, bool(param_selectors), has_time, param_labels)]
         if missing:
             card_name = next((c for pg, c in dep["cards"] if pg == name), "")
             param_hits.append(dep)
@@ -664,6 +673,11 @@ def audit_page(name, page, check_page, conflicts, deps, rows_by_cd, samples_avai
     # 页级 P0（口径冲突/上下文超限/参数无承接）或阻断 → 不允许显示“可直接配置”。
     # 分数仍保留原始值供排查，展示分收敛到 64（需改造档），避免“91 分但 3 个 P0”的自相矛盾。
     total = min(raw_total, 64) if (has_p0 or has_blocker) else raw_total
+    # 联动筛选器只在隐藏区（inFilterBar=false）：只算候选，不能直接当通过。
+    # 不硬阻断（可能仍可被洞察Agent 选中），但展示分收敛到 79（小改后配置），
+    # 避免出现"81 分/可直接配置"与 R-02 未满足并存的矛盾。
+    if hidden_only and not linkage:
+        total = min(total, 79)
     verdict = "blocker" if has_blocker else ("warn" if findings else "ok")
 
     return {"name": name, "pgId": page.get("pgId") or "",
@@ -1119,6 +1133,9 @@ def parse_args(argv):
                 fail(f"--max-pages 需要整数，收到 {argv[i + 1]!r}\n{USAGE}")
             if max_pages < 1:
                 fail(f"--max-pages 必须 ≥1，收到 {max_pages}\n{USAGE}")
+            if max_pages > DEFAULT_MAX_PAGES:
+                fail(f"--max-pages 不能超过官方上限 {DEFAULT_MAX_PAGES} 张（收到 {max_pages}）——"
+                     f"R-01 是官方硬要求，不能靠调预算绕过；超出请拆成第二个智能体或先做取舍\n{USAGE}")
             i += 2
         elif arg == "--out":
             if i + 1 >= len(argv):
@@ -1205,6 +1222,8 @@ def main(argv=None):
         overall = min(overall, 64)
     if any(f["rule"] == "R-02" and f["level"] == "blocker" for f in all_findings):
         overall = min(overall, 64)
+    if any(c.get("hidden_only") for c in available):
+        overall = min(overall, 79)
     grade = grade_for(overall)
 
     skipped = []

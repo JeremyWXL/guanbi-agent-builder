@@ -23,16 +23,19 @@
   confirm 第 7 步需 examples.json 验收基准全部回填确认（--record/--confirm 的证据），
   confirm 第 8 步需 package-check.json 体检通过（build_package.py 的产出）；
   audit confirm 第 2 步需 insight-audit.json（audit_insight_pages.py 产出）、
-  第 3 步需 insight-advice.json（建议底稿补全）、
-  第 4 步需 insight-audit.md 与 insight-audit.html（insight_audit_report.py 产出）——
+  第 3 步需 insight-advice.json 且必须通过 insight_audit_report.py --check、
+  第 4 步需 insight-audit.md 与 insight-audit.html（insight_audit_report.py 产出，
+  且不得早于建议文件）——
   状态机从"记状态"升级为"验产物"，质量命门不看口头申报看产物
 退出码: 0 成功 / 1 参数或状态文件错误 / 2 状态文件损坏 / 3 违反状态机约束
 """
-import argparse, json, os, sys, tempfile
-from datetime import datetime, timezone
+import argparse, json, os, subprocess, sys, tempfile
+from datetime import datetime
+
+import insight_audit_report
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.12.0"
+BUILDER_VERSION = "4.12.1"
 
 MODES = ("full", "lite", "incr", "audit")
 MODE_LABELS = {"full": "完整模式", "lite": "快速模式", "incr": "增量模式",
@@ -199,6 +202,31 @@ def gate_confirm_artifacts(workdir, step, mode="build"):
         missing = [f for f in files if not os.path.isfile(os.path.join(workdir, f))]
         if missing:
             return f"{hint}（缺少：{'、'.join(missing)}）"
+        audit = load_json_quiet(os.path.join(workdir, "insight-audit.json"))
+        audit_errors = insight_audit_report.validate_audit_document(audit)
+        if step == 2 and audit_errors:
+            return "第 2 步体检产物无效：" + "；".join(audit_errors)
+        if step in (3, 4):
+            advice = load_json_quiet(os.path.join(workdir, "insight-advice.json"))
+            errors, _ = insight_audit_report.validate(audit, advice)
+            if errors:
+                return f"第 {step} 步体检/建议校验未通过：" + "；".join(errors[:4])
+        if step == 4:
+            view = insight_audit_report.build_view(
+                audit, advice, False, insight_audit_report.s((audit.get("meta") or {}).get("biBaseUrl")))
+            expected = {
+                "insight-audit.md": insight_audit_report.render_markdown(view),
+                "insight-audit.html": insight_audit_report.render_html(view),
+            }
+            for name, content in expected.items():
+                try:
+                    with open(os.path.join(workdir, name), encoding="utf-8") as f:
+                        actual = f.read()
+                except OSError as exc:
+                    return f"第 4 步报告 {name} 无法读取：{exc}"
+                if actual != content:
+                    return (f"第 4 步报告 {name} 与当前体检/建议不一致或内容不完整——"
+                            "请重新运行 insight_audit_report.py，禁止用空报告或旧报告确认")
         return None
     if step == 7:
         ex = load_json_quiet(os.path.join(workdir, "examples.json"))
@@ -297,6 +325,11 @@ def cmd_set(args, confirmed=False):
         die(f"第 {args.step} 步【{names[args.step]}】是质量命门，不允许跳过；"
             f"必须完成并确认后才能继续", code=3)
     if confirmed:
+        if mode == "audit":
+            prior = [str(n) for n in range(1, args.step)
+                     if (state["steps"].get(str(n)) or {}).get("status") != "confirmed"]
+            if prior:
+                die(f"第 {args.step} 步不能越过前序步骤确认；请先依次确认第 {'、'.join(prior)} 步", code=3)
         gate = gate_confirm_artifacts(args.workdir, args.step, mode)
         if gate:
             die(gate, code=3)

@@ -87,12 +87,24 @@ def write_back(workdir, target, doc):
     return bak
 
 
-def sql_rows(ds_id, sql):
+def scope_file(workdir):
+    for name in ("cards.json", "cards-merged.json", "cards-raw.json",
+                 "datasets.json", "datasets-raw.json"):
+        path = os.path.join(workdir, name)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def sql_rows(workdir, ds_id, sql):
     """经 run_sql.py 执行只读查询并解析 JSON 行集；run_sql 不可用/失败/输出非 JSON
     返回 None（⚠️ 降级，不阻断）"""
+    command = [sys.executable, RUN_SQL, ds_id, sql, "-f", "json"]
+    scope_path = scope_file(workdir)
+    if scope_path:
+        command += ["--scope", scope_path]
     try:
-        r = subprocess.run([sys.executable, RUN_SQL, ds_id, sql, "-f", "json"],
-                           capture_output=True, text=True, timeout=240)
+        r = subprocess.run(command, capture_output=True, text=True, timeout=240)
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode != 0:
@@ -172,7 +184,9 @@ def full_fill(workdir, dims):
     if scope_mod is not None:
         sc = scope_mod.load_scope(candidates=[os.path.join(workdir, "cards.json"),
                                               os.path.join(workdir, "cards-merged.json"),
-                                              os.path.join(workdir, "datasets.json")])
+                                              os.path.join(workdir, "cards-raw.json"),
+                                              os.path.join(workdir, "datasets.json"),
+                                              os.path.join(workdir, "datasets-raw.json")])
         if sc is not None:
             scope_ids = sc["dsIds"]
     merged, overcaps, unmatched, degraded = [], [], [], []
@@ -193,7 +207,7 @@ def full_fill(workdir, dims):
         cap = max(VALUE_CAP, len(existing))  # 已有值可能是用户确认的，上限只挡新增不删旧值
         added, over, capped = 0, None, False
         for ds_id, ds_name, col in targets:
-            rows = sql_rows(ds_id, f"SELECT COUNT(DISTINCT `{col}`) AS n FROM `{ds_name}`")
+            rows = sql_rows(workdir, ds_id, f"SELECT COUNT(DISTINCT `{col}`) AS n FROM `{ds_name}`")
             if not rows or not isinstance(rows[0], dict) or not rows[0]:
                 degraded.append((name, ds_id))
                 continue
@@ -205,7 +219,7 @@ def full_fill(workdir, dims):
             if n > VALUE_CAP:
                 over = over or f"实际 {n} 个"
                 continue
-            rows = sql_rows(ds_id, f"SELECT DISTINCT `{col}` FROM `{ds_name}` ORDER BY `{col}`")
+            rows = sql_rows(workdir, ds_id, f"SELECT DISTINCT `{col}` FROM `{ds_name}` ORDER BY `{col}`")
             if rows is None:
                 degraded.append((name, ds_id))
                 continue

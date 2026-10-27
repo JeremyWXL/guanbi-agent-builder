@@ -123,7 +123,9 @@ def advice_doc():
         ],
         "configHandoff": {
             "linkageFilters": [
+                {"pgId": "pgA", "name": "区域", "field": "区域", "cdId": "planned-region"},
                 {"pgId": "pgB", "name": "区域", "field": "区域", "cdId": "cd-9"},
+                {"pgId": "NEW", "name": "门店", "field": "门店", "cdId": "planned-store"},
             ],
             "businessScope": "连锁零售单店经营异常定位与归因",
             "agentType": "报告型",
@@ -210,6 +212,46 @@ class TestDraft(ReportTestBase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("无法解析", r.stderr)
 
+    def test_report_official_limit_cannot_be_overridden_by_old_metadata(self):
+        audit = copy.deepcopy(AUDIT)
+        audit["meta"]["pageCount"] = 2
+        audit["meta"]["maxPages"] = 10
+        audit["meta"]["officialMaxPages"] = 12
+        self.write_audit(audit)
+        r = self.run_script("--draft")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        md = self.read("insight-audit-draft.md")
+        self.assertIn("官方上限 10 张", md)
+        self.assertNotIn("官方上限 12 张", md)
+
+    def test_old_eleven_page_audit_is_rejected_even_without_r01(self):
+        audit = copy.deepcopy(AUDIT)
+        audit["meta"]["pageCount"] = 11
+        audit["meta"]["maxPages"] = 12
+        audit["portfolio"] = {"overall": 85, "grade": "可直接配置"}
+        self.write_audit(audit)
+        r = self.run_script("--draft")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("R-01", r.stderr)
+
+    def test_legitimate_eleven_page_diagnosis_can_render(self):
+        audit = copy.deepcopy(AUDIT)
+        pages = []
+        for i in range(11):
+            page = copy.deepcopy(AUDIT["pages"][0])
+            page["pgId"] = f"pg{i}"
+            pages.append(page)
+        audit["pages"] = pages
+        audit["meta"]["pageCount"] = 11
+        audit["meta"]["maxPages"] = 10
+        audit["findings"].append({"id": "F-R01", "rule": "R-01", "level": "blocker",
+                                  "scope": "portfolio", "evidence": "11 页超过官方上限 10 页"})
+        audit["portfolio"] = {"overall": 49, "grade": "不建议直接配置"}
+        self.write_audit(audit)
+        r = self.run_script("--draft")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("11", self.read("insight-audit-draft.md"))
+
 
 class TestValidation(ReportTestBase):
     def setUp(self):
@@ -224,6 +266,31 @@ class TestValidation(ReportTestBase):
         r = self.check(advice_doc())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("建议校验通过", r.stdout)
+
+    def test_empty_audit_built_at_rejected(self):
+        doc = advice_doc()
+        doc["auditBuiltAt"] = ""
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("auditBuiltAt", r.stderr)
+
+    def test_blocker_must_be_covered_on_same_page(self):
+        doc = advice_doc()
+        doc["pageActions"][0]["evidence"] = ["F-003"]
+        doc["pageActions"][1]["priority"] = "P0"
+        doc["pageActions"][1]["evidence"] = ["F-001", "F-004"]
+        doc["crossPageActions"] = []
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("F-001", r.stderr)
+
+    def test_linkage_filters_must_cover_every_target_page(self):
+        doc = advice_doc()
+        doc["configHandoff"]["linkageFilters"] = [
+            item for item in doc["configHandoff"]["linkageFilters"] if item["pgId"] != "pgA"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("pgA", r.stderr)
 
     def test_report_type_requires_step_plan(self):
         doc = advice_doc()
@@ -275,6 +342,42 @@ class TestValidation(ReportTestBase):
         r = self.check(doc)
         self.assertEqual(r.returncode, 2)
         self.assertIn("必须写 keepCards", r.stderr)
+
+    def test_card_reuse_commands_reject_page_save_as(self):
+        doc = advice_doc()
+        doc["cardReuse"][0]["commands"] = ["guanvis page save-as pgA --name 副本"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("整页另存命令", r.stderr)
+
+    def test_card_reuse_commands_warn_on_publish(self):
+        doc = advice_doc()
+        doc["cardReuse"][0]["commands"] = ["guanvis publish ./dst"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("发布命令", r.stdout)
+        self.assertIn("用户确认", r.stdout)
+
+    def test_card_reuse_optional_without_restructure(self):
+        """没有拆分/合并/新建页时，cardReuse 不应被当成无条件必填。"""
+        doc = advice_doc()
+        doc.pop("cardReuse")
+        doc["targetArchitecture"] = [
+            {"layer": "总览", "pages": ["pgA", "pgB"], "purpose": "总览与明细"}
+        ]
+        doc["pageActions"] = [
+            {"pgId": "pgA", "name": "经营总览", "verdict": "改造", "priority": "P0",
+             "actions": ["补区域联动筛选器"], "evidence": ["F-001", "F-003"],
+             "expectedEffect": "Agent 能按区域传参"},
+            {"pgId": "pgB", "name": "单店明细", "verdict": "保留", "priority": "P2",
+             "actions": ["清理不可读卡名"], "evidence": ["F-004"],
+             "expectedEffect": "减少命名歧义"},
+        ]
+        doc["configHandoff"]["linkageFilters"] = [
+            item for item in doc["configHandoff"]["linkageFilters"] if item["pgId"] != "NEW"]
+        r = self.check(doc)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("cardReuse", r.stderr)
 
     def test_exploratory_requires_rules(self):
         doc = advice_doc()
@@ -345,7 +448,7 @@ class TestValidation(ReportTestBase):
 
     def test_invalid_linkage_cd_id_exits_2(self):
         doc = advice_doc()
-        doc["configHandoff"]["linkageFilters"][0]["cdId"] = "cd-8"
+        doc["configHandoff"]["linkageFilters"][1]["cdId"] = "cd-8"
         r = self.check(doc)
         self.assertEqual(r.returncode, 2)
         self.assertIn("cd-8", r.stderr)
@@ -353,7 +456,7 @@ class TestValidation(ReportTestBase):
     def test_linkage_not_in_filter_bar_rejected(self):
         # cd-7 在筛选栏内但 linkedCardCount=0，不能当联动筛选器
         doc = advice_doc()
-        doc["configHandoff"]["linkageFilters"][0]["cdId"] = "cd-7"
+        doc["configHandoff"]["linkageFilters"][1]["cdId"] = "cd-7"
         r = self.check(doc)
         self.assertEqual(r.returncode, 2)
         self.assertIn("cd-7", r.stderr)
@@ -426,7 +529,7 @@ class TestValidation(ReportTestBase):
         doc["pageActions"][1]["evidence"] = ["F-404"]
         r = self.check(doc)
         self.assertEqual(r.returncode, 2)
-        self.assertIn("4 个错误", r.stderr)
+        self.assertIn("5 个错误", r.stderr)
         self.assertIn("pgZ", r.stderr)
         self.assertIn("F-404", r.stderr)
         self.assertIn("auditBuiltAt", r.stderr)

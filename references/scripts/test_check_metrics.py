@@ -72,6 +72,21 @@ class CheckMetricsTest(unittest.TestCase):
         self.assertIn("pending", out)
 
 
+class IncrementalDimensionTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        write_json(self.dir, "cards-raw.json", {
+            "旧页": {"cards": [{"cdId": "c1", "dims": ["旧维度"]}]}})
+        write_json(self.dir, "cards-merged.json", {
+            "新页": {"cards": [{"cdId": "c2", "dims": ["项目", "sku"]}]}})
+
+    def test_merged_cards_are_latest_dimension_source(self):
+        code, out = run_main(self.dir, {"metrics": [
+            {"name": "收入", "formula": "sum([金额])", "dims": ["项目", "sku"]}], "rejected": []})
+        self.assertIsNone(code, out)
+        self.assertNotIn("未在任何卡片出现", out)
+
+
 class GovernedRefTest(unittest.TestCase):
     """v4.8 governedRef（指标中心引用）校验：缺 metricId/name ❌、非 PUBLISHED ⚠️、无引用不校验"""
 

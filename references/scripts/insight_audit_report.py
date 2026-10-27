@@ -32,8 +32,11 @@ VERDICTS = ["保留", "改造", "拆分", "合并", "新建", "移出"]
 PRIORITIES = ["P0", "P1", "P2"]
 REQUIRED_KEYS = [
     "auditBuiltAt", "scenario", "businessScope", "mode", "targetArchitecture",
-    "pageActions", "cardReuse", "crossPageActions", "configHandoff", "roadmap", "openQuestions",
+    "pageActions", "crossPageActions", "configHandoff", "roadmap", "openQuestions",
 ]
+# cardReuse 是条件必填：只有存在拆分/合并/新建页时才要求（见 validate）。
+PAGE_SAVE_AS_RE = re.compile(r"\bpage[\s_-]*save[\s_-]*as\b", re.I)
+PUBLISH_RE = re.compile(r"\bpublish\b", re.I)
 
 DIMENSIONS = [
     ("focus", "场景聚焦", 15),
@@ -270,10 +273,6 @@ def linkage_metadata(page):
     return set(x for x in ids if x), enumerable, count
 
 
-def linkage_selector_ids(page):
-    return linkage_metadata(page)[0]
-
-
 def linkage_filter_count(page):
     return linkage_metadata(page)[2]
 
@@ -297,13 +296,41 @@ def _walk_strings(obj, path=""):
                 yield item
 
 
+def validate_audit_document(audit):
+    """独立校验体检产物，供 draft、A2 状态门和最终建议校验共用。"""
+    errors = []
+    if not isinstance(audit, dict):
+        return ["insight-audit.json 顶层必须是对象"]
+    meta = as_dict(audit.get("meta"))
+    pages = [p for p in as_list(audit.get("pages")) if isinstance(p, dict)]
+    if not s(meta.get("builtAt")):
+        errors.append("insight-audit.json 缺少非空 meta.builtAt")
+    if not pages:
+        errors.append("insight-audit.json.pages 不能为空")
+    page_count = num(meta.get("pageCount")) or len(pages)
+    if page_count != len(pages):
+        errors.append("meta.pageCount={} 与实际页面数 {} 不一致".format(page_count, len(pages)))
+    if page_count > 10:
+        findings = [f for f in as_list(audit.get("findings")) if isinstance(f, dict)]
+        has_r01 = any(s(f.get("rule")) == "R-01" and s(f.get("level")).lower() == "blocker"
+                      for f in findings)
+        if not has_r01:
+            errors.append("看板数 {} 超过官方上限 10 页，但产物缺少 R-01 阻断项；"
+                          "旧分数/旧预算不能绕过".format(page_count))
+    if (num(meta.get("maxPages")) or 10) > 10:
+        errors.append("maxPages 超过官方上限 10，请重新运行 audit_insight_pages.py")
+    return errors
+
+
 def validate(audit, advice):
     """返回 (errors, warnings)。errors 非空即不允许输出最终报告。"""
-    errors = []
+    errors = validate_audit_document(audit)
     warnings = []
 
     if not isinstance(advice, dict):
-        return ["建议文件顶层必须是 JSON 对象"], warnings
+        return errors + ["建议文件顶层必须是 JSON 对象"], warnings
+    if not isinstance(audit, dict):
+        return errors, warnings
 
     for key in REQUIRED_KEYS:
         if key not in advice:
@@ -316,7 +343,11 @@ def validate(audit, advice):
     audit_meta = as_dict(audit.get("meta"))
     built_at = s(audit_meta.get("builtAt"))
     advice_built_at = s(advice.get("auditBuiltAt"))
-    if advice_built_at and built_at and advice_built_at != built_at:
+    if not built_at:
+        errors.append("insight-audit.json 缺少非空 meta.builtAt")
+    if not advice_built_at:
+        errors.append("advice.auditBuiltAt 不能为空，且必须与本次体检一致")
+    elif built_at and advice_built_at != built_at:
         errors.append(
             "建议基于旧体检：advice.auditBuiltAt={!r} 与 audit.meta.builtAt={!r} 不一致，请重新生成建议".format(
                 advice_built_at, built_at))
@@ -445,19 +476,37 @@ def validate(audit, advice):
             errors.append("{} 的 method=keep，必须写 keepCards（留在原页的卡片）".format(where))
         if method == "keep" and target == "NEW":
             warnings.append("{} 的 method=keep 表示卡片留在原页，target 不应为 NEW".format(where))
+        for raw_command in as_list(item.get("commands")):
+            command = s(raw_command)
+            if not command:
+                continue
+            if PAGE_SAVE_AS_RE.search(command):
+                errors.append(
+                    "{} 的 commands 含整页另存命令（{}）——只挑卡片用 createCard 重建，"
+                    "禁止 guanvis page save-as".format(where, command))
+            elif PUBLISH_RE.search(command) and "--dry-run" not in command:
+                warnings.append(
+                    "{} 的 commands 含发布命令（{}）——发布是实施动作，必须用户确认后执行；"
+                    "诊断报告不应给出可直接照跑的发布命令".format(where, command))
 
     cross_actions = [a for a in as_list(advice.get("crossPageActions")) if isinstance(a, dict)]
     p0_evidence = set()
+    p0_by_page = {}
     for index, action in enumerate(page_actions):
         if s(action.get("priority")) == "P0":
-            p0_evidence.update(s(x) for x in as_list(action.get("evidence")))
+            evidence = {s(x) for x in as_list(action.get("evidence"))}
+            p0_evidence.update(evidence)
+            p0_by_page.setdefault(s(action.get("pgId")), set()).update(evidence)
     for index, action in enumerate(cross_actions):
         where = "crossPageActions[{}]".format(index)
         priority = s(action.get("priority"))
         if priority not in PRIORITIES:
             errors.append("{} 的 priority={!r} 不在 P0/P1/P2 内".format(where, priority))
+        evidence = {s(x) for x in as_list(action.get("evidence"))}
         if priority == "P0":
-            p0_evidence.update(s(x) for x in as_list(action.get("evidence")))
+            p0_evidence.update(evidence)
+            for pg_id in as_list(action.get("pages")):
+                p0_by_page.setdefault(s(pg_id), set()).update(evidence)
         check_evidence(s(action.get("type")) or "跨页动作", action.get("evidence", []), where)
         if not s(action.get("action")):
             errors.append("{} 缺少 action 描述".format(where))
@@ -466,14 +515,30 @@ def validate(audit, advice):
                 warnings.append("{} 的 pages 引用了体检里没有的看板：{}".format(where, s(pg_id)))
 
     blockers = [f for f in findings if s(f.get("level")).lower() == "blocker"]
-    uncovered = [s(f.get("id")) for f in blockers if s(f.get("id")) not in p0_evidence]
+    uncovered = []
+    for finding in blockers:
+        finding_id = s(finding.get("id"))
+        scope = s(finding.get("scope"))
+        if scope.startswith("page:"):
+            pg_id = scope.split(":", 1)[1]
+            if finding_id not in p0_by_page.get(pg_id, set()):
+                uncovered.append(f"{finding_id}（必须在 {pg_id} 的 P0 动作或覆盖该页的跨页 P0 中）")
+        elif finding_id not in p0_evidence:
+            uncovered.append(finding_id)
     if uncovered:
-        errors.append("以下阻断项没有任何 P0 逐页/跨页动作覆盖：{}（每条阻断项必须有 P0 动作）".format(
-            "、".join(uncovered)))
+        errors.append("以下阻断项没有被对应范围的 P0 动作覆盖：{}".format("、".join(uncovered)))
 
     config = as_dict(advice.get("configHandoff"))
-    for index, item in enumerate(as_list(config.get("linkageFilters"))):
-        item = as_dict(item)
+    linkage_items = [as_dict(item) for item in as_list(config.get("linkageFilters"))]
+    required_linkage_pages = {s(pg_id) for layer in arch for pg_id in as_list(layer.get("pages"))
+                              if s(pg_id)}
+    configured_linkage_pages = {s(item.get("pgId")) for item in linkage_items}
+    missing_linkage = sorted(required_linkage_pages - configured_linkage_pages)
+    if missing_linkage:
+        errors.append("configHandoff.linkageFilters 未覆盖目标架构看板：{}——每页都必须有联动筛选器（R-02）".format(
+            "、".join(missing_linkage)))
+    action_verdicts = {s(action.get("pgId")): s(action.get("verdict")) for action in page_actions}
+    for index, item in enumerate(linkage_items):
         where = "configHandoff.linkageFilters[{}]".format(index)
         pg_id = s(item.get("pgId"))
         cd_id = s(item.get("cdId"))
@@ -483,9 +548,9 @@ def validate(audit, advice):
         if not cd_id:
             errors.append("{} 缺少 cdId".format(where))
             continue
+        if not s(item.get("name")) or not s(item.get("field")):
+            errors.append("{} 必须写清筛选器 name 与 field".format(where))
         if pg_id == "NEW":
-            if not s(item.get("name")) or not s(item.get("field")):
-                errors.append("{} 指向新建页，必须写清 name 与 field".format(where))
             continue
         if pg_id not in page_by_id:
             errors.append("{} 的 pgId={!r} 不在体检的看板里".format(where, pg_id))
@@ -493,19 +558,22 @@ def validate(audit, advice):
         page = page_by_id[pg_id]
         page_label = s(page.get("name")) or pg_id
         valid, enumerable, count = linkage_metadata(page)
+        planned = action_verdicts.get(pg_id) in ("改造", "拆分", "合并")
+        if planned and cd_id not in valid:
+            continue
         if enumerable:
             if cd_id not in valid:
                 errors.append(
                     "{} 的 cdId={!r} 不是《{}》的联动筛选器（该页可用联动筛选器：{}）；"
-                    "只接受筛选栏内且有关联卡片的筛选器".format(
+                    "保留页只能复用现有筛选器，改造页可填写计划新增的筛选器".format(
                         where, cd_id, page_label, "、".join(sorted(valid)) or "无"))
-        elif count == 0:
+        elif count == 0 and not planned:
             errors.append("{} 指向的《{}》没有联动筛选器（0 个），不能作为配置来源（R-02）".format(
                 where, page_label))
         elif count is None:
             warnings.append("{}：《{}》未提供联动筛选器信息，cdId={!r} 无法机械校验，请人工核对".format(
                 where, page_label, cd_id))
-        else:
+        elif not planned:
             warnings.append(
                 "{}：《{}》体检产物只有联动筛选器数量（{} 个）没有 cdId 清单，"
                 "已跳过 cdId 机械校验，请人工核对 {!r}".format(where, page_label, count, cd_id))
@@ -577,10 +645,6 @@ def validate(audit, advice):
         if not [s(x) for x in as_list(step.get("coreQuestions")) if s(x)]:
             warnings.append("{} 没有 coreQuestions（建议写 2-3 个本步核心问题）".format(where))
 
-    page_count = num(audit_meta.get("pageCount")) or len(pages)
-    max_pages = num(audit_meta.get("maxPages")) or 10
-    if page_count > max_pages:
-        warnings.append("看板数 {} 超过 {} 页上限（R-01），报告会单列阻断项".format(page_count, max_pages))
     inputs = as_dict(audit_meta.get("inputs"))
     if inputs.get("samples") is False:
         warnings.append("未采样卡片数据：明细行数“未实测”，上下文风险无法机械确认")
@@ -882,7 +946,8 @@ def build_view(audit, advice, draft, base_url):
         "scenario_from_audit": not s(advice.get("scenario")) and bool(s(meta.get("scenario"))),
         "businessScope": s(advice.get("businessScope")),
         "pageCount": num(meta.get("pageCount")) or len(pages),
-        "maxPages": num(meta.get("maxPages")) or 10,
+        "maxPages": 10,
+        "budgetPages": num(meta.get("maxPages")) or 10,
         "overall": overall,
         "grade": s(portfolio.get("grade")),
         "pageScore": num(portfolio.get("score")),
@@ -964,7 +1029,10 @@ def render_markdown(view):
     if view["scenario_from_audit"]:
         add("  - 说明：场景取自体检产物，建议在建议文件中用业务语言复述。")
     add("- 业务范围：{}".format(md_text(view["businessScope"]) or "待确认（R-04：业务范围必须清晰）"))
-    add("- 看板组合：{} 张（官方上限 {} 张）".format(view["pageCount"], view["maxPages"]))
+    budget_note = "" if view["budgetPages"] == view["maxPages"] else \
+        "，本次预算 {} 张".format(view["budgetPages"])
+    add("- 看板组合：{} 张（官方上限 {} 张{}）".format(
+        view["pageCount"], view["maxPages"], budget_note))
     add("")
     add("| 看板 | 体检结论 | 总分 | 等级 |")
     add("|---|---|---:|---|")
@@ -1149,6 +1217,8 @@ def render_markdown(view):
             for command in commands:
                 add(command)
             add("```")
+            add("")
+            add("> 最后一步 `publish` 会写线上，必须用户确认后执行；诊断阶段只读。")
             add("")
     else:
         add("- 未填写卡片复用方案；存在拆分/合并/新建页时应补 `cardReuse`。")
@@ -1559,6 +1629,8 @@ def _html_card_reuse(view):
             _h(item["sourceName"]), _h(item["targetName"]) or "副本"))
         parts.append('<pre class="mono" style="white-space:pre-wrap">{}</pre>'.format(
             _h("\n".join(commands))))
+        parts.append('<p class="src">最后一步 publish 会写线上，必须用户确认后执行；'
+                     '诊断阶段只读。</p>')
     return "".join(parts)
 
 
@@ -1723,13 +1795,16 @@ def render_html(view):
         draft_notice = ('<div class="notice draft">这是<b>结构体检草稿</b>：'
                         '尚未生成整合建议。确认体检事实后，再补 insight-advice.json 并运行最终报告。</div>')
 
+    budget_note = "" if view["budgetPages"] == view["maxPages"] else \
+        "，本次预算 {} 张".format(view["budgetPages"])
     sections = [
         ("1. 结论摘要", "<ul>{}</ul>".format("".join("<li>{}</li>".format(_h(x)) for x in view["summary"]))),
         ("2. 目标场景与看板组合", "".join([
             '<p class="kv"><b>目标场景：</b>{}</p>'.format(scenario),
             '<p class="kv"><b>业务范围：</b>{}</p>'.format(
                 _h(view["businessScope"]) or "待确认（R-04：业务范围必须清晰）"),
-            '<p class="kv"><b>看板组合：</b>{} 张（官方上限 {} 张）</p>'.format(view["pageCount"], view["maxPages"]),
+            '<p class="kv"><b>看板组合：</b>{} 张（官方上限 {} 张{}）</p>'.format(
+                view["pageCount"], view["maxPages"], _h(budget_note)),
             "<table><thead><tr><th>看板</th><th>体检结论</th><th>总分</th><th>等级</th></tr></thead><tbody>",
             "".join("<tr><td>{}</td><td>{}</td><td class=\"num\">{}</td><td>{}</td></tr>".format(
                 _link(p["name"], p["url"]), _h(p["verdictLabel"]) or "—",
@@ -1817,6 +1892,12 @@ def main(argv=None):
 
     meta = as_dict(audit.get("meta"))
     base_url = s(meta.get("biBaseUrl"))
+    audit_errors = validate_audit_document(audit)
+    if audit_errors:
+        print("❌ 体检产物校验未通过：", file=sys.stderr)
+        for message in audit_errors:
+            print("- " + message, file=sys.stderr)
+        return 2
 
     if args.draft and not args.check:
         view = build_view(audit, {}, True, base_url)

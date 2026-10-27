@@ -158,6 +158,40 @@ class TestValidate(unittest.TestCase):
         self.assertIn("高频维度", out)
 
 
+class TestIncrementalCoverage(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        write_json(self.dir, "cards-raw.json", {
+            "旧页": {"cards": [{"cdId": "c1", "dims": ["旧维度"], "filterDetails": []}]}})
+        write_json(self.dir, "cards-merged.json", {
+            "新页": {"cards": [{"cdId": "c2", "dims": ["项目", "sku"], "filterDetails": []}]}})
+
+    def run_main(self, dims_doc):
+        write_json(self.dir, "dimensions.json", dims_doc)
+        buf = io.StringIO()
+        code = None
+        with contextlib.redirect_stdout(buf):
+            argv = sys.argv
+            sys.argv = ["check_dims.py", self.dir]
+            try:
+                check_dims.main()
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else 1
+            finally:
+                sys.argv = argv
+        return code, buf.getvalue()
+
+    def test_merged_cards_cover_incremental_dimensions(self):
+        code, out = self.run_main({"dimensions": [dim("项目", values=[])]})
+        self.assertIsNone(code, out)
+        self.assertNotIn("未在任何卡片", out)
+
+    def test_dimension_field_can_map_to_card_field_after_rename(self):
+        code, out = self.run_main({"dimensions": [dim("SKU编码", field="sku", values=[])]})
+        self.assertIsNone(code, out)
+        self.assertNotIn("未在任何卡片", out)
+
+
 class TestSeed(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

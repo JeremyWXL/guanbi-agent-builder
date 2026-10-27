@@ -55,11 +55,20 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(code, 0)
         m_run.assert_called_once()  # 白名单内正常透传
 
-    def test_scope_missing_skips_check(self):
-        # 无 cards.json：优雅降级，不阻断独立使用
+    def test_scope_missing_fails_closed(self):
         code, m_run = self.run_sql("ds_whatever", scope_obj=None)
-        self.assertEqual(code, 0)
-        m_run.assert_called_once()
+        self.assertEqual(code, 3)
+        m_run.assert_not_called()
+
+    def test_scope_missing_requires_explicit_opt_out(self):
+        with mock.patch.object(run_sql.scope_mod, "load_scope", return_value=None):
+            self.assertIsNone(run_sql.scope_check("ds_whatever", allow_no_scope=True))
+
+    def test_explicit_scope_path_is_used_for_builder_workdir(self):
+        path = os.path.join(self.dir, "cards-raw.json")
+        with mock.patch.object(run_sql.scope_mod, "load_scope", return_value={"dsIds": {"ds1"}}) as loader:
+            self.assertIsNone(run_sql.scope_check("ds1", scope_path=path))
+        loader.assert_called_once_with(candidates=[path])
 
     def run_check_scope(self, ds_id, scope_obj=None):
         argv = sys.argv
@@ -86,9 +95,9 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(code, 3)
         m_run.assert_not_called()
 
-    def test_check_scope_missing_scope_degrades_exit0(self):
+    def test_check_scope_missing_scope_fails_closed(self):
         code, m_run = self.run_check_scope("ds_whatever", scope_obj=None)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 3)
         m_run.assert_not_called()
 
     def test_out_of_scope_message_dashboard_mode(self):
@@ -120,6 +129,13 @@ class ReadOnlyValidationTest(unittest.TestCase):
 
     def test_insert_blocked(self):
         self.assertIn("INSERT", run_sql.validate("INSERT INTO t VALUES (1)"))
+
+    def test_comment_marker_inside_string_does_not_hide_write(self):
+        self.assertIsNotNone(run_sql.validate("SELECT '--'; DROP TABLE t"))
+        self.assertIsNotNone(run_sql.validate("SELECT '/*'; DELETE FROM t"))
+
+    def test_comment_markers_in_literals_remain_valid(self):
+        self.assertIsNone(run_sql.validate("SELECT '--', '/*', 'a;drop'"))
 
 
 class CjkTableQuoteTest(unittest.TestCase):

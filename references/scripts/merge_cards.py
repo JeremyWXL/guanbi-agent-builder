@@ -2,7 +2,7 @@
 """
 增量学习合并器：把新看板/改版看板的最新解析合并进交付包 cards.json（slim 形态）
 用法: python3 merge_cards.py <工作目录> --package <交付包路径> --pages <新看板ID...> [--remove-pages <pgId...>] [--workers 4]
-  --pages：新看板（加入）或已学看板（改版重学）的 pageId；结构未变的页不重学不重采样
+  --pages：新看板（加入）或已学看板（改版重学）的 pageId；结构与语义内容均未变的页不重学不重采样
   --remove-pages：整页移除的 pageId
 输入: <交付包>/references/cards.json（只读；先备份到 <工作目录>/cards.json.bak-incr-<时间戳>）
 输出: <工作目录>/cards-merged.json（新 slim cards.json）
@@ -27,8 +27,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import parse_page
 from sample_cards import safe_name
 
-BUILDER_VERSION = "4.5.0"  # 与 parse_page.py 同步；合并不改版本号（交付更新时统一升）
-
 
 def now_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -38,6 +36,10 @@ def structure_hash(cards):
     """卡片结构指纹：cdId+名称排序后取 hash。与 parse_page.py / workbench.py 的实现必须保持一致。"""
     items = sorted((c.get("cdId", ""), (c.get("name") or "").strip()) for c in cards)
     return sha1(json.dumps(items, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+
+
+def content_hash(cards):
+    return parse_page.content_hash(cards)
 
 
 def diff_cards(learned, current):
@@ -51,20 +53,21 @@ def diff_cards(learned, current):
 
 
 def slim_card(card):
-    """交付 slim 形态：数据卡保留语义字段；筛选器卡另保留直达链接/降级判断原料。
-    filterDetails 原样带入（隐藏筛选上下文，check_formulas 口径字典 scope 的原料）。"""
+    """交付 slim 形态：保留取数、口径、参数和筛选交互所需的语义字段。"""
     out = {
         "name": card.get("name"),
         "cdId": card.get("cdId"),
         "type": card.get("type"),
+        "inPool": bool(card.get("inPool")),
         "dsId": card.get("dsId", ""),
         "dims": card.get("dims") or [],
         "measures": card.get("measures") or [],
         "filters": card.get("filters") or [],
         "filterDetails": card.get("filterDetails") or [],
         "unitHints": card.get("unitHints") or {},
+        "dynamicParams": card.get("dynamicParams") or [],
     }
-    if card.get("type") in ("SELECTOR", "TEXT"):
+    if card.get("type") in ("SELECTOR", "TREE_SELECTOR", "TEXT"):
         for k in ("inFilterBar", "linkedCardCount", "defaultValueType", "multiSelect", "selectorType"):
             if k in card:
                 out[k] = card[k]
@@ -90,6 +93,7 @@ def meta_page(title, info):
         "mtime": info.get("mtime", ""),
         "cardCount": len(info["cards"]),
         "cardHash": structure_hash(info["cards"]),
+        "contentHash": info.get("contentHash") or content_hash(info["cards"]),
         "cards": [{"cdId": c["cdId"], "name": c["name"]} for c in info["cards"]],
     }
 
@@ -147,13 +151,13 @@ def main(args=None):
 
     for pid, info in fresh.items():
         title = info["title"]
+        existing = merged.get(title)
+        if isinstance(existing, dict) and existing.get("pgId") and existing["pgId"] != pid:
+            print(f"❌ 看板《{title}》与已学看板（pgId={existing['pgId']}）同名——"
+                  f"cards.json 以看板名为键，同名会互相覆盖；请先在 BI 中改名区分后再增量学习",
+                  file=sys.stderr)
+            sys.exit(1)
         if pid not in learned_pages:
-            existing = merged.get(title)
-            if isinstance(existing, dict) and existing.get("pgId") and existing["pgId"] != pid:
-                print(f"❌ 新看板《{title}》与已学看板（pgId={existing['pgId']}）同名——"
-                      f"cards.json 以看板名为键，同名会互相覆盖；请先在 BI 中改名区分后再增量学习",
-                      file=sys.stderr)
-                sys.exit(1)
             merged[title] = page_entry(title, pid, info)
             new_meta_pages[pid] = meta_page(title, info)
             added_pages.append({"pgId": pid, "title": title, "cardCount": len(info["cards"])})
@@ -163,8 +167,10 @@ def main(args=None):
             continue
         old_info = learned_pages[pid]
         old_title = old_info.get("title", title)
-        # 结构未变且页面未改名才跳过；改名要走变更路径换键（采样 key 含页面名，改名即孤儿）
+        # 结构与语义均未变且页面未改名才跳过；旧档案缺语义指纹时保守重学。
+        current_content_hash = info.get("contentHash") or content_hash(info["cards"])
         if (old_info.get("cardHash") and structure_hash(info["cards"]) == old_info["cardHash"]
+                and old_info.get("contentHash") == current_content_hash
                 and old_title == title):
             unchanged_pages.append({"pgId": pid, "title": old_title})
             if info.get("mtime") and info["mtime"] != old_info.get("mtime"):
@@ -235,13 +241,14 @@ def main(args=None):
 
     # _meta：pages 更新；dsFormulas 取并集（新解析覆盖旧 error 条目，好条目不被 error 覆盖）
     meta["pages"] = new_meta_pages
+    old_formulas = dict(meta.get("dsFormulas") or {})
     if touched_ds:
         merged_formulas = parse_page.fetch_ds_formulas(sorted(touched_ds), args.workers)
-        old_formulas = meta.get("dsFormulas") or {}
         for ds_id, info in merged_formulas.items():
             if ds_id not in old_formulas or "error" not in info:
                 old_formulas[ds_id] = info
-        meta["dsFormulas"] = old_formulas
+    meta["dsFormulas"] = {ds_id: old_formulas[ds_id] for ds_id in sorted(new_ds)
+                          if ds_id in old_formulas}
     meta["incrLog"] = (meta.get("incrLog") or []) + [{
         "at": now_str(),
         "addedPages": [p["pgId"] for p in added_pages],

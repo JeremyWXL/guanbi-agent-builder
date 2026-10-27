@@ -108,7 +108,8 @@ class TestEvalMetric(unittest.TestCase):
         self.dir = tempfile.mkdtemp()
         # run_metric.py 只需存在（find_run_metric 定位用），调用被 mock
         write_json(self.dir, "references/scripts/dummy.json", {})
-        open(os.path.join(self.dir, "references", "scripts", "run_metric.py"), "w").write("# stub\n")
+        with open(os.path.join(self.dir, "references", "scripts", "run_metric.py"), "w") as f:
+            f.write("# stub\n")
 
     def _ex(self, **fetch_over):
         fetch = {"type": "metric", "metricId": "m100"}

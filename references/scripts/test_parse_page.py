@@ -40,6 +40,7 @@ class TestDsUsage(unittest.TestCase):
             {"type": "PIE", "dsId": "ds1", "filtered": True},
             {"type": "PIVOT_TABLE", "dsId": "ds2", "filtered": False},
             {"type": "SELECTOR", "dsId": "ds3"},          # 筛选器不计
+            {"type": "TREE_SELECTOR", "dsId": "ds3"},     # 树筛选器同样不计
             {"type": "TEXT"},                              # 文本卡不计
             {"type": "BASIC_BAR", "dsId": "", "filtered": False},  # 无 dsId 不计
         ]
@@ -58,6 +59,28 @@ class TestStructureHash(unittest.TestCase):
         self.assertEqual(pp._structure_hash(a), pp._structure_hash(b))
         c = [{"cdId": "c1", "name": "甲"}]
         self.assertNotEqual(pp._structure_hash(a), pp._structure_hash(c))
+
+
+class TestContentHash(unittest.TestCase):
+    def test_content_hash_detects_formula_and_order_is_stable(self):
+        a = [{"cdId": "c1", "name": "甲", "measures": [{"formula": "sum([A])"}]}]
+        b = [{"cdId": "c1", "name": "甲", "measures": [{"formula": "sum([B])"}]}]
+        self.assertNotEqual(pp.content_hash(a), pp.content_hash(b))
+        self.assertEqual(pp.content_hash(a), pp.content_hash(list(a)))
+
+    def test_tree_selector_metadata_is_collected(self):
+        raw = {"data": {"name": "页", "utime": "", "dsInfos": [],
+                        "meta": {"backlogLayout": [], "filterLayout": ["tree1"]},
+                        "cards": [{"cdId": "tree1", "cdType": "TREE_SELECTOR", "name": "地区树",
+                                   "settings": {"asFilter": {"targetCdIds": ["c1"]}},
+                                   "content": {"chartType": "TREE_SELECTOR",
+                                               "source": {"field": {"name": "地区"}}}}]}}
+        with mock.patch.object(pp, "run_guancli", return_value=(0, json.dumps(raw), "")):
+            info = pp.parse_page_raw("pg1")
+        card = info["cards"][0]
+        self.assertTrue(card["inFilterBar"])
+        self.assertEqual(card["linkedCardCount"], 1)
+        self.assertEqual(card["filters"], ["地区"])
 
 
 class TestSelectorDefaultValue(unittest.TestCase):

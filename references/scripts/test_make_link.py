@@ -59,6 +59,20 @@ class TestSelectorsOf(unittest.TestCase):
         self.assertEqual(sels[0][2], "月份")
 
 
+class TestTreeSelector(unittest.TestCase):
+    def test_tree_selector_is_candidate_and_path_is_json_encoded(self):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "cards.json"), "w", encoding="utf-8") as f:
+            json.dump({"_meta": {"biBaseUrl": "https://bi.example.com"},
+                       "区域看板": {"pgId": "pg1", "cards": [
+                           sel_card("地区树", "tree1", "地区", type="TREE_SELECTOR",
+                                    inFilterBar=True, linkedCardCount=2)]}}, f, ensure_ascii=False)
+        r = run_cli(d, "区域看板", "--filter", '地区=["浙江","杭州"]')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("tree1=%5B%22", r.stdout)
+        self.assertNotIn("tree1=浙江&tree1=杭州", r.stdout)
+
+
 class TestFirstPickWarning(unittest.TestCase):
     def test_first_pick_in_bar_warns(self):
         page = {"cards": [sel_card("月份筛选", "cd1", "月份", inFilterBar=True,

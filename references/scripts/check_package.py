@@ -19,7 +19,7 @@
 import importlib.util, json, os, re, subprocess, sys
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.12.0"
+BUILDER_VERSION = "4.12.1"
 
 # 复制进交付包的脚本清单（(文件名, 看板模式必需, 直通模式必需, 引入版本)）
 SCRIPT_LIST = [
@@ -32,6 +32,7 @@ SCRIPT_LIST = [
     ("sample_cards.py", True, False, "0"),
     ("run_sql.py", True, True, "0"),
     ("run_metric.py", True, True, "4.8.0"),
+    ("preview_card.py", True, False, "4.12.1"),
     ("workbench.py", True, True, "0"),
     ("scope.py", True, True, "4.5.0"),
     ("scope_audit.py", True, True, "4.5.0"),
@@ -170,6 +171,16 @@ class PackageCheck:
                 self.err("references/card-data/ 缺失或为空——卡片采样是应答缓存与回归基准的数据源")
             elif not os.path.isfile(os.path.join(cd, "_sample_index.json")):
                 self.warn("card-data/ 缺少 _sample_index.json（列画像：取值消歧与维度回填的原料）")
+            else:
+                sample_index = load_json(os.path.join(cd, "_sample_index.json"))
+                if sample_index is None:
+                    self.err("card-data/_sample_index.json 无法解析")
+                else:
+                    failed = [k for k, v in sample_index.items()
+                              if isinstance(v, dict) and v.get("error")]
+                    if failed:
+                        self.err(f"card-data 存在 {len(failed)} 张采样失败卡片（{'、'.join(failed[:5])}）——"
+                                 "禁止用旧采样或残缺采样交付")
 
         # 脚本齐全性 + 与当前 builder 的漂移
         cards = load_json(os.path.join(self.refs, "cards.json" if dash else "datasets.json")) or {}
@@ -222,6 +233,14 @@ class PackageCheck:
         if not pages:
             self.err("cards.json 没有任何看板条目")
             return
+        actual_pages = {page.get("pgId"): (name, page) for name, page in pages.items()}
+        if set(actual_pages) != set(pages_meta):
+            self.err("cards.json._meta.pages 与实际看板清单一一对应关系不一致——"
+                     "可能存在同名覆盖或增量合并残留，禁止交付")
+        for pid, (name, page) in actual_pages.items():
+            recorded = pages_meta.get(pid) or {}
+            if recorded.get("title") not in (None, name):
+                self.err(f"看板 {pid} 的 _meta 标题《{recorded.get('title')}》与实际标题《{name}》不一致")
         new_archive = ver_tuple(self.pkg_version) >= (4, 2, 0)  # filtered/dsUsage 自 v4.2 引入
         for name, page in pages.items():
             cl = page.get("cards")
@@ -241,8 +260,8 @@ class PackageCheck:
                          "筛选器交互字段），否则 run_sql 白名单、make_link、sample_cards 全部瘫痪。"
                          "cards.json 应由 cards-raw.json 整体复制派生（build_package.py），禁止手工裁剪")
                 continue
-            data = [c for c in cl if c.get("type") != "SELECTOR"]
-            sels = [c for c in cl if c.get("type") == "SELECTOR"]
+            data = [c for c in cl if c.get("type") not in ("SELECTOR", "TREE_SELECTOR")]
+            sels = [c for c in cl if c.get("type") in ("SELECTOR", "TREE_SELECTOR")]
             for c in data:
                 if not c.get("cdId") or not c.get("name"):
                     self.err(f"《{name}》存在缺 cdId/name 的数据卡")
@@ -398,8 +417,7 @@ class PackageCheck:
                 self.warn("跳过 run_sql --check-scope 冒烟：" + "；".join(reasons) +
                           "——在搭建向导说「升级脚本」更新后再体检")
 
-        # run_metric --check-scope 双向断言（仅当档案含 governedRef——无引用时白名单为空，
-        # 脚本按设计降级放行，无可断言对象）
+        # run_metric --check-scope 双向断言（仅当档案含 governedRef——无引用时没有可断言对象）
         run_metric = os.path.join(self.refs, "run_metric.py")
         metric_ids = self.scope.get("metricIds") or set()
         if os.path.isfile(run_metric) and metric_ids:

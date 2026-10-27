@@ -66,7 +66,7 @@ def classify(formula, aggr_type=""):
             return "FREE", "sum/sum 比率型：换维度安全（分子分母分别求和再相除）；禁止 AVG(明细比率)"
         if PURE_SUM.match(f):
             return "FREE", "纯求和：换维度安全"
-        return "FREE", "公式仅含可加聚合：换维度安全（SQL 内联公式现算）"
+        return "UNKNOWN", "未识别公式：换维度安全性未知，禁止直接 SQL 内联，需人工确认或从明细现算"
     ag = (aggr_type or "").upper().replace(" ", "")
     if ag in ("SUM", ""):
         return "FREE", "物理可加字段（SUM）" if ag else ""
@@ -98,7 +98,8 @@ def main():
             else:
                 sys.exit(f"找不到 cards-merged/cards-raw/datasets-raw/cards.json——先运行 parse_page.py"
                          f"（数据集直通模式则运行 learn_dataset.py，增量模式则先运行 merge_cards.py）")
-    raw = json.load(open(src, encoding="utf-8"))
+    with open(src, encoding="utf-8") as f:
+        raw = json.load(f)
     ds_formulas = (raw.get("_meta") or {}).get("dsFormulas") or {}
     # fdId → 数据集计算字段公式（卡片按 fdId 引用时补全）
     fd_vc = {}
@@ -159,7 +160,7 @@ def main():
         # 展示层派生条目（别名 ≠ 本名：如"年同比""占比""同期收入"）不参与口径冲突判定——
         # 它们是同一计算方式作用于不同基数字段的正常复用，真实身份是基数字段而非别名
         adv_idx = {i for i, e in enumerate(entries)
-                   if e.get("alias") and e["alias"] != e.get("baseField")}
+                   if e.get("advType") and e.get("alias") and e["alias"] != e.get("baseField")}
         adv_entries = [e for i, e in enumerate(entries) if i in adv_idx]
         plain = [e for i, e in enumerate(entries) if i not in adv_idx]
         if not plain:

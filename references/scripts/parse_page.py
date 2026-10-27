@@ -8,7 +8,7 @@
   {看板名: {pgId, mtime, dsIds, dsUsage, cards: [{name, cdId, type, inPool, dsId, filters, filterDetails,
                                         filtered, unitHints, dims, measures, dynamicParams}]},
    "_meta": {builtAt, builderVersion, biBaseUrl, parser,
-             pages: {pgId: {title, mtime, cardCount, cardHash, cards: [{cdId, name}]}},
+             pages: {pgId: {title, mtime, cardCount, cardHash, contentHash, cards: [{cdId, name}]}},
              dsFormulas: {dsId: {dsName, virtualColumns}},
              failedPages: [pgId]（仅 --allow-partial 且有失败时存在）}}
   pages[].cardHash/cards 是学习时点的卡片结构指纹：交付后体检对比 hash+mtime 双信号，
@@ -34,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from hashlib import sha1
 
-BUILDER_VERSION = "4.12.0"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
+BUILDER_VERSION = "4.12.1"  # 发布时与 SKILL.md frontmatter version 同步；写入 _meta 供交付后升级提示
 
 TEXT_ONLY_KEYS = ("页面标题:", "# Card ")  # 文本输出的特征，用于判断 --raw 是否被忽略
 
@@ -54,6 +54,13 @@ def _structure_hash(cards):
     """卡片结构指纹：cdId+名称排序后取 hash。与 workbench.py 的实现必须保持一致。"""
     items = sorted((c.get("cdId", ""), (c.get("name") or "").strip()) for c in cards)
     return sha1(json.dumps(items, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+
+
+def content_hash(cards):
+    """卡片语义指纹：同一组卡片的内容变化必须触发重学，卡片顺序不影响结果。"""
+    items = sorted((dict(c) for c in cards), key=lambda c: c.get("cdId", ""))
+    payload = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _fd_name_map(data):
@@ -195,7 +202,7 @@ def _ds_usage(cards):
     数据集是取数加速层的主要受益者（ETL 成果 + 权限免费继承）"""
     usage = {}
     for c in cards:
-        if c.get("type") in ("SELECTOR", "TEXT") or not c.get("dsId"):
+        if c.get("type") in ("SELECTOR", "TREE_SELECTOR", "TEXT") or not c.get("dsId"):
             continue
         u = usage.setdefault(c["dsId"], {"cards": 0, "filteredCards": 0})
         u["cards"] += 1
@@ -262,7 +269,7 @@ def parse_page_raw(page_id):
             continue
         content = c.get("content") or {}
         cd_type = content.get("chartType") or c.get("cdType") or "UNKNOWN"
-        if c.get("cdType") == "SELECTOR":
+        if c.get("cdType") in ("SELECTOR", "TREE_SELECTOR"):
             src = content.get("source") or {}
             field_name = (src.get("field") or {}).get("name", "")
             filters = [field_name] if field_name else []
@@ -285,7 +292,7 @@ def parse_page_raw(page_id):
             "measures": _card_measures(c),
             "dynamicParams": _card_dynamic_params(c),
         }
-        if c.get("cdType") == "SELECTOR":
+        if c.get("cdType") in ("SELECTOR", "TREE_SELECTOR"):
             # 筛选交互原料：直达链接选候选（筛选栏成员 + 有联动）与 FIRST_PICK 降级判断都靠这几个字段
             card["inFilterBar"] = c["cdId"] in filter_bar
             card["linkedCardCount"] = len(((c.get("settings") or {}).get("asFilter") or {}).get("targetCdIds") or [])
@@ -303,6 +310,7 @@ def parse_page_raw(page_id):
         "dsIds": ds_ids,
         "dsUsage": _ds_usage(cards),
         "cards": cards,
+        "contentHash": content_hash(data.get("cards") or []),
         "_rawCardCount": len(data.get("cards") or []),
     }
 
@@ -405,7 +413,7 @@ def main():
         if not info["cards"]:
             print(f"  ⚠️ {info['title']}: 该看板没有任何卡片（空看板/总览页），已跳过")
             continue
-        n_data = sum(1 for c in info['cards'] if c['type'] not in ('SELECTOR', 'TEXT'))
+        n_data = sum(1 for c in info['cards'] if c['type'] not in ('SELECTOR', 'TREE_SELECTOR', 'TEXT'))
         n_pool = sum(1 for c in info['cards'] if c['inPool'])
         n_formula = sum(1 for c in info['cards'] for m in c.get('measures', []) if m.get('formula'))
         n_filtered = sum(1 for c in info['cards'] if c.get('filtered'))
@@ -452,6 +460,7 @@ def main():
         "pages": {v["pgId"]: {"title": k, "mtime": v.get("mtime", ""),
                               "cardCount": len(v["cards"]),
                               "cardHash": _structure_hash(v["cards"]),
+                              "contentHash": v.get("contentHash") or content_hash(v["cards"]),
                               "cards": [{"cdId": c["cdId"], "name": c["name"]} for c in v["cards"]]}
                   for k, v in result.items() if isinstance(v, dict) and "pgId" in v},
         "dsFormulas": ds_formulas,

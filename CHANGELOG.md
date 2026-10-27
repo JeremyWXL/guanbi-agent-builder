@@ -1,5 +1,19 @@
 # 变更日志
 
+## v4.12.1（2026-10-23）v4.10–v4.12 一致性/健壮性收口
+
+解决的问题：最新三版迭代后的整体 review 发现 5 个 P1 与一批文档/死代码欠账，共性是"脚本没兜住文档承诺"——预算参数能绕过官方硬规则、骨架抽取在跨数据集/多行公式/重复运行时会产出错误产物、`cardReuse` 声称拒绝整页另存但只校验了 `method`、audit 确认门只验文件存在。
+
+- **R-01 不可绕过**（`audit_insight_pages.py` / `insight_audit_report.py`）：`--max-pages` 只允许收紧到 ≤10，超过官方上限直接 exit 2；报告改用 `officialMaxPages` 标注"官方上限"，`maxPages` 作为"本次预算"单独显示。此前 11 页 + `--max-pages 12` 会无 R-01 且得 85 分/可直接配置，draft 报告还写"官方上限 12 张"
+- **骨架抽取四项修复**（`extract_card_skeletons.py`）：① 选中卡来自多个数据集时按出现顺序生成 `DS1…DSn` 别名，骨架分别 `bindDataset`，清单输出数据集别名表与 `guanvis init ... --alias DS1,DS2` 命令（此前全部绑到同一个 `DS`，静默建错数据集）；② 公式/卡名/看板名压成单行再写入 `//` 注释（多行公式此前会截断注释，`node --check` 报语法错误）；③ 重跑前清空 `card-skeletons/card_*.js`（此前已移除的卡会被 `cp *.js` 一起带进新工程）；④ 重复 `--cdIds` 去重；地图类卡片无度量时补 colorBy TODO
+- **cardReuse 校验**（`insight_audit_report.py`）：`cardReuse` 从 `REQUIRED_KEYS` 移除，改为条件必填（仅拆分/合并/新建页时要求，与 SKILL 表述一致，v4.10/v4.11 旧建议文件不再被误拒）；`commands` 命中 `page save-as` 即 exit 2，非 dry-run 的 `publish` 给出"必须用户确认"告警；报告命令块补充发布确认提示
+- **audit 确认门强化**（`wizard_state.py`）：`confirm --state audit --step 3` 实际调用 `insight_audit_report.py --check`，校验不通过即 exit 3；第 4 步拒绝 mtime 早于 `insight-advice.json` 的旧报告——与搭建通道"验产物不看口头申报"对齐
+- **R-02 候选收敛**（`audit_insight_pages.py` / readiness 文档）：只有隐藏筛选器（`inFilterBar=false`）时保留 P2 不硬阻断，但页面展示分与总分封顶 79（小改后配置），不再出现"81 分/可直接配置"与 R-02 未满足并存
+- **文档与死代码**：SKILL A4 报告章节补"待确认问题"、修正"本步产出 insight-audit.json"；红线 19 升为六条并收录分析思路分型；交付树补 `outputFormat.json`；ROADMAP 红线 19→20；`insight-audit.md` 模板标注"结构参考非渲染模板"；`test_template_cli` 新增 insight 模板 schema/章节守卫；`merge_cards.py` 删除未使用且停在 4.5.0 的 `BUILDER_VERSION`；清理未使用导入与 `linkage_selector_ids`
+- **复审加固**：增量合并新增内容指纹（公式/筛选/参数变化必重学）、改名冲突拦截、dsFormulas 清理与 dynamicParams 保留；普通别名恢复冲突检测、未知公式不再默认可自由聚合；失败采样退出并清除旧文件、定向采样保留索引；多数据集骨架字段显式归属；audit 硬规则/顺序/报告内容全量复核；SQL 注释绕过修复；交付包临时目录组装通过后再替换；取数默认 fail closed，新增 preview_card.py；单位换算必须先确认原始单位
+- **测试**：新增 16 例（预算越界拒绝、隐藏筛选器 79 封顶、官方上限标注、commands 整页另存/发布、条件必填、骨架多数据集/显式别名/错配/残留清理/去重/多行公式/地图 TODO、audit confirm --check 与旧报告拒绝）；单测 486 → 502 全绿；复审加固、发布审查与全矩阵补测后全量回归 545/545 通过；full/lite/incr/audit L1 全通过，独立 L2 100/A 零红线，基线 tests/baselines/v4.12.1.* 已归档
+- **版本一致性**：4.12.0 → 4.12.1（SKILL.md frontmatter / kimi.plugin.json / 8 个脚本 BUILDER_VERSION 共十处；agent-tester v1.9.2）
+
 ## v4.12.0（2026-10-23）洞察Agent 看板重建：卡片级复用与 createCard 骨架
 
 解决的问题：诊断建议“拆分/合并/新建页”后，原看板里符合洞察Agent 要求、用户已经看惯的卡片怎么保留？整页 `page save-as` 会把冗余卡片/数据一起带过去；单张卡片又没有 `card save-as`。本版本补上“只挑卡片、在新工程用 createCard 重建”的完整路径。

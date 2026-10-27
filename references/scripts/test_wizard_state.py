@@ -236,6 +236,61 @@ class WizardStateAuditTest(unittest.TestCase):
         with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
             f.write(content)
 
+    def confirm_prior_steps(self, step):
+        state = self.audit_state()
+        for n in range(1, step):
+            state["steps"][str(n)]["status"] = "confirmed"
+        self.write_audit_state(state)
+
+    def write_valid_audit_pair(self):
+        """写一对能通过 insight_audit_report.py --check 的最小体检/建议产物。"""
+        audit = {
+            "meta": {"builtAt": "2026-10-22 10:00", "pageCount": 1,
+                     "maxPages": 10, "officialMaxPages": 10},
+            "pages": [{"pgId": "pg1", "name": "经营总览"}],
+            "findings": [{"id": "F-001", "rule": "R-02", "level": "P0",
+                          "requirement": "每张仪表板必须配置联动筛选器",
+                          "source": "官方文档·新建智能体"}],
+            "cross": {"overlaps": [], "sharedLinkageDims": [], "conflicts": []},
+            "portfolio": {"score": 60, "grade": "需改造", "overall": 60},
+        }
+        advice = {
+            "auditBuiltAt": "2026-10-22 10:00",
+            "scenario": "月度经营分析",
+            "businessScope": "连锁零售月度经营分析",
+            "mode": {"primary": "一张宽表", "alternatives": [], "reason": "单页即可覆盖"},
+            "targetArchitecture": [
+                {"layer": "总览", "pages": ["pg1"], "purpose": "判断整体是否异常"}
+            ],
+            "pageActions": [
+                {"pgId": "pg1", "name": "经营总览", "verdict": "保留", "priority": "P0",
+                 "actions": ["补区域联动筛选器"], "evidence": ["F-001"],
+                 "expectedEffect": "Agent 能按区域传参"}
+            ],
+            "cardReuse": [],
+            "crossPageActions": [
+                {"type": "补筛选器", "pages": ["pg1"], "priority": "P0",
+                 "action": "补区域联动筛选器", "evidence": ["F-001"]}
+            ],
+            "configHandoff": {
+                "linkageFilters": [{"pgId": "pg1", "name": "区域", "field": "区域", "cdId": "planned-region"}],
+                "businessScope": "连锁零售月度经营分析",
+                "agentType": "探索型",
+                "defaultThinking": "先看总览，再按区域拆解",
+                "stepPlan": [],
+                "exploratoryRules": ["先总览再拆解", "异常区域才下钻"],
+                "reportFramework": [],
+                "questionExamples": [],
+                "outputRequirements": "带数据范围与口径",
+                "businessKnowledgeGaps": [],
+                "expertRoles": [],
+            },
+            "roadmap": [],
+            "openQuestions": [],
+        }
+        self.write_file("insight-audit.json", json.dumps(audit, ensure_ascii=False))
+        self.write_file("insight-advice.json", json.dumps(advice, ensure_ascii=False))
+
     def test_init_audit_writes_separate_four_step_file(self):
         r = run("init", self.dir, "--mode", "audit", "--name", "月度经营分析")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -305,36 +360,69 @@ class WizardStateAuditTest(unittest.TestCase):
 
     def test_audit_confirm_step2_requires_insight_audit(self):
         run("init", self.dir, "--mode", "audit")
+        self.confirm_prior_steps(2)
         r = run("confirm", self.dir, "--state", "audit", "--step", "2")
         self.assertEqual(r.returncode, 3)
         self.assertIn("insight-audit.json", r.stderr)
         self.assertIn("audit_insight_pages.py", r.stderr)
         self.write_file("insight-audit.json", "{}")
         r = run("confirm", self.dir, "--state", "audit", "--step", "2")
+        self.assertEqual(r.returncode, 3)
+        self.write_valid_audit_pair()
+        r = run("confirm", self.dir, "--state", "audit", "--step", "2")
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_audit_confirm_step3_requires_advice(self):
+    def test_audit_confirm_rejects_out_of_order_step(self):
         run("init", self.dir, "--mode", "audit")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("前序", r.stderr)
+
+    def test_audit_confirm_step3_requires_valid_advice(self):
+        run("init", self.dir, "--mode", "audit")
+        self.confirm_prior_steps(3)
         r = run("confirm", self.dir, "--state", "audit", "--step", "3")
         self.assertEqual(r.returncode, 3)
         self.assertIn("insight-advice.json", r.stderr)
         self.assertIn("--seed-advice", r.stderr)
+        # 只有文件存在还不够：结构不完整必须被 --check 拦住
         self.write_file("insight-advice.json", "{}")
+        r = run("confirm", self.dir, "--state", "audit", "--step", "3")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("校验未通过", r.stderr)
+        self.write_valid_audit_pair()
         r = run("confirm", self.dir, "--state", "audit", "--step", "3")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_audit_confirm_step4_requires_both_reports(self):
         run("init", self.dir, "--mode", "audit")
+        self.confirm_prior_steps(4)
         r = run("confirm", self.dir, "--state", "audit", "--step", "4")
         self.assertEqual(r.returncode, 3)
         self.assertIn("insight_audit_report.py", r.stderr)
+        self.write_valid_audit_pair()
         self.write_file("insight-audit.md", "# 报告")
-        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
-        self.assertEqual(r.returncode, 3)
-        self.assertIn("insight-audit.html", r.stderr)
         self.write_file("insight-audit.html", "<html></html>")
         r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 3)
+        reporter = os.path.join(os.path.dirname(__file__), "insight_audit_report.py")
+        rendered = subprocess.run([sys.executable, reporter, self.dir], capture_output=True, text=True)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_audit_confirm_step4_rejects_stale_report(self):
+        """建议改过之后必须重新渲染报告，旧报告不能拿来确认。"""
+        run("init", self.dir, "--mode", "audit")
+        self.confirm_prior_steps(4)
+        self.write_valid_audit_pair()
+        self.write_file("insight-audit.md", "# 报告")
+        self.write_file("insight-audit.html", "<html></html>")
+        for name in ("insight-audit.md", "insight-audit.html"):
+            os.utime(os.path.join(self.dir, name), (1000, 1000))
+        r = run("confirm", self.dir, "--state", "audit", "--step", "4")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("不一致或内容不完整", r.stderr)
 
     def test_audit_does_not_touch_build_state(self):
         run("init", self.dir, "--name", "搭建档案", "--mode", "full")

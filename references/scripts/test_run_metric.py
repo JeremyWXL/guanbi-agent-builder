@@ -64,19 +64,23 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(code, 3)
         m_run.assert_not_called()  # 越界拦截在调 guancli 之前
 
-    def test_scope_missing_degrades(self):
-        # 无范围档案：优雅降级放行，不阻断独立使用
+    def test_scope_missing_fails_closed(self):
         code, m_run = self.run_metric(["m_whatever"], scope_obj=None)
-        self.assertEqual(code, 0)
-        m_run.assert_called_once()
+        self.assertEqual(code, 3)
+        m_run.assert_not_called()
 
     def test_no_governed_ref_degrades(self):
-        # metrics.json 存在但无任何 governedRef：白名单为空 = 降级放行（多数指标没有引用，正常）
+        # 没有引用时不存在“已确认指标”白名单，任意直查必须拒绝而不是放开。
         d = tempfile.mkdtemp()
         write_json(d, "cards.json", make_cards_doc())
         write_json(d, "metrics.json", {"metrics": [{"name": "净收入", "formula": "sum([实际数])"}]})
         scope_obj = scope.load_scope(candidates=[os.path.join(d, "cards.json")])
         code, m_run = self.run_metric(["m_whatever"], scope_obj=scope_obj)
+        self.assertEqual(code, 3)
+        m_run.assert_not_called()
+
+    def test_missing_scope_degrades_only_with_explicit_opt_out(self):
+        code, m_run = self.run_metric(["--no-scope", "m_whatever"], scope_obj=None)
         self.assertEqual(code, 0)
         m_run.assert_called_once()
 
@@ -126,9 +130,9 @@ class CheckScopeTest(unittest.TestCase):
         self.assertEqual(code, 3)
         m_run.assert_not_called()
 
-    def test_missing_scope_degrades_exit0(self):
+    def test_missing_scope_fails_closed(self):
         code, m_run = self.run_check_scope("m_whatever", scope_obj=None)
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 3)
         m_run.assert_not_called()
 
 

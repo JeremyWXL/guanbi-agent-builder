@@ -23,6 +23,7 @@ def make_cards_doc():
                          {"name": "卡B", "cdId": "c2", "type": "TABLE", "dims": [], "measures": []},
                          {"name": "卡C", "cdId": "c3", "type": "TABLE", "dims": [], "measures": []},
                          {"name": "筛选器", "cdId": "s1", "type": "SELECTOR", "dims": [], "measures": []},
+                         {"name": "地区树", "cdId": "t1", "type": "TREE_SELECTOR", "dims": [], "measures": []},
                      ]}}
 
 
@@ -52,6 +53,42 @@ class OnlyCdIdsTest(unittest.TestCase):
         self.assertEqual(set(index.keys()), {"页一__卡A__c1", "页一__卡C__c3"})
         self.assertTrue(os.path.exists(os.path.join(self.out, "页一__卡A__c1.json")))
         self.assertFalse(os.path.exists(os.path.join(self.out, "页一__卡B__c2.json")))
+
+    def test_only_cdids_preserves_unchanged_index_entries(self):
+        os.makedirs(self.out)
+        write_json(self.out, "_sample_index.json", {
+            "页一__卡B__c2": {"cdId": "c2", "profile": {"大区": {"enum": ["华东"]}}},
+            "页一__旧卡__c9": {"cdId": "c9"},
+        })
+        ids = os.path.join(self.dir, "ids.txt")
+        with open(ids, "w", encoding="utf-8") as f:
+            f.write("c1\n")
+        index = self.run_sample(["--only-cdIds", ids])
+        self.assertEqual(set(index), {"页一__卡A__c1", "页一__卡B__c2"})
+        self.assertEqual(index["页一__卡B__c2"]["profile"]["大区"]["enum"], ["华东"])
+
+    def test_failed_refresh_removes_stale_sample_and_exits_nonzero(self):
+        os.makedirs(self.out)
+        key = "页一__卡A__c1"
+        write_json(self.out, key + ".json", [{"销售额": "旧值"}])
+        write_json(self.out, "_sample_index.json", {key: {"cdId": "c1", "rows": 1}})
+        argv = sys.argv
+        sys.argv = ["sample_cards.py", os.path.join(self.dir, "cards.json"), self.out,
+                    "--only-cdIds", self.dir + "/ids.txt"]
+        with open(self.dir + "/ids.txt", "w", encoding="utf-8") as f:
+            f.write("c1\n")
+        with mock.patch.object(sample_cards, "preview", return_value=(None, "权限失效")), \
+             mock.patch("builtins.print"):
+            try:
+                with self.assertRaises(SystemExit) as cm:
+                    sample_cards.main()
+            finally:
+                sys.argv = argv
+        self.assertEqual(cm.exception.code, 2)
+        self.assertFalse(os.path.exists(os.path.join(self.out, key + ".json")))
+        with open(os.path.join(self.out, "_sample_index.json"), encoding="utf-8") as f:
+            index = json.load(f)
+        self.assertIn("error", index[key])
 
     def test_only_cdids_accepts_json_list(self):
         ids = os.path.join(self.dir, "ids.json")

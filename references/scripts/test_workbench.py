@@ -96,6 +96,23 @@ class TestCheckStaleness(unittest.TestCase):
         # 未记录 builderVersion 的老包应提示可升级
         self.assertTrue(r["upgradeAvailable"])
 
+    def test_content_hash_change_is_stale_even_with_same_mtime_and_names(self):
+        learned = [{"cdId": "c1", "name": "净收入"}]
+        self._fixture({"pgA": {"title": "P", "mtime": "t0", "cards": learned,
+                               "contentHash": "old"}}, built_days_ago=5)
+        wb.page_snapshot = lambda pg: {"mtime": "t0", "error": False, "cards": list(learned),
+                                       "contentHash": "new"}
+        r = wb.check_staleness(self.dir)
+        self.assertTrue(r["pages"][0]["stale"])
+        self.assertIn("内容", r["pages"][0]["detail"])
+
+    def test_missing_current_mtime_is_unknown_not_unchanged(self):
+        self._fixture({"pgA": {"title": "P", "mtime": "t0"}}, built_days_ago=5)
+        wb.page_snapshot = lambda pg: {"mtime": "", "cards": None, "error": False}
+        r = wb.check_staleness(self.dir)
+        self.assertTrue(r["pages"][0]["error"])
+        self.assertIn("无法", r["pages"][0]["detail"])
+
     def test_error_page(self):
         self._fixture({"pgA": {"title": "P", "mtime": "t0"}}, built_days_ago=5)
         wb.page_snapshot = lambda pg: {"mtime": None, "cards": None, "error": True}
@@ -244,9 +261,22 @@ class TestCollectAndSave(unittest.TestCase):
         # 白名单外/路径穿越拒绝
         self.assertFalse(save("evil.py", "x")["ok"])
         self.assertFalse(save("../escape.md", "x")["ok"])
+        for control in ("wizard-state.json", "wizard-state-incr.json", "wizard-state-audit.json",
+                        "examples.json", "package-check.json"):
+            write_json(self.dir, control, {})
+            self.assertFalse(save(control, "{}")["ok"], control)
         # 非法 JSON 拒绝且不落盘
         with self.assertRaises(json.JSONDecodeError):
             save("metrics.json", "{not json")
+
+    def test_control_files_rejected_even_when_present_before_handler_creation(self):
+        for control in ("wizard-state.json", "wizard-state-incr.json", "wizard-state-audit.json",
+                        "examples.json", "package-check.json"):
+            write_json(self.dir, control, {})
+        save = wb.make_save_file(self.dir)
+        for control in ("wizard-state.json", "wizard-state-incr.json", "wizard-state-audit.json",
+                        "examples.json", "package-check.json"):
+            self.assertFalse(save(control, "{}")["ok"], control)
 
     def _make_memory(self, parent):
         memdir = os.path.join(parent, "memory")

@@ -71,6 +71,13 @@ class TestFindConflicts(unittest.TestCase):
                "formula": "sum([成本])", "aggrType": "", "advType": "COMPARATIVE"}]
         self.assertEqual(cp.find_conflicts(ms), [])
 
+    def test_plain_alias_is_not_presentation_calculation(self):
+        ms = [{"display": "销售额", "name": "金额A", "alias": "销售额",
+               "formula": "sum([A])", "aggrType": "", "advType": ""},
+              {"display": "销售额", "name": "金额B", "alias": "销售额",
+               "formula": "sum([B])", "aggrType": "", "advType": ""}]
+        self.assertEqual(len(cp.find_conflicts(ms)), 1)
+
     def test_physical_aggr_diff_not_conflict(self):
         # 纯物理字段不同聚合方式（MIN/MAX 分作起止）属正常使用差异
         ms = [{"display": "日期", "name": "日期", "alias": "", "formula": "", "aggrType": "MIN", "advType": ""},

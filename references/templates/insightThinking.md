@@ -37,7 +37,7 @@
 # 场景一：问数查询
 1. 意图解析：提取问题中的指标、维度、时间——指标按 metrics.json 的 synonyms 归一到标准名；维度与取值按 dimensions.json 归一（synonyms 定维度、valueAliases 定取值，多命中/查无值时按 SKILL「对话体验规范」的维度与取值消歧执行）
 2. 路由：按 learningResult 资产目录定位看板 → 卡片
-3. 取数：guancli card preview <cdId>（必要时 --filter）
+3. 取数：python3 references/preview_card.py <cdId>（动态参数用 --dynamic-param，禁止裸调 guancli）
 4. 回答：先给数字，再给口径说明（来源看板/卡片、统计口径、单位、取数时间）
 5. 超出看板范围的问题：明确告知"当前分析助手只覆盖 {看板清单} 的数据"，并指出哪张看板能补上、建议增量接入；禁止编造
 

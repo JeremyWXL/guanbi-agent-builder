@@ -21,8 +21,12 @@ from hashlib import sha1
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-BUILDER_VERSION = "4.12.0"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
+BUILDER_VERSION = "4.12.1"  # 发布时与 SKILL.md frontmatter version 同步；体检时与交付包 _meta.builderVersion 对比
 FRESH_DAYS_DEFAULT = 30    # 复核阈值：距上次学习超过 N 天即提醒复核（--fresh-days 可调）
+CONTROL_FILES = {
+    "wizard-state.json", "wizard-state-incr.json", "wizard-state-audit.json",
+    "examples.json", "package-check.json",
+}
 
 COMMON_CSS = r"""
 :root{
@@ -1389,6 +1393,12 @@ def _structure_hash(cards):
     return sha1(json.dumps(items, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
 
 
+def _content_hash(cards):
+    items = sorted((dict(c) for c in cards), key=lambda c: c.get("cdId", ""))
+    payload = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _ver_tuple(s):
     """"3.1.0" → (3,1,0)，解析失败返回空元组（恒小于任何有效版本）。"""
     nums = re.findall(r"\d+", s or "")
@@ -1396,26 +1406,32 @@ def _ver_tuple(s):
 
 
 def page_snapshot(pg_id):
-    """取看板当前快照：{mtime, cards: [{cdId, name}] | None, error}。
-    cards 为 None 表示 --raw 不可用（只拿到 mtime，无法做结构对比）。"""
-    r = subprocess.run(["guancli", "page", "get", pg_id, "--raw"],
-                       capture_output=True, text=True, timeout=60)
-    if r.returncode == 0:
-        try:
-            data = json.loads(r.stdout).get("data") or {}
-            cards = [{"cdId": c.get("cdId", ""),
-                      "name": (c.get("name") or "").strip() or c.get("cdId", "")}
-                     for c in data.get("cards") or [] if isinstance(c, dict) and c.get("cdId")]
-            return {"mtime": data.get("utime", ""), "cards": cards, "error": False}
-        except json.JSONDecodeError:
-            pass
-    # 回退：文本输出正则只拿更新时间（兼容旧版 guancli）
-    r = subprocess.run(["guancli", "page", "get", pg_id],
-                       capture_output=True, text=True, timeout=60)
-    if r.returncode != 0:
-        return {"mtime": None, "cards": None, "error": True}
-    m = re.search(r'^更新时间: (.+)$', r.stdout, re.M)
-    return {"mtime": m.group(1).strip() if m else "", "cards": None, "error": False}
+    """取看板当前快照；无法取得更新时间或原始内容时必须返回 error，不能误报未变化。"""
+    try:
+        r = subprocess.run(["guancli", "page", "get", pg_id, "--raw"],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode == 0:
+            try:
+                data = json.loads(r.stdout).get("data") or {}
+                raw_cards = data.get("cards") or []
+                cards = [{"cdId": c.get("cdId", ""),
+                          "name": (c.get("name") or "").strip() or c.get("cdId", "")}
+                         for c in raw_cards if isinstance(c, dict) and c.get("cdId")]
+                mtime = data.get("utime") or None
+                return {"mtime": mtime, "cards": cards,
+                        "contentHash": _content_hash(raw_cards), "error": not bool(mtime)}
+            except json.JSONDecodeError:
+                pass
+        r = subprocess.run(["guancli", "page", "get", pg_id],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            return {"mtime": None, "cards": None, "error": True}
+        m = re.search(r'^更新时间: (.+)$', r.stdout, re.M)
+        if not m:
+            return {"mtime": None, "cards": None, "error": True}
+        return {"mtime": m.group(1).strip(), "cards": None, "error": False}
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"mtime": None, "cards": None, "error": True, "detail": str(exc)[:200]}
 
 
 def _diff_cards(learned, current):
@@ -1439,7 +1455,7 @@ def _accel_stats(doc):
         cards = v.get("cards")
         entries = list(cards.values()) if isinstance(cards, dict) else (cards or [])
         for c in entries:
-            if not isinstance(c, dict) or c.get("type") in ("SELECTOR", "TEXT"):
+            if not isinstance(c, dict) or c.get("type") in ("SELECTOR", "TREE_SELECTOR", "TEXT"):
                 continue
             if "filtered" in c:
                 has_flag = True
@@ -1537,7 +1553,7 @@ def _print_diagnostics(workdir):
 
 
 def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
-    """体检：mtime + 卡片结构指纹双信号对比，附复核阈值与 builder 版本升级提示。"""
+    """体检：mtime + 结构/内容指纹对比，附复核阈值与 builder 版本升级提示。"""
     cj = os.path.join(workdir, "cards.json")
     if not os.path.exists(cj):
         # cards.json 缺失不再抛 FileNotFoundError（v4.9.3）：直通模式给明确说明，其余提示原因
@@ -1557,19 +1573,28 @@ def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
     with ThreadPoolExecutor(max_workers=4) as pool:
         futs = {pool.submit(page_snapshot, pg_id): pg_id for pg_id in learned_pages}
         for fut in as_completed(futs):
-            snapshots[futs[fut]] = fut.result()
+            try:
+                snapshots[futs[fut]] = fut.result()
+            except Exception as exc:
+                snapshots[futs[fut]] = {"mtime": None, "cards": None,
+                                        "error": True, "detail": str(exc)[:200]}
 
     pages = []
     for pg_id, info in learned_pages.items():
         snap = snapshots.get(pg_id) or {"mtime": None, "cards": None, "error": True}
         cur = snap["mtime"]
-        stale = bool(cur) and cur != info.get("mtime", "")
+        content_changed = bool(info.get("contentHash") and snap.get("contentHash")
+                               and info["contentHash"] != snap["contentHash"])
+        unknown = snap["error"] or (not cur and not snap.get("contentHash"))
+        stale = not unknown and ((bool(cur) and cur != info.get("mtime", "")) or content_changed)
         entry = {
             "pgId": pg_id, "title": info.get("title", pg_id),
             "learned": info.get("mtime", ""), "current": cur,
-            "error": snap["error"], "stale": stale,
-            "changes": None, "detail": "",
+            "error": unknown, "stale": stale,
+            "changes": None, "detail": snap.get("detail", "") if unknown else "",
         }
+        if unknown and not entry["detail"]:
+            entry["detail"] = "无法取得当前看板状态，不能判断是否变化"
         if stale and snap["cards"] is not None:
             if info.get("cards"):
                 # 有学习时卡片清单：报具体增删/改名
@@ -1582,7 +1607,9 @@ def check_staleness(workdir, fresh_days=FRESH_DAYS_DEFAULT):
                     bits.append(f"删除 {len(ch['removed'])} 张（{'、'.join(ch['removed'][:5])}）")
                 if ch["renamed"]:
                     bits.append(f"改名 {len(ch['renamed'])} 张（{'、'.join(ch['renamed'][:3])}）")
-                entry["detail"] = "；".join(bits) if bits else "卡片清单未变，是配置/布局调整"
+                entry["detail"] = ("；".join(bits) if bits else
+                                   ("卡片内容（公式/筛选/参数等）已变化" if content_changed
+                                    else "卡片清单未变，是配置/布局调整"))
             elif info.get("cardHash"):
                 # 只有指纹没有清单：能判断是否动了卡片，但报不出具体名字
                 same = _structure_hash(snap["cards"]) == info["cardHash"]
@@ -1734,7 +1761,8 @@ def make_handler(get_page, on_check=None, on_save=None):
 def make_save_file(workdir):
     """生成保存回调：白名单文件（.md/.json）写回，JSON 先解析校验，旧版自动备份 .bak-<时间戳>。
     特例：memory/profile.md（用户画像）可写——位于 workdir 外的 memory/ 区，单独校验。"""
-    allowed = {fn for fn in os.listdir(workdir) if fn.endswith((".md", ".json"))}
+    allowed = {fn for fn in os.listdir(workdir)
+               if fn.endswith((".md", ".json")) and fn not in CONTROL_FILES}
     memdir = _memory_dir(workdir)
 
     def save_file(fn, content):

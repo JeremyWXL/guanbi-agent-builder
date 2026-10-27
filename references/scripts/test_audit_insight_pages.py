@@ -186,6 +186,17 @@ class TestPageBudget(AuditCase):
         self.assertLessEqual(audit["portfolio"]["overall"], 49)
         self.assertIn("官方上限", proc.stdout)
 
+    def test_custom_max_pages_cannot_exceed_official(self):
+        """预算只能收紧不能放宽：否则 11 页 + --max-pages 12 会绕过 R-01。"""
+        doc = {f"看板{i:02d}": simple_page(f"看板{i:02d}", pg=f"pg{i}", card_count=6)
+               for i in range(11)}
+        self.write_json("cards-raw.json", doc)
+        proc = subprocess.run([sys.executable, SCRIPT, self.tmp, "--max-pages", "12"],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("不能超过官方上限 10 张", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "insight-audit.json")))
+
 
 # ───────────────────────────── 3-5. R-02 联动筛选器 ─────────────────────────────
 
@@ -246,6 +257,26 @@ class TestLinkageSelector(AuditCase):
         self.assertEqual(page["facts"]["linkageSelectors"], 0)
         self.assertLess(page["scores"]["linkage"], 25)
         self.assertEqual([f for f in r02 if f["level"] == "blocker"], [])
+
+    def test_hidden_linkage_only_caps_at_79(self):
+        """隐藏筛选器只算候选：即使结构分很高，也不能显示“可直接配置”。"""
+        dims = ("区域", "省份", "城市", "门店编码", "区域", "门店", "省份", "城市")
+        cards = [make_chart(f"指标{i}", f"c{i}", dims=(dim,),
+                            ctype="DETAIL_TABLE" if i == 0 else "BASIC_BAR")
+                 for i, dim in enumerate(dims)]
+        cards.append({"name": "说明", "cdId": "t1", "type": "TEXT", "dsId": "",
+                      "dims": [], "measures": [], "filters": [],
+                      "filterDetails": [], "dynamicParams": []})
+        cards += [make_selector("区域", "s1", in_bar=False, linked=5),
+                  make_time_selector(in_bar=True, linked=0)]
+        self.write_json("cards-raw.json", {"隐藏筛选页": make_page("pg1", cards)})
+        self.write_json("card-data/_sample_index.json", {"c0": {"rawRows": 100}})
+        audit = self.run_ok()
+        page = self.page(audit, "隐藏筛选页")
+        self.assertGreaterEqual(page["rawTotal"], 80)
+        self.assertLessEqual(page["total"], 79)
+        self.assertNotEqual(page["grade"], "可直接配置")
+        self.assertLessEqual(audit["portfolio"]["overall"], 79)
 
 
 # ───────────────────────────── 6. R-09 时间筛选 ─────────────────────────────
@@ -366,7 +397,7 @@ class TestMetricReadiness(AuditCase):
         self.assertIn("趋势图", hits[0]["evidence"])
 
     def test_param_dependent_with_parameter_selector_passes(self):
-        param_sel = make_selector("可选指标", "p1", field="", in_bar=True,
+        param_sel = make_selector("趋势指标", "p1", field="", in_bar=True,
                                   linked=3, stype="PARAMETER")
         cards = [make_chart("趋势图", "c1", dims=("区域",), measures=("指标",)),
                  make_selector("区域", "s1", linked=3),
@@ -380,6 +411,20 @@ class TestMetricReadiness(AuditCase):
         }]})
         audit = self.run_ok()
         self.assertEqual(self.findings(audit, rule="R-08", level="P0"), [])
+
+    def test_param_dependent_with_unrelated_parameter_selector_still_fails(self):
+        unrelated = make_selector("组织类型", "p1", field="", in_bar=True,
+                                  linked=3, stype="PARAMETER")
+        cards = [make_chart("趋势图", "c1", dims=("区域",), measures=("指标",)),
+                 make_selector("区域", "s1", linked=3), make_time_selector(), unrelated]
+        self.write_json("cards-raw.json", {"参数页": make_page("pg1", cards)})
+        self.write_json("formulas.json", {"metrics": [{
+            "name": "指标", "classification": "PARAM_DEPENDENT",
+            "params": ["DYNAMIC_PARAMS.趋势指标"],
+            "sources": [{"page": "参数页", "card": "趋势图", "dims": ["区域"], "scope": []}],
+        }]})
+        audit = self.run_ok()
+        self.assertEqual(len(self.findings(audit, rule="R-08", level="P0")), 1)
 
 
 # ───────────────────────────── 11-12. 跨页冗余与共享维度 ─────────────────────────────
@@ -651,7 +696,7 @@ class TestRealFixture(AuditCase):
                     os.path.join(self.tmp, "card-data", "_sample_index.json"))
         audit = self.run_ok("--scenario", "月度经营分析")
         self.assertEqual(audit["meta"]["pageCount"], 2)
-        self.assertEqual(audit["meta"]["builderVersion"], "4.12.0")
+        self.assertEqual(audit["meta"]["builderVersion"], "4.12.1")
         self.assertEqual(audit["meta"]["inputs"],
                          {"pageCheck": False, "formulas": True, "samples": True})
         cards = {p["name"]: p["facts"]["dataCards"] for p in audit["pages"]}

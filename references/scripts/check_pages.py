@@ -113,8 +113,8 @@ def find_conflicts(measures):
     别名≠本名的展示层派生条目不参与；纯物理字段聚合方式差异降级不算冲突。"""
     groups = {}
     for m in measures:
-        if m["alias"] and m["alias"] != m["name"]:
-            continue  # 展示层派生（同比/占比等）：真实身份是基数字段
+        if m.get("advType") and m["alias"] and m["alias"] != m["name"]:
+            continue  # 只有显式高级计算才按展示层派生排除，普通字段重命名仍参与口径校验
         key = normalize_formula(m["formula"]) if m["formula"] else f"__field__{m['name']}:{m['aggrType']}"
         groups.setdefault(m["display"], {}).setdefault(key, m)
     conflicts = []

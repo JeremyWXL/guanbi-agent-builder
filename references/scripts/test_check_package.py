@@ -171,6 +171,21 @@ class BrokenPackageTest(unittest.TestCase):
         self.assertIn("字典形态", self.out(r))
         self.assertIn("cdIds 为空", self.out(r))
 
+    def test_sampling_errors_caught(self):
+        write_json(os.path.join(self.dir, "references", "card-data", "_sample_index.json"),
+                   {"页一__卡A__c1": {"cdId": "c1", "error": "权限失效"}})
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("采样失败", self.out(r))
+
+    def test_meta_pages_must_match_actual_pages(self):
+        doc = json.loads(json.dumps(CARDS_DOC))
+        doc["_meta"]["pages"]["p2"] = {"title": "页二", "cardHash": "h", "cards": []}
+        write_json(os.path.join(self.dir, "references", "cards.json"), doc)
+        r = run(self.dir)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("不一致", self.out(r))
+
     def test_missing_dsusage_caught(self):
         """dsUsage 丢失 → scope dsIds 空集 → run_sql 全拦截（SQL 直查瘫痪）"""
         doc = json.loads(json.dumps(CARDS_DOC))

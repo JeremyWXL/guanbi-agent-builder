@@ -6,8 +6,6 @@ clear 备份清空、references 目录解析。
 运行: python3 -m unittest discover -s references/scripts -p 'test_*.py' -v
 不触网：全部用临时目录。
 """
-import contextlib
-import io
 import json
 import os
 import subprocess

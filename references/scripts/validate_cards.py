@@ -9,7 +9,7 @@
   4. 空值率: 关键列空值率 >50% 提示数据稀疏
 输出: 控制台报告 + <目录>/_validation.json
 """
-import json, sys, os, glob, re
+import json, sys, os, glob
 
 def to_num(v):
     if v is None or v == '':

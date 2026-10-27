@@ -7,10 +7,12 @@ CLI 用法漂移（凭记忆写错 flag / 漏必填参数）在此被拦截，�
   3. 关键命令的必填参数在模板命令行里齐全（防止漏 --question 这类"照着做必报错"的漂移）
   4. 模板占位符不超出已知集合（新增占位符必须同步 render_agent_skill.py）
 """
-import os, re, sys, unittest
+import importlib.util, json, os, re, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE = os.path.join(HERE, "..", "templates", "agent-SKILL.md")
+INSIGHT_ADVICE = os.path.join(HERE, "..", "templates", "insight-advice.json")
+INSIGHT_AUDIT = os.path.join(HERE, "..", "templates", "insight-audit.md")
 
 KNOWN_PLACEHOLDERS = {
     "{场景名}", "{业务场景}", "{看板清单}", "{典型问题关键词列表}", "{日期}",
@@ -41,6 +43,13 @@ class TemplateCliConsistencyTest(unittest.TestCase):
         for fn in sorted(refs):
             self.assertTrue(os.path.isfile(os.path.join(HERE, fn)),
                             f"模板引用了不存在的脚本 references/{fn}")
+
+    def test_card_preview_only_uses_whitelisted_wrapper(self):
+        text = "\n".join(self.lines)
+        self.assertIn("preview_card.py", text)
+        self.assertNotIn("取数动作：`guancli card preview", text)
+        self.assertNotIn("走 `card preview --dynamic-param`", text)
+        self.assertIn("禁止裸调 `guancli card preview`", text)
 
     def test_documented_flags_exist_in_script_source(self):
         source_cache = {}
@@ -79,6 +88,29 @@ class TemplateCliConsistencyTest(unittest.TestCase):
         unknown = found - KNOWN_PLACEHOLDERS
         self.assertFalse(unknown,
                          f"模板出现未知占位符 {unknown}——需同步 render_agent_skill.py 的填充表与本测试")
+
+    def test_insight_advice_template_covers_validator_keys(self):
+        """insight-advice.json 模板必须覆盖 validate() 的必填键，避免 schema 漂移。"""
+        with open(INSIGHT_ADVICE, encoding="utf-8") as f:
+            template = json.load(f)
+        spec = importlib.util.spec_from_file_location(
+            "insight_audit_report_for_template_test",
+            os.path.join(HERE, "insight_audit_report.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        missing = [k for k in mod.REQUIRED_KEYS if k not in template]
+        self.assertFalse(missing, f"insight-advice.json 模板缺少必填字段：{missing}")
+        self.assertIn("cardReuse", template,
+                      "cardReuse 是条件必填字段，模板必须保留空数组占位")
+
+    def test_insight_audit_template_has_all_report_sections(self):
+        """报告章节模板必须覆盖脚本实际渲染的九节 + 附录，避免文档骨架落后。"""
+        with open(INSIGHT_AUDIT, encoding="utf-8") as f:
+            text = f.read()
+        for title in ("结论摘要", "目标场景与看板组合", "体检总表", "关键发现", "整合建议",
+                      "逐页调整清单", "配置衔接", "落地路线图", "待确认问题",
+                      "附录 A", "附录 B", "附录 C"):
+            self.assertIn(title, text, f"insight-audit.md 模板缺章节：{title}")
 
 
 if __name__ == "__main__":

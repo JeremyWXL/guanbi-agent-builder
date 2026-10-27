@@ -1,0 +1,82 @@
+{
+  "version": "4.12.1",
+  "date": "2026-10-26",
+  "testerVersion": "1.9.3",
+  "environment": "default（https://app.guandata.com）+ guancli 1.0.68 + guanvis 0.1.50",
+  "unitTests": 545,
+  "l0": {
+    "total": 32,
+    "passed": 32,
+    "note": "L0-1～L0-32 全矩阵通过；真实单卡 preview 400 行；双数据集骨架 preview 0 错误、diff 通过、publish --dry-run 通过且未上传。"
+  },
+  "l1": {
+    "status": "pass",
+    "track": "full + lite/深化 + incr + audit 全模式",
+    "notes": "full 八步、lite 五步+深化、incr 五步、audit 四步均 confirmed；最终 check_package 通过，full 包内 5/5、lite 包内 5/5；memory 不变。"
+  },
+  "l2": {
+    "score": 100,
+    "grade": "A",
+    "redlines": 0,
+    "note": "C1-C7 各 1 题，均为 examples.json 外新题；总分=(100×6+100×1.5)/7.5=100。C3 先用真实资产发现别名覆盖缺口，再仅于测试包加入合成别名 EDVPplus→EDVP+ 补测通过。",
+    "questions": [
+      {"id": "C1", "topic": "能力与 SQL 边界自我介绍", "score": 100},
+      {"id": "C2", "topic": "High-low 跨 strategy/strategy2 消歧", "score": 100},
+      {"id": "C3", "topic": "合成别名 EDVPplus→EDVP+ 归一后再跨维度消歧", "score": 100},
+      {"id": "C4", "topic": "四项费用预算差异归因，attribute.py 闭环", "score": 100},
+      {"id": "C5", "topic": "管理费用实际/预算空值不硬答", "score": 100},
+      {"id": "C6", "topic": "覆盖外问题列看板并给增量学习入口", "score": 100},
+      {"id": "C7", "topic": "越界数据集 run_sql exit 3，未绕过", "score": 100}
+    ]
+  },
+  "issues": [
+    {
+      "severity": "P1",
+      "title": "check_metrics 固定读取 cards-raw，增量新页真实维度被误报不存在",
+      "status": "fixed",
+      "fixedIn": "4.12.1"
+    },
+    {
+      "severity": "P1",
+      "title": "维度改名后覆盖检查不按 field 映射，产生假阳性警告",
+      "status": "fixed",
+      "fixedIn": "4.12.1"
+    },
+    {
+      "severity": "P1",
+      "title": "标准向导 run_sql/preview_card 无法定位工作目录 scope，datasets-raw 也未识别",
+      "status": "fixed",
+      "fixedIn": "4.12.1",
+      "note": "新增显式 --scope；fill_dim_values 自动传工作目录资产；真实 preview 400 行与 SQL COUNT=400 通过"
+    },
+    {
+      "severity": "P1",
+      "title": "合法 R-01 超页诊断被报告校验误拦，无法输出诊断",
+      "status": "fixed",
+      "fixedIn": "4.12.1"
+    },
+    {
+      "severity": "P2",
+      "title": "停更页采样失败",
+      "status": "fixed",
+      "fixedIn": "4.12.1",
+      "note": "失败采样现退出并删除旧文件，索引保留 error，交付门拦截"
+    },
+    {
+      "severity": "P2",
+      "title": "SQL 不可用时 SKILL.md 已禁用，但包内通用 sql-guide 仍像可切换指南",
+      "status": "open"
+    },
+    {
+      "severity": "P2",
+      "title": "公司级动态当月实际缺具体自然月，出身行只能声明参数不能猜期间",
+      "status": "open"
+    },
+    {
+      "severity": "P2",
+      "title": "并行 guancli 认证配置写入冲突导致一次瞬时误判",
+      "status": "tracking",
+      "note": "串行复跑恢复，最终报告未采用瞬时失败产物"
+    }
+  ]
+}

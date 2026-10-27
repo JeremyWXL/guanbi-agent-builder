@@ -27,7 +27,7 @@ try:
 except ImportError:
     scope_mod = None  # scope.py 未随包复制时降级：--scope 白名单校验不可用，采样主功能不受影响
 
-SKIP_TYPES = {'SELECTOR', 'TEXT', 'PROGRESS_BAR', 'PICTURE', 'LAYOUT'}
+SKIP_TYPES = {'SELECTOR', 'TREE_SELECTOR', 'TEXT', 'PROGRESS_BAR', 'PICTURE', 'LAYOUT'}
 DEFAULT_MAX_ROWS = 200
 ENUM_LIMIT = 8       # 枚举值最多列几个
 ENUM_CARD_MAX = 20   # 唯一值超过该数不视为枚举列
@@ -171,10 +171,26 @@ def main():
             seen_keys[key] = card['cdId']
             tasks.append((key, card))
     index = {}
+    index_path = os.path.join(out_dir, '_sample_index.json')
+    if only_ids is not None and os.path.isfile(index_path):
+        try:
+            with open(index_path, encoding='utf-8') as f:
+                previous = json.load(f)
+            current_keys = {f"{page_name}__{safe_name(card['name'])}__{card['cdId']}"
+                            for page_name, info in pages.items()
+                            if not page_name.startswith('_') and isinstance(info, dict)
+                            for card in info.get('cards') or []
+                            if isinstance(card, dict) and card.get('type') not in SKIP_TYPES}
+            index = {k: v for k, v in previous.items() if k in current_keys}
+        except (OSError, json.JSONDecodeError):
+            print("⚠️ 旧采样索引无法读取，将仅为本轮任务重建索引", file=sys.stderr)
     for key, card in tasks:
         print(f"采样: {card['name']} ({card['cdId']}) ...", flush=True)
         data, err = preview(card['cdId'])
+        sample_path = os.path.join(out_dir, f"{key}.json")
         if err:
+            if os.path.isfile(sample_path):
+                os.unlink(sample_path)
             index[key] = {"cdId": card["cdId"], "type": card["type"], "error": err}
             print(f"  失败: {err[:80]}")
             continue
@@ -184,7 +200,7 @@ def main():
         if truncated:
             rows = rows[:max_rows]
         payload = {"_truncated": True, "_totalRows": total_rows, "rows": rows} if truncated else rows
-        with open(os.path.join(out_dir, f"{key}.json"), 'w', encoding='utf-8') as f:
+        with open(sample_path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, ensure_ascii=False, indent=1)
         cols = list(rows[0].keys()) if rows else []
         index[key] = {
@@ -197,10 +213,15 @@ def main():
             "profile": profile(rows),
         }
         print(f"  -> {total_rows} 行 x {len(cols)} 列" + (f"（截断采样 {max_rows} 行）" if truncated else ""))
-    with open(os.path.join(out_dir, '_sample_index.json'), 'w', encoding='utf-8') as f:
+    with open(index_path, 'w', encoding='utf-8') as f:
         json.dump(index, f, ensure_ascii=False, indent=1)
+    failed = {k: v for k, v in index.items() if isinstance(v, dict) and 'error' in v}
     ok = sum(1 for v in index.values() if 'error' not in v)
     print(f"\n完成: {ok}/{len(index)} 张采样成功 -> {out_dir}/_sample_index.json")
+    if failed:
+        print(f"❌ {len(failed)} 张卡片采样失败；旧采样已移除，禁止继续交付: {'、'.join(failed)}",
+              file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == '__main__':

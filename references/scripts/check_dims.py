@@ -309,7 +309,7 @@ def main():
                     warns.append(f"「{name}」的值「{a}」与「{b}」互为包含——若用户常混用，建议收进 valueAliases")
 
     # ---- 卡片/数据集覆盖 ----
-    raw = load(workdir, "cards-raw.json")
+    raw = load(workdir, "cards-merged.json") or load(workdir, "cards-raw.json")
     if raw:
         known = card_dims(raw)
     else:
@@ -318,7 +318,8 @@ def main():
     if known:
         for d in dims:
             name = (d.get("name") or "").strip()
-            if name and name not in known:
+            field = (d.get("field") or "").strip()
+            if name and name not in known and (not field or field not in known):
                 warns.append(f"维度「{name}」未在任何卡片/筛选器/数据集字段出现（SQL 独有维度可忽略）")
 
     # ---- 报告 ----

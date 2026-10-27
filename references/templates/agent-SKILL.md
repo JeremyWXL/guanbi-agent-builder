@@ -132,7 +132,7 @@ guancli auth status   # 确认认证有效
 
 0. **参照语料**：先查 `references/examples.json`——同类已验收问题的路由、取数方式与结论要点是最可靠的参照；再用 `python3 references/memory.py recall . "<问题>"` 查相似历史（命中复用并声明，⚠️ 条目以最新档案为准，见「记忆系统」）
 <!-- MODE: dashboard -->
-1. **取数**：按 `references/cards.json` 的卡片映射取数，先想清走哪一层（三层规则详见 `references/sql-guide.md`「取数路径三层」）：问题命中带 governedRef 的指标（`references/metrics.json` 里的指标中心引用）时**优先平台直查**——`python3 references/run_metric.py <metricId>`（权威口径 + 平台侧计算，排在三层路径之前），查不了（报错/粒度不够）再降级原三层路径；已验收的同形态问题优先读卡片缓存（成本近零）；粒度内的新切片用**未筛选**（`filtered=false`，数据集级）卡片背后的数据集二次计算；探索/粒度以下下钻才 SQL 直查明细。**`filtered=true` 的卡片数据是为那张图裁剪过的，只作已知问题的应答缓存引用，禁止二次加工回答全局问题**（粒度陷阱：带筛选数据答全局问题 = 隐蔽口径错误）。取数动作：`guancli card preview <cdId> -f json`（或用 `references/sample_cards.py` 批量刷新到本地）。**参数化卡片（cards.json 该卡 `dynamicParams` 非空）取数必须考虑全局参数**：不传参按参数默认值取数；用户问题指定了参数取值（如"看 9 月的""按销售杯数看"）时透传——`guancli card preview <cdId> -f json --dynamic-param "参数名=值"`（可多次指定）；只传该卡 `dynamicParams` 声明过的参数（传未声明的参数 guancli 会显式报错——报错即提示检查参数名，不要当成生效或静默忽略；DRILL 下钻卡不支持 `--dynamic-param`，改用其主卡或页面筛选器联动取数）；取回空结果先怀疑默认参数范围（如「昨天」宏）而非"没数据"。**card preview 返回的是显示格式化值**（如"4.3万"只有一位小数精度）——拿它做归因/贡献额计算时须声明精度限制，需要精确值时优先用采样原始行或 SQL 直查。**所有取数必须经包内脚本（run_metric / run_sql / sample_cards / make_link）；禁止裸调 `guancli metric query`、`guancli page tree/search/get`、`guancli ds tree` 取数**——白名单脚本会拦截，且 qa-log 可事后审计（见「数据红线」越界取数禁止）
+1. **取数**：按 `references/cards.json` 的卡片映射取数，先想清走哪一层（三层规则详见 `references/sql-guide.md`「取数路径三层」）：问题命中带 governedRef 的指标（`references/metrics.json` 里的指标中心引用）时**优先平台直查**——`python3 references/run_metric.py <metricId>`（权威口径 + 平台侧计算，排在三层路径之前），查不了（报错/粒度不够）再降级原三层路径；已验收的同形态问题优先读卡片缓存（成本近零）；粒度内的新切片用**未筛选**（`filtered=false`，数据集级）卡片背后的数据集二次计算；探索/粒度以下下钻才 SQL 直查明细。**`filtered=true` 的卡片数据是为那张图裁剪过的，只作已知问题的应答缓存引用，禁止二次加工回答全局问题**（粒度陷阱：带筛选数据答全局问题 = 隐蔽口径错误）。取数动作：`python3 references/preview_card.py <cdId>`（或用 `python3 references/sample_cards.py references/cards.json references/card-data --scope references/cards.json` 批量刷新到本地）。**参数化卡片（cards.json 该卡 `dynamicParams` 非空）取数必须考虑全局参数**：不传参按参数默认值取数；用户问题指定了参数取值（如"看 9 月的""按销售杯数看"）时透传——`python3 references/preview_card.py <cdId> --dynamic-param "参数名=值"`（可多次指定）；只传该卡 `dynamicParams` 声明过的参数（传未声明的参数 guancli 会显式报错——报错即提示检查参数名，不要当成生效或静默忽略；DRILL 下钻卡不支持 `--dynamic-param`，改用其主卡或页面筛选器联动取数）；取回空结果先怀疑默认参数范围（如「昨天」宏）而非"没数据"。**card preview 返回的是显示格式化值**（如"4.3万"只有一位小数精度）——拿它做归因/贡献额计算时须声明精度限制，需要精确值时优先用采样原始行或 SQL 直查。**所有取数必须经包内脚本（run_metric / run_sql / preview_card / sample_cards / make_link）；禁止裸调 `guancli card preview`、`guancli metric query`、`guancli page tree/search/get`、`guancli ds tree` 取数**——白名单脚本会拦截，且 qa-log 可事后审计（见「数据红线」越界取数禁止）
 <!-- /MODE -->
 <!-- MODE: dataset -->
 1. **取数**：按 `references/datasets.json` 的字段清单路由到数据集（字段口径细节见 `references/sql-guide.md`）：问题命中带 governedRef 的指标（`references/metrics.json` 里的指标中心引用）时**优先平台直查**——`python3 references/run_metric.py <metricId>`（权威口径 + 平台侧计算），查不了（报错/粒度不够）再降级 run_sql 路径；其余问题用 `python3 references/run_sql.py <数据集ID> '<SQL>'` 对数据集做只读聚合查询（这是主路径，不是备选；该脚本强制单条 SELECT，写操作会被拦截）。**所有取数必须经包内脚本（run_metric / run_sql）；禁止裸调 `guancli metric query`、`guancli ds tree` 取数**——白名单脚本会拦截，且 qa-log 可事后审计（见「数据红线」越界取数禁止）
@@ -154,10 +154,10 @@ guancli auth status   # 确认认证有效
 6. **输出**：综合洞察报告按 references 中的输出模板生成 HTML；问数/归因/异常直接对话回答
 
 <!-- MODE: dashboard -->
-> 💡 **SQL 直查触发条件**：卡片粒度不够时（如单月指标、卡片没拆的维度、自定义时间段），自动切换到 SQL 模式。SQL 别名必须用英文，金额 ÷10000 转万，结果与卡片交叉验证（误差 >2% 先自查）。
+> 💡 **SQL 直查触发条件**：卡片粒度不够时（如单月指标、卡片没拆的维度、自定义时间段），自动切换到 SQL 模式。SQL 别名必须用英文，仅在原始单位已确认为元时 ÷10000 转万，结果与卡片交叉验证（误差 >2% 先自查）。
 <!-- /MODE -->
 <!-- MODE: dataset -->
-> 💡 **SQL 直查即主路径**：直通模式没有卡片层，聚合取数、明细下钻都走 run_sql。SQL 别名必须用英文，金额 ÷10000 转万，结果与 examples.json 已验收数值交叉验证（误差 >2% 先自查）。
+> 💡 **SQL 直查即主路径**：直通模式没有卡片层，聚合取数、明细下钻都走 run_sql。SQL 别名必须用英文，仅在原始单位已确认为元时 ÷10000 转万，结果与 examples.json 已验收数值交叉验证（误差 >2% 先自查）。
 <!-- /MODE -->
 
 ## 数据红线
@@ -167,9 +167,9 @@ guancli auth status   # 确认认证有效
 - json 原始值为元时引用必须换算（见 cards.json notes）
 - 标记为"下钻/局部"的卡片禁止当全景使用
 - 带筛选卡片（cards.json `filtered=true`）的数据禁止当全局口径二次加工——只能作为已知形态问题的缓存引用；全局问题走未筛选（数据集级）卡片或 SQL 明细层
-- 参数化卡片（cards.json `dynamicParams` 非空）报数时必须在出身行声明参数取值（如"参数：指标=营业额，取默认值"）；含 `[DYNAMIC_PARAMS.xxx]` 的公式禁止内联进 SQL（SQL 引擎无参数上下文，必报错或静默算错），换参数取值走 `card preview --dynamic-param`
+- 参数化卡片（cards.json `dynamicParams` 非空）报数时必须在出身行声明参数取值（如"参数：指标=营业额，取默认值"）；含 `[DYNAMIC_PARAMS.xxx]` 的公式禁止内联进 SQL（SQL 引擎无参数上下文，必报错或静默算错），换参数取值走 `preview_card.py --dynamic-param`
 - 超出看板覆盖范围的问题直接说明，禁止编造；并给出出路（见「对话体验规范」超范围问题给出路）
-- **越界取数禁止**：覆盖外看板/数据集的数据禁止当答案——取数必经包内白名单脚本（run_sql 校验 dsId、sample_cards 校验 cdId、run_metric 校验 governedRef metricId），禁止裸调 `guancli metric query`、`guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 `scope_audit.py` 事后审计（脚本白名单 + 流水审计双保险）
+- **越界取数禁止**：覆盖外看板/数据集的数据禁止当答案——取数必经包内白名单脚本（run_sql 校验 dsId、preview_card/sample_cards 校验 cdId、run_metric 校验 governedRef metricId），禁止裸调 `guancli card preview`、`guancli metric query`、`guancli page tree/search/get`、`guancli ds tree` 取数；qa-log 记 --page/--ds 供 `scope_audit.py` 事后审计（脚本白名单 + 流水审计双保险）
 <!-- /MODE -->
 <!-- MODE: dataset -->
 - 所有数字必须来自 run_sql / run_metric 直查结果，标注来源与数据范围（数据集 + 查询条件 + 取数时间，格式见「对话体验规范」数据出身行）

@@ -163,7 +163,7 @@ def main():
         warns.append(f"…另有 {len(family_hits) - 8} 组同族指标分母不一致")
 
     # ---- 维度校验 ----
-    raw = load(workdir, "cards-raw.json")
+    raw = load(workdir, "cards-merged.json") or load(workdir, "cards-raw.json")
     if raw:
         known_dims = {d for k, v in raw.items() if k != "_meta" and isinstance(v, dict)
                       for c in v.get("cards") or [] for d in c.get("dims") or []}

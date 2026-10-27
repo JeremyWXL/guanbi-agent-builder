@@ -1,6 +1,6 @@
 {
   "name": "guanbi-agent-builder",
-  "version": "4.12.0",
+  "version": "4.12.1",
   "description": "Data Agent 搭建向导 + 洞察Agent 看板诊断：把观远 BI 看板变成 AI data agent，并评估 1-N 张看板对洞察Agent 的就绪度（开源免费 · MIT）",
   "license": "MIT",
   "author": "Jeremy",

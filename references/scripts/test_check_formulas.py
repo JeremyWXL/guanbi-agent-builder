@@ -29,6 +29,11 @@ class TestClassifyParamDependent(unittest.TestCase):
         self.assertEqual(cf.classify("sum([销售额])/sum([目标])")[0], "FREE")
         self.assertEqual(cf.classify("case when [区域]='华东' then [金额] end")[0], "ROW_LOGIC")
 
+    def test_unknown_formula_is_not_free(self):
+        cls, note = cf.classify("approx_count_distinct([客户])")
+        self.assertNotEqual(cls, "FREE")
+        self.assertNotIn("仅含可加", note)
+
 
 class TestMainParamDependent(unittest.TestCase):
     """main() 集成：含参数公式进 formulas.json 标 PARAM_DEPENDENT，seed 透传 safety"""
@@ -59,7 +64,8 @@ class TestMainParamDependent(unittest.TestCase):
 
     def test_formulas_json_classification(self):
         self.run_main()
-        doc = json.load(open(os.path.join(self.dir, "formulas.json"), encoding="utf-8"))
+        with open(os.path.join(self.dir, "formulas.json"), encoding="utf-8") as f:
+            doc = json.load(f)
         by_name = {m["name"]: m for m in doc["metrics"]}
         self.assertEqual(by_name["指标"]["classification"], "PARAM_DEPENDENT")
         self.assertIn("禁止内联", by_name["指标"]["classificationNote"])
@@ -68,10 +74,28 @@ class TestMainParamDependent(unittest.TestCase):
 
     def test_seed_metrics_safety(self):
         self.run_main(extra=["--seed-metrics"])
-        seed = json.load(open(os.path.join(self.dir, "metrics-seed.json"), encoding="utf-8"))
+        with open(os.path.join(self.dir, "metrics-seed.json"), encoding="utf-8") as f:
+            seed = json.load(f)
         by_name = {m["name"]: m for m in seed["metrics"]}
         self.assertEqual(by_name["指标"]["safety"], "PARAM_DEPENDENT")
         self.assertIn("DYNAMIC_PARAMS", by_name["指标"]["formula"])
+
+    def test_plain_aliases_keep_conflicts_and_seed(self):
+        with open(os.path.join(self.dir, "cards-raw.json"), encoding="utf-8") as f:
+            raw = json.load(f)
+        raw["看板A"]["cards"][0]["measures"] = [
+            {"name": "金额A", "alias": "销售额", "formula": "sum([A])", "advType": ""}]
+        raw["看板A"]["cards"][1]["measures"] = [
+            {"name": "金额B", "alias": "销售额", "formula": "sum([B])", "advType": ""}]
+        with open(os.path.join(self.dir, "cards-raw.json"), "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False)
+        self.run_main(extra=["--seed-metrics"])
+        with open(os.path.join(self.dir, "formulas.json"), encoding="utf-8") as f:
+            formulas = json.load(f)
+        self.assertEqual(len(formulas["conflicts"]), 1)
+        with open(os.path.join(self.dir, "metrics-seed.json"), encoding="utf-8") as f:
+            seed = json.load(f)
+        self.assertIn("销售额", {m["name"] for m in seed["metrics"]})
 
 
 if __name__ == "__main__":

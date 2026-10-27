@@ -143,6 +143,33 @@ class BuildPackageTest(unittest.TestCase):
         with open(os.path.join(self.pkg, "memory", "qa-log.jsonl"), encoding="utf-8") as f:
             self.assertEqual(f.read(), marker)
 
+    def test_failed_force_rebuild_preserves_existing_package(self):
+        make_workdir(self.workdir)
+        r = self.build()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        marker = os.path.join(self.pkg, "references", "cards.json")
+        with open(marker, "rb") as f:
+            before = f.read()
+        write_json(self.workdir, "agent-manifest.json",
+                   {"slug": "", "scenario": "测试经营分析", "keywords": "收入"})
+        r = self.build("--force")
+        self.assertNotEqual(r.returncode, 0)
+        with open(marker, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertTrue(os.path.isfile(os.path.join(self.pkg, "workbench.html")))
+
+    def test_interrupted_replacement_recovers_previous_package(self):
+        make_workdir(self.workdir)
+        r = self.build()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        previous = self.pkg + ".previous"
+        os.replace(self.pkg, previous)
+        import build_package
+        build_package.recover_interrupted_replace(self.pkg)
+        self.assertTrue(os.path.isdir(self.pkg))
+        self.assertFalse(os.path.exists(previous))
+        self.assertTrue(os.path.isfile(os.path.join(self.pkg, "references", "cards.json")))
+
     def test_rebuild_with_force_cleans_stale_references(self):
         """--force 重建前清空受控区：旧模式文件（datasets.json）、已删除卡片的旧采样、
         过期 references/ 文件一律不残留（copytree 合并语义曾是残留源）"""

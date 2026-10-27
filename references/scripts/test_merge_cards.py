@@ -25,6 +25,7 @@ def make_page(pid, title, cards, mtime="2026-09-27 10:00:00+0800"):
 def meta_page(title, cards):
     return {"title": title, "mtime": "2026-09-20 10:00:00+0800", "cardCount": len(cards),
             "cardHash": merge_cards.structure_hash(cards),
+            "contentHash": merge_cards.content_hash(cards),
             "cards": [{"cdId": c["cdId"], "name": c["name"]} for c in cards]}
 
 
@@ -202,6 +203,48 @@ class TitleCollisionTest(MergeCardsTest):
         self._fresh_pages = {"py": make_page("py", "页一", [make_card("cy1", "异卡")])}
         with self.assertRaises(SystemExit) as cm:
             self.merge(pages=["py"])
+        self.assertEqual(cm.exception.code, 1)
+        self.assertFalse(os.path.exists(os.path.join(self.workdir, "cards-merged.json")))
+
+
+class SemanticChangeTest(MergeCardsTest):
+    def test_formula_change_forces_relearn(self):
+        changed = [make_card("c1", "卡A"), make_card("c2", "卡B", filtered=True)]
+        changed[0]["measures"][0]["formula"] = "sum([新口径])"
+        self._fresh_pages = {"p1": make_page("p1", "页一", changed)}
+        self.merge(pages=["p1"])
+        report = self.read_report()
+        self.assertEqual(report["unchangedPages"], [])
+        self.assertEqual(report["resampleCdIds"], ["c1", "c2"])
+        self.assertEqual(self.read_merged()["页一"]["cards"][0]["measures"][0]["formula"],
+                         "sum([新口径])")
+
+    def test_legacy_meta_without_content_hash_conservatively_relearns(self):
+        pkg_cards = os.path.join(self.pkg, "references", "cards.json")
+        with open(pkg_cards, encoding="utf-8") as f:
+            doc = json.load(f)
+        for page in doc["_meta"]["pages"].values():
+            page.pop("contentHash", None)
+        with open(pkg_cards, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False)
+        self._fresh_pages = {"p1": make_page("p1", "页一", self.p1_cards)}
+        self.merge(pages=["p1"])
+        self.assertEqual(self.read_report()["unchangedPages"], [])
+
+    def test_incremental_slim_preserves_dynamic_params_and_in_pool(self):
+        changed = [make_card("c1", "卡A")]
+        changed[0]["dynamicParams"] = [{"dpId": "dp1", "name": "月份", "defaultValue": "9月"}]
+        changed[0]["inPool"] = True
+        self._fresh_pages = {"p1": make_page("p1", "页一", changed)}
+        self.merge(pages=["p1"])
+        card = self.read_merged()["页一"]["cards"][0]
+        self.assertEqual(card["dynamicParams"][0]["name"], "月份")
+        self.assertTrue(card["inPool"])
+
+    def test_existing_page_rename_collision_rejected(self):
+        self._fresh_pages = {"p1": make_page("p1", "页二", self.p1_cards)}
+        with self.assertRaises(SystemExit) as cm:
+            self.merge(pages=["p1"])
         self.assertEqual(cm.exception.code, 1)
         self.assertFalse(os.path.exists(os.path.join(self.workdir, "cards-merged.json")))
 

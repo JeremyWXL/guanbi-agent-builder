@@ -1,5 +1,7 @@
 # 洞察Agent 看板就绪诊断报告
 
+> 本文件是报告章节结构参考，不是渲染模板；实际报告由 `insight_audit_report.py` 生成，字段与章节以其输出为准。
+
 > 目标场景：{{scenario}}
 > 诊断范围：{{page_count}} 张看板 · 生成于 {{built_at}}
 > 结论：{{overall_score}}/100 · {{grade}}

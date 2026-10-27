@@ -8,8 +8,8 @@ run_sql 白名单全拦截 / make_link 无筛选器可用 / sample_cards 整批�
   python3 build_package.py <工作目录> --package <交付包路径> [--manifest <路径>] [--force]
   --manifest 缺省取 <工作目录>/agent-manifest.json（字段见 render_agent_skill.py docstring；
     dashboards / typicalQuestions / mode / datasetCount / date 缺省时从学习产物自动带入）
-  --force    允许写入已存在的交付包目录；重建前清空受控区（references/ 与生成的 workbench.html，
-             防止旧采样/旧模式文件残留），memory/ 永不覆盖——init 幂等，重跑/重建都安全
+  --force    允许替换已存在的交付包目录；在同级临时目录重建受控区，体检通过后切换，
+             固定 .previous 备份支持中断后自动恢复；失败保留原包，memory/ 永不覆盖——init 幂等
 动作（全机械，顺序固定）:
   1. 前置校验（exit 2）: cards-raw.json（或 datasets-raw.json）/ metrics.json / dimensions.json /
      learningResult.md / businessKnowledge.md / insightThinking.md / examples.json 齐全；
@@ -22,7 +22,7 @@ run_sql 白名单全拦截 / make_link 无筛选器可用 / sample_cards 整批�
      筛选器交互字段天然完整，禁止任何形式的裁剪）；脚本按清单复制；card-data/ 复制；
      SKILL.md 由 render_agent_skill.py 模板渲染；memory init（幂等）
   4. workbench.py 生成只读 workbench.html（写到交付包根目录）
-  5. 总闸门: check_package.py 三层体检（结构/内容/功能冒烟），❌ 即 exit 1（包保留供排查）
+  5. 总闸门: check_package.py 三层体检（结构/内容/功能冒烟），❌ 即 exit 1（原包不替换）
   6. 落盘 <工作目录>/package-check.json——wizard_state confirm --step 8 的硬性凭证
 退出码: 0 交付成功 / 1 体检未过 / 2 前置校验失败或用法错误
 """
@@ -30,16 +30,16 @@ import json, os, shutil, subprocess, sys, tempfile
 from datetime import date, datetime
 
 # 与 SKILL.md frontmatter 的 version 保持同步
-BUILDER_VERSION = "4.12.0"
+BUILDER_VERSION = "4.12.1"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# 复制进交付包 references/ 的脚本（维护期自检/取数/回归全靠它们；check_package 的
-# SCRIPT_LIST 是验收口径，这里额外带 fill_dim_values/render 以外的维护工具）
+# 复制进交付包 references/ 的脚本（维护期自检/取数/回归全靠它们）；
+# 必须与 check_package.py 的 SCRIPT_LIST 保持一致，新增脚本两边同步。
 PACKAGE_SCRIPTS = ["attribute.py", "make_link.py", "memory.py", "check_metrics.py",
                    "check_dims.py", "eval_examples.py", "sample_cards.py", "run_sql.py",
-                   "run_metric.py", "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
+                   "run_metric.py", "preview_card.py", "workbench.py", "scope.py", "scope_audit.py", "feedback.py",
                    "check_package.py", "fill_dim_values.py"]
-DATASET_MODE_DROP = {"make_link.py", "sample_cards.py"}  # 直通模式无卡片层
+DATASET_MODE_DROP = {"make_link.py", "sample_cards.py", "preview_card.py"}  # 直通模式无卡片层
 OPTIONAL_CONTENT = ["industry-notes.md", "report-insights.md", "conversation-insights.md"]
 SCENARIO_ORDER = ["问数", "归因", "异常", "洞察"]
 
@@ -127,6 +127,15 @@ def auto_manifest(workdir, mode, manifest):
     return m
 
 
+def recover_interrupted_replace(final_package):
+    """从固定的 .previous 备份恢复中断替换；返回备份路径供成功后清理。"""
+    previous = final_package + ".previous"
+    if not os.path.exists(final_package) and os.path.isdir(previous):
+        os.replace(previous, final_package)
+        print(f"⚠️ 检测到上次替换中断，已恢复原交付包: {final_package}")
+    return previous
+
+
 def main():
     args = sys.argv[1:]
     package = manifest_path = None
@@ -146,6 +155,7 @@ def main():
         sys.exit(__doc__)
     workdir = os.path.abspath(pos[0])
     package = os.path.abspath(package)
+    recover_interrupted_replace(package)
     manifest_path = manifest_path or os.path.join(workdir, "agent-manifest.json")
 
     mode = "dashboard" if os.path.isfile(os.path.join(workdir, "cards-raw.json")) else "dataset"
@@ -171,98 +181,111 @@ def main():
         if code != 0:
             die(f"{gate} 未通过（exit {code}）——❌ 清零后才能交付", code=2)
 
-    # ---- 3. 组装 ----
+    # ---- 3. 在同级临时目录组装；总闸门通过前不触碰现有交付包 ----
     print("\n[2/5] 组装交付包（复制派生，禁止裁剪）")
     if os.path.isdir(package) and os.listdir(package) and not force:
         die(f"交付包目录已存在且非空: {package}——确认要覆盖请加 --force（memory/ 永不覆盖）")
-    refs = os.path.join(package, "references")
-    # --force 重建前先清空受控区：copytree(dirs_exist_ok=True) 是合并语义，旧 references/ 文件
-    # 与已删除卡片的旧采样会残留（看板↔数据集模式切换时旧 cards.json 残留会让体检误判模式）；
-    # memory/ 是用户资产永不触碰，SKILL.md 随后整体重渲染
-    if os.path.isdir(refs):
-        shutil.rmtree(refs)
-    old_workbench = os.path.join(package, "workbench.html")
-    if os.path.isfile(old_workbench):
-        os.unlink(old_workbench)
-    os.makedirs(refs, exist_ok=True)
-    if mode == "dashboard":
-        shutil.copy(os.path.join(workdir, "cards-raw.json"), os.path.join(refs, "cards.json"))
-        src_cd = os.path.join(workdir, "card-data")
-        if os.path.isdir(src_cd):
-            shutil.copytree(src_cd, os.path.join(refs, "card-data"), dirs_exist_ok=True)
-    else:
-        shutil.copy(os.path.join(workdir, "datasets-raw.json"), os.path.join(refs, "datasets.json"))
-    content = ["formulas.json", "metrics.json", "dimensions.json", "examples.json",
-               "learningResult.md", "businessKnowledge.md", "insightThinking.md"]
-    for fn in content + OPTIONAL_CONTENT:
-        src = os.path.join(workdir, fn)
-        if os.path.isfile(src):
-            shutil.copy(src, os.path.join(refs, fn))
-    of = os.path.join(workdir, "outputFormat.json")
-    shutil.copy(of if os.path.isfile(of)
-                else os.path.join(SCRIPT_DIR, "..", "templates", "outputFormat.json"),
-                os.path.join(refs, "outputFormat.json"))
-    sql_guide = os.path.join(SCRIPT_DIR, "..", "sql-guide.md")
-    if os.path.isfile(sql_guide):
-        shutil.copy(sql_guide, os.path.join(refs, "sql-guide.md"))
-    copied = []
-    for fn in PACKAGE_SCRIPTS:
-        if mode == "dataset" and fn in DATASET_MODE_DROP:
-            continue
-        src = os.path.join(SCRIPT_DIR, fn)
-        if os.path.isfile(src):
-            shutil.copy(src, os.path.join(refs, fn))
-            copied.append(fn)
-    print(f"   内容文件 {len(content)} 项 + 脚本 {len(copied)} 个已复制")
-
-    # SKILL.md 模板渲染（manifest 自动带入缺省字段）
-    m = auto_manifest(workdir, mode, manifest)
-    fd, eff = tempfile.mkstemp(prefix=".agent-manifest-", suffix=".json", dir=workdir)
+    final_package = package
+    os.makedirs(os.path.dirname(final_package), exist_ok=True)
+    package = tempfile.mkdtemp(prefix=".agent-build-", dir=os.path.dirname(final_package))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(m, f, ensure_ascii=False, indent=1)
-        code, out = run([sys.executable, os.path.join(SCRIPT_DIR, "render_agent_skill.py"),
-                         "--manifest", eff, "-o", os.path.join(package, "SKILL.md")])
-    finally:
-        os.unlink(eff)
-    if code != 0:
-        die("SKILL.md 渲染失败——按上方报错补齐 manifest 字段", code=2)
+        refs = os.path.join(package, "references")
+        os.makedirs(refs, exist_ok=True)
+        old_memory = os.path.join(final_package, "memory")
+        if os.path.isdir(old_memory):
+            shutil.copytree(old_memory, os.path.join(package, "memory"))
+        if mode == "dashboard":
+            shutil.copy(os.path.join(workdir, "cards-raw.json"), os.path.join(refs, "cards.json"))
+            src_cd = os.path.join(workdir, "card-data")
+            if os.path.isdir(src_cd):
+                shutil.copytree(src_cd, os.path.join(refs, "card-data"), dirs_exist_ok=True)
+        else:
+            shutil.copy(os.path.join(workdir, "datasets-raw.json"), os.path.join(refs, "datasets.json"))
+        content = ["formulas.json", "metrics.json", "dimensions.json", "examples.json",
+                   "learningResult.md", "businessKnowledge.md", "insightThinking.md"]
+        for fn in content + OPTIONAL_CONTENT:
+            src = os.path.join(workdir, fn)
+            if os.path.isfile(src):
+                shutil.copy(src, os.path.join(refs, fn))
+        of = os.path.join(workdir, "outputFormat.json")
+        shutil.copy(of if os.path.isfile(of)
+                    else os.path.join(SCRIPT_DIR, "..", "templates", "outputFormat.json"),
+                    os.path.join(refs, "outputFormat.json"))
+        sql_guide = os.path.join(SCRIPT_DIR, "..", "sql-guide.md")
+        if os.path.isfile(sql_guide):
+            shutil.copy(sql_guide, os.path.join(refs, "sql-guide.md"))
+        copied = []
+        for fn in PACKAGE_SCRIPTS:
+            if mode == "dataset" and fn in DATASET_MODE_DROP:
+                continue
+            src = os.path.join(SCRIPT_DIR, fn)
+            if os.path.isfile(src):
+                shutil.copy(src, os.path.join(refs, fn))
+                copied.append(fn)
+        print(f"   内容文件 {len(content)} 项 + 脚本 {len(copied)} 个已复制")
 
-    # 记忆区初始化（幂等，已有记忆永不覆盖）
-    code, _ = run([sys.executable, os.path.join(refs, "memory.py"), "init", package])
-    if code != 0:
-        die("memory init 失败", code=2)
+        m = auto_manifest(workdir, mode, manifest)
+        fd, eff = tempfile.mkstemp(prefix=".agent-manifest-", suffix=".json", dir=workdir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(m, f, ensure_ascii=False, indent=1)
+            code, out = run([sys.executable, os.path.join(SCRIPT_DIR, "render_agent_skill.py"),
+                             "--manifest", eff, "-o", os.path.join(package, "SKILL.md")])
+        finally:
+            os.unlink(eff)
+        if code != 0:
+            die("SKILL.md 渲染失败——按上方报错补齐 manifest 字段", code=2)
 
-    # ---- 4. workbench.html ----
-    print("\n[3/5] 生成只读工作台 workbench.html")
-    code, _ = run([sys.executable, os.path.join(refs, "workbench.py"), refs])
-    if code != 0 or not os.path.isfile(os.path.join(package, "workbench.html")):
-        die("workbench.html 生成失败", code=2)
+        code, _ = run([sys.executable, os.path.join(refs, "memory.py"), "init", package])
+        if code != 0:
+            die("memory init 失败", code=2)
 
-    # ---- 5. 总闸门 ----
-    print("\n[4/5] 交付包体检（check_package.py 三层校验）")
-    code, out = run([sys.executable, os.path.join(SCRIPT_DIR, "check_package.py"),
-                     package, "--json"], stream=False)
-    try:
-        report = json.loads(out)
-    except json.JSONDecodeError:
-        die(f"check_package 输出无法解析（exit {code}）: {out[:300]}", code=1)
-    result = "pass" if code == 0 else "fail"
-    record = {"package": package, "checkedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
-              "builderVersion": BUILDER_VERSION, "result": result,
-              "errors": report.get("errors") or [], "warnings": report.get("warnings") or []}
-    with open(os.path.join(workdir, "package-check.json"), "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=1)
-        f.write("\n")
-    for e in record["errors"]:
-        print(f"  ❌ {e}")
-    for w in record["warnings"]:
-        print(f"  ⚠️  {w}")
-    if code != 0:
-        die(f"体检 {len(record['errors'])} 个 ❌ 未清零——修复后重跑本脚本（包已保留供排查）", code=1)
+        print("\n[3/5] 生成只读工作台 workbench.html")
+        code, _ = run([sys.executable, os.path.join(refs, "workbench.py"), refs])
+        if code != 0 or not os.path.isfile(os.path.join(package, "workbench.html")):
+            die("workbench.html 生成失败", code=2)
 
-    # ---- 6. 完成 ----
-    print(f"\n[5/5] ✅ 交付包已就绪: {package}")
+        print("\n[4/5] 交付包体检（check_package.py 三层校验）")
+        code, out = run([sys.executable, os.path.join(SCRIPT_DIR, "check_package.py"),
+                         package, "--json"], stream=False)
+        try:
+            report = json.loads(out)
+        except json.JSONDecodeError:
+            die(f"check_package 输出无法解析（exit {code}）: {out[:300]}", code=1)
+        result = "pass" if code == 0 else "fail"
+        record = {"package": final_package,
+                  "checkedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+                  "builderVersion": BUILDER_VERSION, "result": result,
+                  "errors": report.get("errors") or [], "warnings": report.get("warnings") or []}
+        with open(os.path.join(workdir, "package-check.json"), "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        for e in record["errors"]:
+            print(f"  ❌ {e}")
+        for w in record["warnings"]:
+            print(f"  ⚠️  {w}")
+        if code != 0:
+            die(f"体检 {len(record['errors'])} 个 ❌ 未清零——现有交付包未被替换", code=1)
+
+        backup = final_package + ".previous"
+        if os.path.isdir(backup) and os.path.exists(final_package):
+            shutil.rmtree(backup)
+        try:
+            if os.path.exists(final_package):
+                os.replace(final_package, backup)
+            os.replace(package, final_package)
+        except BaseException:
+            if os.path.isdir(backup) and not os.path.exists(final_package):
+                os.replace(backup, final_package)
+            raise
+        if os.path.isdir(backup):
+            shutil.rmtree(backup)
+    except BaseException:
+        if os.path.isdir(package):
+            shutil.rmtree(package, ignore_errors=True)
+        raise
+
+    print(f"\n[5/5] ✅ 交付包已就绪: {final_package}")
     print(f"体检凭证已落盘: {os.path.join(workdir, 'package-check.json')}"
           "（wizard_state confirm --step 8 的依据）")
 

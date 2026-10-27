@@ -166,6 +166,17 @@ class FullModeTest(unittest.TestCase):
         doc = read_json(self.dir, "dimensions.json")
         return {d["name"]: d for d in doc["dimensions"]}
 
+    def test_full_passes_workdir_scope_to_run_sql(self):
+        commands = []
+        def fake(cmd, **kw):
+            commands.append(cmd)
+            return mock.Mock(returncode=0, stdout="[]")
+        code, _ = self.run_full(fake)
+        self.assertEqual(code, 0)
+        self.assertTrue(commands)
+        self.assertIn("--scope", commands[0])
+        self.assertIn(os.path.join(self.dir, "datasets-raw.json"), commands[0])
+
     def test_full_unions_and_keeps_existing(self):
         counts = {("ds1", "store_id"): 3, ("ds1", "sku_id"): 2}
         enums = {("ds1", "store_id"): ["S001", "S002", "S003"],

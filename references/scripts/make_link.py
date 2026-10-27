@@ -50,7 +50,7 @@ def selectors_of(page):
     for c in page["cards"]:
         if not isinstance(c, dict):
             continue
-        if c.get("type") == "SELECTOR" or c.get("cdType") == "SELECTOR":
+        if c.get("type") in ("SELECTOR", "TREE_SELECTOR") or c.get("cdType") in ("SELECTOR", "TREE_SELECTOR"):
             fields = c.get("filters") or []
             field = fields[0] if fields else ""
             if not field:  # 兼容 filterDetails 形态
@@ -142,8 +142,19 @@ def main():
             avail = "、".join(s[2] or s[0] for s in usable) or "（无）"
             sys.exit(f"❌ 字段「{field}」在《{page_name}》没有对应的页面筛选器，带不进去。"
                      f"可用筛选器：{avail}——请改用这些字段，或不给链接（禁止静默忽略）")
-        for v in value.split(","):  # 多值：重复传参
-            params.append(f"{quote(hit[1])}={quote(v.strip())}")
+        tree = next((c for c in page["cards"] if isinstance(c, dict) and c.get("cdId") == hit[1]
+                     and (c.get("type") == "TREE_SELECTOR" or c.get("cdType") == "TREE_SELECTOR")), None)
+        if tree:
+            try:
+                path = json.loads(value) if value.lstrip().startswith("[") else value.split(",")
+                if not isinstance(path, list) or not path or any(not str(v).strip() for v in path):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                sys.exit(f"树筛选字段「{field}」需要非空路径，如 [\"浙江\",\"杭州\"] 或 浙江,杭州")
+            params.append(f"{quote(hit[1])}={quote(json.dumps(path, ensure_ascii=False, separators=(',', ':')))}")
+        else:
+            for v in value.split(","):  # 多值：重复传参
+                params.append(f"{quote(hit[1])}={quote(v.strip())}")
     if anchor:
         card = next((c for c in page["cards"]
                      if isinstance(c, dict) and (c.get("name") or "") == anchor), None)
