@@ -688,6 +688,10 @@ class TestStalenessAndDrill(AuditCase):
 # ───────────────────────────── 17. 真实夹具 ─────────────────────────────
 
 class TestRealFixture(AuditCase):
+    @unittest.skipUnless(
+        all(os.path.isfile(os.path.join(FIXTURE_DIR, path)) for path in
+            ("cards-raw.json", "formulas.json", "card-data/_sample_index.json")),
+        "真实夹具不存在")
     def test_sandbox_v491_fixture_runs_without_false_r02(self):
         for name in ("cards-raw.json", "formulas.json"):
             shutil.copy(os.path.join(FIXTURE_DIR, name), os.path.join(self.tmp, name))

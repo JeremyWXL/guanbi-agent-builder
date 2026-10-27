@@ -82,7 +82,7 @@ class ExtractTest(unittest.TestCase):
         r = self.run_script(self.tmp, "--cdIds", "c1,c2", "-o", out)
         self.assertEqual(r.returncode, 0, r.stderr)
         texts = [self.read_text(os.path.join(out, "card-skeletons", name))
-                 for name in os.listdir(os.path.join(out, "card-skeletons"))]
+                 for name in sorted(os.listdir(os.path.join(out, "card-skeletons")))]
         self.assertIn("ChartType.SCROLL_TABLE", texts[0])
         self.assertIn("ChartType.DETAIL_TABLE", texts[1])
         self.assertNotIn("ChartType.TABLE", "\n".join(texts))
